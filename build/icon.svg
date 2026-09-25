@@ -1,0 +1,15 @@
+<!-- Fork app icon: the artwork (icon-art.png, 1024×1024, full bleed) fitted to the macOS icon shape,
+     an 824px rounded square centred on the 1024 canvas, with the standard soft shadow.
+     Change the artwork by replacing icon-art.png, then re-render icon.png and run npm run app. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <clipPath id="shape"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#f3f0e8" filter="url(#shadow)"/>
+  <image href="icon-art.png" xlink:href="icon-art.png" x="100" y="100" width="824" height="824" clip-path="url(#shape)"/>
+  <!-- A faint rim so the cream edge still reads on light backgrounds. -->
+  <rect x="100.75" y="100.75" width="822.5" height="822.5" rx="184.25" fill="none" stroke="#000" stroke-opacity=".1" stroke-width="1.5"/>
+</svg>

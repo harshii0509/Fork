@@ -1,0 +1,81 @@
+{
+  "name": "designer-terminal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "node check.mjs",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper",
+    "build:bloub": "esbuild vendor/bloub/src/entry.ts --bundle --format=iife --global-name=Bloub --minify --legal-comments=inline --banner:js=\"/* Bloub (MIT, see vendor/bloub/LICENSE). Built from vendor/bloub/src by npm run build:bloub. */\" --outfile=vendor/bloub/bloub.js",
+    "dist": "electron-builder --mac --publish never",
+    "app": "electron-builder --mac dir --arm64 --publish never && rm -rf /Applications/Fork.app && ditto dist/mac-arm64/Fork.app /Applications/Fork.app && rm -rf dist/mac-arm64 && echo Installed /Applications/Fork.app"
+  },
+  "dependencies": {
+    "@fontsource/fira-code": "^5.3.0",
+    "@fontsource/geist-mono": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "dompurify": "^3.4.16",
+    "marked": "^18.0.14",
+    "node-pty": "^1.1.0",
+    "shiki": "^4.4.3"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true,
+    "electron@41.10.7": true
+  },
+  "devDependencies": {
+    "electron": "^41.10.7",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "motion": "^13.4.0"
+  },
+  "build": {
+    "appId": "com.forkterminal.app",
+    "productName": "Fork",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "shell/.*",
+      "!*.md",
+      "!check.mjs",
+      "!install.sh",
+      "!build/**",
+      "!dist/**",
+      "!vendor/bloub/src/**",
+      "!shell/.zsh_history",
+      "!**/.DS_Store",
+      "!.claude/**"
+    ],
+    "asarUnpack": [
+      "shell/**",
+      "shell/.*",
+      "node_modules/node-pty/**"
+    ],
+    "npmRebuild": false,
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": "-",
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "artifactName": "Fork.dmg"
+    }
+  }
+}

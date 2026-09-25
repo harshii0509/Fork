@@ -1,0 +1,483 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:; media-src 'self' file:">
+<title>Fork</title>
+<link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+<link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/geist-mono/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/geist-mono/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/fira-code/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/fira-code/700.css">
+<style>
+  :root {
+    /* Set from the theme (renderer.js applySettings). Defaults = the Designer theme. */
+    --bg: #141416; --text: #ececf1; --accent: #7c6cff; --on-accent: #fff;
+    --warn: #ffb454; --bad: #ff6b6b; --ok: #4ade80;
+    /* Everything else is mixed from those, so light and dark themes both just work. */
+    --panel: color-mix(in srgb, var(--text) 4%, var(--bg));
+    --line: color-mix(in srgb, var(--text) 12%, var(--bg));
+    --faint: color-mix(in srgb, var(--text) 30%, var(--bg));
+    --dim: color-mix(in srgb, var(--text) 60%, var(--bg));
+    --hover: color-mix(in srgb, var(--text) 8%, transparent);
+    --active: color-mix(in srgb, var(--text) 14%, transparent);
+    --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+    --radius: 10px; --ease: cubic-bezier(.2, .8, .2, 1);
+  }
+  * { box-sizing: border-box; }
+  /* Thin scrollbars on a clear track, so a long file list doesn't paint a white strip over the glass. */
+  ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--active); border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background-color: var(--faint); }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  html, body { margin: 0; height: 100%; background: transparent; color: var(--text);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; overflow: hidden; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  kbd { font: 11px "SF Mono", Menlo, monospace; padding: 1px 5px; border: 1px solid var(--line);
+    border-radius: 4px; color: var(--dim); }
+  /* Icons (icons.js, Lucide). A touch lighter than Lucide's 2 so they sit well next to 13px text;
+     small ones get heavier so they don't go faint. */
+  .ic { width: 16px; height: 16px; flex: none; display: block; stroke-width: 1.75; }
+  .qsearch .ic, .add .ic, .ready .x .ic, .oops .ic { width: 14px; height: 14px; }
+  .twisty .ic, .tclose .ic { width: 12px; height: 12px; stroke-width: 2.25; }
+  .arrows .ic { width: 10px; height: 10px; stroke-width: 2.5; }
+  .fi { flex: none; display: grid; } /* a file's type icon: never squeezed by a long name */
+  .pv-name .fi { display: inline-grid; vertical-align: -3px; margin-right: 7px; }
+
+  .app { --pvw: 0px; display: grid; grid-template: 44px 1fr auto / var(--side, 232px) 1fr var(--pvw); height: 100%; }
+  /* ⌘P opens the preview panel on the right. --pv is the dragged width. */
+  .app.has-pv { --pvw: clamp(320px, var(--pv, 42vw), calc(100vw - 420px)); }
+  .app.in-settings { --pvw: 0px; }
+  /* ⌘B hides the sidebar. A class rule, not --side, so the dragged width comes back. */
+  .app.no-side { grid-template-columns: 0 1fr var(--pvw); }
+  .no-side .side, .no-side .side-grip { display: none; }
+  .no-side .top { padding-left: 80px; } /* clear the traffic lights */
+  .side-grip { grid-row: 1 / 4; grid-column: 1; justify-self: end; width: 6px; margin-right: -3px;
+    cursor: col-resize; z-index: 2; -webkit-app-region: no-drag; }
+
+  /* Top bar: where am I. Drag region, room for the traffic lights. */
+  .top { grid-column: 2; display: flex; align-items: center; gap: 2px; padding: 0 16px; background: var(--bg);
+    border-bottom: 1px solid var(--line); -webkit-app-region: drag; min-width: 0; }
+  .top button { -webkit-app-region: no-drag; }
+  .crumb { padding: 4px 8px; border-radius: 6px; color: var(--dim); white-space: nowrap; }
+  .crumb:hover { background: var(--line); color: var(--text); }
+  .crumb:last-of-type { color: var(--text); font-weight: 600; }
+  .sep { color: var(--faint); }
+  .top .spacer { flex: 1; }
+
+  /* Sidebar: what is in this folder. */
+  .side { grid-row: 1 / 4; grid-column: 1; position: relative; border-right: 1px solid var(--hover);
+    display: flex; flex-direction: column; min-height: 0; }
+  .side-scroll { flex: 1; overflow-y: auto; padding: 52px 8px 12px; }
+  .qsearch { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; margin: 0 0 14px;
+    border-radius: 8px; background: var(--hover); border: 1px solid var(--hover); color: var(--dim); text-align: left;
+    -webkit-app-region: no-drag; transition: background .15s, color .15s; }
+  .qsearch:hover { background: var(--active); color: var(--text); }
+  .qsearch kbd { margin-left: auto; }
+  .drag { position: absolute; inset: 0 0 auto; height: 44px; -webkit-app-region: drag; }
+  .side h3 { margin: 4px 8px 8px; font-size: 11px; font-weight: 600; color: var(--dim);
+    text-transform: uppercase; letter-spacing: .06em; }
+  /* The folder tree: ▸ expands in place, the name moves there (folders) or previews it (files). */
+  .entry { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px 5px calc(2px + var(--depth, 0) * 14px);
+    border-radius: 6px; cursor: default; white-space: nowrap; overflow: hidden; }
+  .entry:hover { background: var(--hover); }
+  .entry.on { background: var(--active); }
+  .entry.noise { opacity: .45; }
+  .entry svg { flex: none; }
+  .entry span { overflow: hidden; text-overflow: ellipsis; }
+  .twisty { flex: none; width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--dim); }
+  button.twisty:hover { background: var(--active); color: var(--text); }
+  .twisty svg { transition: transform .12s var(--ease); }
+  .twisty.open svg { transform: rotate(90deg); }
+  .empty { color: var(--dim); padding: 4px 8px; }
+  .entries-empty { padding: 3px 8px 3px calc(24px + var(--depth, 0) * 14px); color: var(--faint); }
+
+  /* Terminals list in the sidebar (one row per tab). */
+  .sec { display: flex; align-items: center; justify-content: space-between; margin: 4px 4px 6px 8px; }
+  .sec h3 { margin: 0; }
+  .side h3.folder { margin-top: 20px; }
+  .add { width: 22px; height: 22px; border-radius: 6px; color: var(--dim); display: grid; place-items: center; }
+  .add:hover { background: var(--hover); color: var(--text); }
+  .tab { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: default; }
+  .tab:hover { background: var(--hover); }
+  .tab.active { background: var(--active); }
+  .tdot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex: none; }
+  .tdot.busy { background: var(--ok); animation: pulse 1.6s infinite; }
+  .tname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tcount { font-size: 11px; color: var(--dim); white-space: nowrap; }
+  .tclose { opacity: 0; color: var(--dim); padding: 2px; border-radius: 4px; }
+  .tab:hover .tclose { opacity: 1; }
+  .tclose:hover { color: var(--text); }
+
+  /* Panes: the active tab's split tree. */
+  .term { grid-area: 2 / 2; background: var(--bg); min-width: 0; min-height: 0; display: flex; }
+  .term > *, .split > * { flex: 1 1 0; min-width: 0; min-height: 0; }
+  .split { display: flex; }
+  .split.col { flex-direction: column; }
+  .split > .divider { flex: 0 0 1px; background: var(--line); position: relative; z-index: 1; transition: background .15s; }
+  .divider::before { content: ''; position: absolute; inset: 0 -3px; }
+  .split.col > .divider::before { inset: -3px 0; }
+  .split.row > .divider { cursor: col-resize; }
+  .split.col > .divider { cursor: row-resize; }
+  .divider:hover, .divider.dragging { background: var(--accent); }
+  .pane { position: relative; transition: opacity .15s; }
+  .pane-inner { position: absolute; inset: 10px 4px 0 14px; }
+  .term.multi .pane:not(.active) { opacity: .5; }
+  .term.multi .pane.active { box-shadow: inset 0 2px 0 var(--accent); }
+  /* Dragging a file over a pane: dropping types its path at the cursor. */
+  .pane.drop { opacity: 1 !important; box-shadow: inset 0 0 0 2px var(--accent) !important; }
+  #hidden { display: none; }
+  .ibtn { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--dim); }
+  .ibtn:hover { background: var(--line); color: var(--text); }
+
+  /* Hold ⌘: every element with a shortcut shows its key. */
+  [data-key] { position: relative; }
+  [data-key]::after { content: attr(data-key); position: absolute; top: -6px; right: -6px; z-index: 5;
+    font: 600 10px/1 -apple-system, sans-serif; padding: 3px 5px; border-radius: 5px; white-space: nowrap;
+    background: var(--accent); color: var(--on-accent); box-shadow: 0 2px 8px #0008; pointer-events: none;
+    opacity: 0; transform: scale(.85); transition: opacity .12s, transform .12s var(--ease); }
+  .show-keys [data-key]::after { opacity: 1; transform: none; }
+  .tab[data-key]::after, .gear[data-key]::after { top: 50%; right: 6px; transform: translateY(-50%) scale(.85); }
+  .show-keys .tab[data-key]::after, .show-keys .gear[data-key]::after { transform: translateY(-50%); }
+  .show-keys .tab .tclose, .show-keys .tab .tcount { visibility: hidden; }
+  .ibtn[data-key]::after { top: calc(100% + 4px); right: 50%; transform: translateX(50%) scale(.85); }
+  .show-keys .ibtn[data-key]::after { transform: translateX(50%); }
+  .keys-legend { display: none; gap: 16px; color: var(--dim); flex-wrap: wrap; }
+  .keys-legend b { color: var(--text); font-weight: 600; }
+  .show-keys .keys-legend { display: flex; }
+  .show-keys .hint { display: none; }
+
+  /* Dock: what can I do here. */
+  .dock { grid-area: 3 / 2; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 14px 12px; gap: 8px; }
+  /* Only takes space when it has something to say, so the terminal gets the full height otherwise. */
+  .dock { display: none; }
+  .dock:has(.show), .busy .dock, .show-keys .dock { display: grid; }
+  .hint { display: none; align-items: center; gap: 8px; color: var(--dim); }
+  .hint.show { display: flex; }
+  .hint.warn { color: var(--warn); }
+  /* Suggestion chips live in the sidebar, under Quick search. */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 14px; }
+  .chips:empty { display: none; }
+  .chip { padding: 4px 10px; font-size: 12px; border-radius: 999px; background: var(--hover); border: 1px solid var(--hover);
+    transition: border-color .15s, background .15s, transform .1s; }
+  .chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .chip:active { transform: scale(.97); }
+  /* Files stay usable while something runs (that's when Claude is working); moving folders waits. */
+  .busy .chips .chip, .busy .crumb { opacity: .35; pointer-events: none; }
+  .running { display: none; align-items: center; gap: 10px; color: var(--dim); }
+  .busy .running { display: flex; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  /* The Bloub mascot (blob.js) marks work in progress; its SVG sizes the box. */
+  .blob { display: inline-grid; place-items: center; flex: none; margin: -10px -6px; } /* dots sit mid-SVG: don't grow the row */
+  .blob[hidden] { display: none; }
+  .stop { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); }
+  .stop:hover { border-color: var(--bad); color: var(--bad); }
+
+  .oops { display: none; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: var(--radius);
+    background: color-mix(in srgb, var(--bad) 8%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 25%, transparent); }
+  .oops.show { display: flex; }
+  .oops p { margin: 0; flex: 1; }
+  .oops button { padding: 4px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; }
+  .oops button:hover { border-color: var(--text); }
+  #oopsClose { display: grid; place-items: center; padding: 4px 6px; }
+  /* A dev server printed its address: offer to show the app. */
+  .ready { display: none; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: var(--radius);
+    background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+  .ready.show { display: flex; }
+  .ready p { margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ready .go { padding: 4px 12px; border-radius: 6px; }
+  .ready .x { color: var(--dim); padding: 4px 6px; display: grid; place-items: center; }
+  .ready .x:hover { color: var(--text); }
+
+  /* Preview panel: a file (read-only) or the running app, next to the terminal. */
+  .pv, .pv-grip { display: none; }
+  .has-pv .pv { display: flex; }
+  .has-pv .pv-grip { display: block; }
+  .in-settings .pv { visibility: hidden; } /* not display:none: the app view would reload */
+  .pv { grid-row: 1 / 4; grid-column: 3; min-width: 0; min-height: 0; flex-direction: column;
+    background: var(--bg); border-left: 1px solid var(--line); }
+  .pv-grip { grid-row: 1 / 4; grid-column: 3; justify-self: start; width: 6px; margin-left: -3px;
+    cursor: col-resize; z-index: 2; }
+  .in-settings .pv-grip { display: none; }
+  .pv-head { height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 10px;
+    border-bottom: 1px solid var(--line); -webkit-app-region: drag; min-width: 0; }
+  .pv-head button, .pv-head input, .pv-head .seg { -webkit-app-region: no-drag; }
+  .pv-head .seg { width: auto; flex: none; margin-right: 6px; }
+  .pv-head .seg button { padding: 3px 10px; font-size: 12px; }
+  .pv-bar { display: none; flex: 1; align-items: center; gap: 4px; min-width: 0; }
+  .pv[data-mode="file"] .pv-bar.file, .pv[data-mode="app"] .pv-bar.app { display: flex; }
+  .pv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pv-name small { color: var(--dim); margin-left: 6px; }
+  .pv-act { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 6px; color: var(--dim); white-space: nowrap; font-size: 12px; }
+  .pv-act:has(> .ic) { padding: 4px 5px; } /* icon-only */
+  .pv-act .ic { width: 15px; height: 15px; }
+  .pv-act:hover { background: var(--line); color: var(--text); }
+  .pv-act:disabled { opacity: .35; pointer-events: none; }
+  .pv-bar.app input { min-width: 60px; padding: 4px 8px; font-size: 12px; }
+  .pv-body { flex: 1; position: relative; min-height: 0; }
+  .pv-view { position: absolute; inset: 0; overflow: auto; }
+  /* The hidden view keeps its size, so the app keeps its state and hot reload while a file is shown. */
+  .pv[data-mode="file"] #pvApp, .pv[data-mode="file"] .pv-appmsg, .pv[data-mode="app"] #pvFile { visibility: hidden; pointer-events: none; }
+  #pvApp { position: absolute; inset: 0; background: #fff; }
+  #pvApp.blank { visibility: hidden; }
+  .pv-appmsg { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 12px; padding: 24px;
+    color: var(--dim); background: var(--bg); }
+  .pv-appmsg.show { display: grid; }
+  .pv-msg { padding: 40px 24px; text-align: center; color: var(--dim); }
+  .pv-msg b { display: block; color: var(--text); margin-bottom: 6px; font-weight: 600; }
+  .pv-media { min-height: 100%; display: grid; place-items: center; padding: 24px;
+    background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 16px 16px; } /* shows transparency */
+  .pv-media img, .pv-media video { max-width: 100%; max-height: calc(100vh - 100px); box-shadow: 0 2px 12px #0003; }
+  .pv-code { display: flex; min-width: min-content; font: var(--mono-size, 13px)/1.5 var(--mono, Menlo, monospace); }
+  .pv-code pre { margin: 0; padding: 12px 0; }
+  .pv-code .gutter { flex: none; padding: 12px 12px 12px 16px; text-align: right; color: var(--faint); user-select: none;
+    position: sticky; left: 0; background: var(--bg); }
+  .pv-code .src { padding-right: 24px; tab-size: 2; }
+  .pv-md { max-width: 720px; margin: 0 auto; padding: 20px 28px 48px; line-height: 1.6; font-size: 14px; }
+  .pv-md h1, .pv-md h2 { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .pv-md a { color: var(--accent); }
+  .pv-md img { max-width: 100%; }
+  .pv-md code { font: .9em var(--mono, Menlo, monospace); padding: 1px 5px; border-radius: 4px; background: var(--hover); }
+  .pv-md pre { padding: 12px 14px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); overflow-x: auto; }
+  .pv-md pre code { padding: 0; background: none; }
+  .pv-md blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--line); color: var(--dim); }
+  .pv-md table { border-collapse: collapse; }
+  .pv-md th, .pv-md td { border: 1px solid var(--line); padding: 5px 10px; }
+  /* Syntax colours (Shiki's css-variables theme, files.mjs) come from the terminal theme, so every theme works. */
+  .pv-code { --code-foreground: var(--text); --code-token-comment: var(--dim); --code-token-keyword: var(--magenta);
+    --code-token-string: var(--ok); --code-token-string-expression: var(--ok); --code-token-constant: var(--warn);
+    --code-token-function: var(--blue); --code-token-parameter: var(--cyan); --code-token-punctuation: var(--dim);
+    --code-token-link: var(--accent); color: var(--text); }
+
+  /* Overlays: start screen + palette. */
+  .overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 70%, transparent);
+    display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh;
+    opacity: 0; pointer-events: none; transition: opacity .16s var(--ease); z-index: 10; }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .card { width: min(560px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: 0 24px 60px #0008; transform: scale(.98); transition: transform .16s var(--ease); }
+  .overlay.show .card { transform: none; }
+
+  .start { padding: 28px; }
+  .start h1 { margin: 0 0 4px; font-size: 22px; }
+  .start > p { margin: 0 0 20px; color: var(--dim); }
+  .opt { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 12px; border-radius: var(--radius); text-align: left; }
+  .opt:hover { background: var(--line); }
+  .opt small { display: block; color: var(--dim); }
+  .opt .ico { width: 32px; height: 32px; border-radius: 8px; background: var(--accent-soft); color: var(--accent);
+    display: grid; place-items: center; flex: none; }
+  .label { margin: 16px 12px 6px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+  .clone { display: none; gap: 8px; margin: 4px 12px 8px; }
+  .clone.show { display: flex; }
+  input { flex: 1; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; outline: none; }
+  input:focus { border-color: var(--accent); }
+  .go { padding: 8px 14px; border-radius: 8px; background: var(--accent); color: var(--on-accent); }
+  .skip { margin-top: 16px; color: var(--dim); padding: 6px 12px; }
+  .skip:hover { color: var(--text); }
+
+  .pal input { width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 14px 14px 0 0;
+    padding: 16px 18px; font-size: 15px; background: transparent; }
+  .pal ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
+  .pal li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+  .pal li.sel { background: var(--accent-soft); }
+  .pal li code { font: 12px "SF Mono", Menlo, monospace; color: var(--dim); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+  .pal .status { padding: 12px 18px; color: var(--dim); display: none; }
+  .pal .status.show { display: block; }
+
+  /* Sidebar footer: settings. */
+  .side-foot { padding: 8px; border-top: 1px solid var(--hover); }
+  .gear, .nav-item, .nav-back { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 6px; text-align: left; }
+  .gear, .nav-back { color: var(--dim); }
+  .gear:hover, .nav-back:hover, .nav-item:hover { background: var(--hover); color: var(--text); }
+  .nav-item.on, .in-settings .gear { background: var(--active); color: var(--text); }
+  .nav-back { margin-bottom: 14px; -webkit-app-region: no-drag; }
+
+  /* Settings mode: the sidebar lists sections, the main area shows the page. Terminals keep running, hidden. */
+  .set-nav, .set-page { display: none; }
+  .in-settings .side-scroll, .in-settings .top, .in-settings .term, .in-settings .dock { display: none; }
+  .in-settings .set-nav { display: block; flex: 1; overflow-y: auto; padding: 52px 8px 12px; }
+  .in-settings .set-page { display: block; grid-row: 1 / 4; grid-column: 2; min-width: 0; overflow-y: auto;
+    background: var(--bg); padding: 0 32px 40px; }
+  .set-drag { height: 44px; -webkit-app-region: drag; }
+  .set-page h1, .set-page h4, .set-list, .sample { max-width: 620px; margin-left: auto; margin-right: auto; }
+  .set-page h1 { margin-top: 8px; margin-bottom: 20px; font-size: 22px; }
+  .set-page h4 { margin-top: 28px; margin-bottom: 8px; font-size: 11px; font-weight: 600; color: var(--dim);
+    text-transform: uppercase; letter-spacing: .06em; }
+  .set-list { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  .set-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 16px; }
+  .set-row + .set-row { border-top: 1px solid var(--line); }
+  .set-row small { display: block; margin-top: 2px; color: var(--dim); }
+  .set-row select { width: 220px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; }
+  .stepper { display: flex; align-items: center; gap: 6px; color: var(--dim); }
+  .stepper input { flex: none; width: 56px; padding: 6px 8px; text-align: center; font-variant-numeric: tabular-nums; }
+  .stepper input::-webkit-inner-spin-button { appearance: none; }
+  .arrows { display: grid; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .arrows button { height: 15px; padding: 0 7px; display: grid; place-items: center; color: var(--dim); background: var(--bg); }
+  .arrows button + button { border-top: 1px solid var(--line); }
+  .arrows button:hover { color: var(--text); background: var(--hover); }
+  .seg { display: flex; width: 220px; padding: 2px; border-radius: 8px; background: var(--hover); }
+  .seg button { flex: 1; padding: 5px; border-radius: 6px; color: var(--dim); }
+  .seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px #0003; }
+  .sample { padding: 16px 18px; border-radius: var(--radius); border: 1px solid var(--line); line-height: 1.25;
+    white-space: pre; overflow: hidden; }
+  .sample .dots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .sample .dots i { width: 14px; height: 14px; border-radius: 4px; }
+
+  /* Font smoothing (xterm v6 draws text as DOM, so plain CSS reaches it). "default" = macOS's own. */
+  [data-smooth="thin"] .xterm, [data-smooth="thin"] .sample { -webkit-font-smoothing: antialiased; }
+  [data-smooth="off"] .xterm, [data-smooth="off"] .sample { -webkit-font-smoothing: none; }
+
+  /* Settings → Stay frosted when unfocused: Off. visualEffectState can't change at runtime, so paint over the glass. */
+  :root[data-frost="off"].blurred .side, :root[data-translucent="off"] .side { background: var(--panel); }
+  :root[data-translucent="off"] #frostRow { opacity: .4; pointer-events: none; } /* only matters when translucent */
+  .switch { appearance: none; flex: none; position: relative; width: 36px; height: 22px; margin: 0; padding: 0; border: 0;
+    border-radius: 999px; background: var(--active); cursor: pointer; transition: background .15s; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px #0004; transition: transform .15s var(--ease); }
+  .switch:checked { background: var(--accent); }
+  .switch:checked::after { transform: translateX(14px); }
+  .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <nav id="crumbs" style="display:flex;align-items:center;gap:2px;overflow:hidden"></nav>
+    <div class="spacer"></div>
+    <button class="ibtn" id="splitR" data-key="⌘D" title="Split right (⌘D)"><i data-icon="columns-2"></i></button>
+    <button class="ibtn" id="splitD" data-key="⌘⇧D" title="Split down (⌘⇧D)"><i data-icon="rows-2"></i></button>
+    <button class="ibtn" id="pvToggle" data-key="⌘P" title="Preview (⌘P)"><i data-icon="panel-right"></i></button>
+  </header>
+
+  <aside class="side">
+    <div class="drag"></div>
+    <div class="side-scroll">
+      <button class="qsearch" id="openPal"><i data-icon="search"></i><span>Quick search</span><kbd>⌘K</kbd></button>
+      <div class="chips" id="chips"></div>
+      <div class="sec"><h3>Terminals</h3><button class="add" id="newTab" data-key="⌘T" title="New tab (⌘T)" aria-label="New tab"><i data-icon="plus"></i></button></div>
+      <div id="tabs"></div>
+      <h3 class="folder">In this folder</h3>
+      <div id="entries"></div>
+    </div>
+    <nav class="set-nav">
+      <button class="nav-back" id="closeSettings"><i data-icon="chevron-left"></i>Back to terminal</button>
+      <h3>Settings</h3>
+      <button class="nav-item on"><i data-icon="sun"></i>Appearance</button>
+    </nav>
+    <div class="side-foot">
+      <button class="gear" id="openSettings" data-key="⌘,"><i data-icon="settings"></i>Settings</button>
+    </div>
+  </aside>
+  <div class="side-grip" id="sideGrip"></div>
+
+  <main class="term" id="term"></main>
+
+  <div class="pv-grip" id="pvGrip"></div>
+  <section class="pv" id="pv" data-mode="file">
+    <header class="pv-head">
+      <span class="seg" id="pvSeg"><button data-v="file">File</button><button data-v="app">App</button></span>
+      <div class="pv-bar file">
+        <span class="pv-name" id="pvName"></span>
+        <button class="pv-act" id="pvPage" style="display:none">View as page</button>
+        <button class="pv-act" id="pvOpen"></button>
+        <button class="pv-act" id="pvReveal" title="Show in Finder" aria-label="Show in Finder"><i data-icon="folder-search"></i></button>
+      </div>
+      <div class="pv-bar app">
+        <button class="pv-act" id="pvBack" title="Back" aria-label="Back"><i data-icon="chevron-left"></i></button>
+        <button class="pv-act" id="pvFwd" title="Forward" aria-label="Forward"><i data-icon="chevron-right"></i></button>
+        <button class="pv-act" id="pvReload" title="Reload" aria-label="Reload"><i data-icon="rotate-cw"></i></button>
+        <input id="pvUrl" placeholder="localhost:3000" spellcheck="false" autocomplete="off">
+        <button class="pv-act" id="pvBrowser" title="Open in your browser" aria-label="Open in your browser"><i data-icon="external-link"></i></button>
+      </div>
+      <button class="pv-act" id="pvClose" title="Close preview (⌘P)" aria-label="Close preview"><i data-icon="x"></i></button>
+    </header>
+    <div class="pv-body">
+      <div class="pv-view" id="pvFile"><div class="pv-msg"><b>Nothing to preview yet</b>Click a file in the sidebar to see it here.</div></div>
+      <webview id="pvApp" class="blank" partition="persist:preview" allowpopups></webview>
+      <div class="pv-appmsg show" id="pvAppMsg"></div>
+    </div>
+  </section>
+
+  <section class="set-page">
+    <div class="set-drag"></div>
+    <h1>Appearance</h1>
+    <div class="set-list">
+      <label class="set-row"><span>Theme<small>Colours for the terminal and the whole app</small></span><select id="setTheme"></select></label>
+      <label class="set-row"><span>Font</span><select id="setFont"></select></label>
+      <div class="set-row"><span>Font size</span>
+        <span class="stepper"><input type="number" id="setSize" min="8" max="32" aria-label="Font size">
+          <span class="arrows"><button id="sizeUp" aria-label="Bigger"><i data-icon="chevron-up"></i></button><button id="sizeDown" aria-label="Smaller"><i data-icon="chevron-down"></i></button></span>px</span></div>
+      <div class="set-row"><span>Font smoothing<small>Thin looks lighter and crisper on Retina screens</small></span>
+        <span class="seg" id="setSmooth"><button data-v="default">Default</button><button data-v="thin">Thin</button><button data-v="off">Off</button></span></div>
+    </div>
+    <h4>Sidebar</h4>
+    <div class="set-list">
+      <label class="set-row"><span>Translucent sidebar<small>See your desktop through the sidebar</small></span>
+        <input type="checkbox" class="switch" id="setTranslucent"></label>
+      <label class="set-row" id="frostRow"><span>Stay frosted when unfocused<small>Off goes flat when another app is in front, like Finder</small></span>
+        <input type="checkbox" class="switch" id="setFrost"></label>
+    </div>
+    <h4>Preview</h4>
+    <div class="sample" id="preview"></div>
+  </section>
+  <div id="hidden"></div>
+
+  <footer class="dock">
+    <div class="oops" id="oops">
+      <span class="blob" id="oopsBlob" hidden></span>
+      <p id="oopsText">That didn't work.</p>
+      <button id="explainBtn">What went wrong?</button>
+      <button id="fixBtn" style="display:none">Type the fix</button>
+      <button id="oopsClose" aria-label="Dismiss"><i data-icon="x"></i></button>
+    </div>
+    <div class="ready" id="ready"><span class="dot"></span><p>Your app is running at <b id="readyUrl"></b></p>
+      <button class="go" id="readyShow">Show it</button><button class="x" id="readyClose" aria-label="Dismiss"><i data-icon="x"></i></button></div>
+    <div class="hint" id="hint"></div>
+    <div class="running"><span class="blob" id="runBlob"></span>Something is running. <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button></div>
+    <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next tab</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
+  </footer>
+</div>
+
+<div class="overlay" id="startOv">
+  <div class="card start">
+    <h1>Where do you want to work?</h1>
+    <p>Pick a folder. You can always move around later from the sidebar.</p>
+    <div id="recents"></div>
+    <div class="label">Or</div>
+    <button class="opt" id="pick"><span class="ico"><i data-icon="folder-plus"></i></span><span>Choose a folder…<small>Any folder on your Mac</small></span></button>
+    <button class="opt" id="cloneOpt"><span class="ico"><i data-icon="download"></i></span><span>Get a project from GitHub<small>Paste the link, pick where it goes</small></span></button>
+    <div class="clone" id="clone"><input id="cloneUrl" placeholder="https://github.com/team/project"><button class="go" id="cloneGo">Next</button></div>
+    <button class="skip" id="skip">Just open the terminal →</button>
+  </div>
+</div>
+
+<div class="overlay" id="palOv">
+  <div class="card pal">
+    <input id="palIn" placeholder="What do you want to do? e.g. “go back a folder”" autocomplete="off" spellcheck="false">
+    <div class="status" id="palStatus"></div>
+    <ul id="palList"></ul>
+  </div>
+</div>
+
+<script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+<script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+<script src="node_modules/dompurify/dist/purify.min.js"></script>
+<script src="panes.js"></script>
+<script src="icons.js"></script>
+<script src="preview.js"></script>
+<script src="themes.js"></script>
+<script src="vendor/bloub/bloub.js"></script>
+<script src="blob.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>
