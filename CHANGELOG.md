@@ -41,6 +41,7 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 - **Find with ⌘F.** Search what's in a terminal: every match lights up, Enter and ⇧Enter move between them, Esc closes. ⌘G finds the next one.
 - **Links you can click.** ⌘-click any web address in the output to open it in your browser. Your own app (localhost) shows up next to the terminal, like **Show it**.
 - **Open things in their own apps.** Prefer your browser and your usual apps? Turn off **Settings → Links & files → Open links and files inside Fork**: your app opens in your browser, and files you click open in Preview, Figma or whatever your Mac uses for them.
+- **The blob is pixel art now.** Every blob (in the sidebar, beside "Something is running", in "What went wrong?" and on the welcome cards) is drawn in solid square pixels, like a little game sprite. It still breathes, blinks, thinks and pulls faces the same way, and follows your theme colours.
 
 **Better**
 - **Scroll back ten times further:** each terminal keeps its last 10,000 lines instead of 1,000, so a long Claude conversation is still there.

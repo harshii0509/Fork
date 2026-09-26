@@ -47,14 +47,22 @@ The script stops with a plain message at the first problem. In order, it:
 
 People then see the **Fork X.Y.Z** pill within the hour (Fork checks hourly and when you switch back to it) and get the notes as What's new after updating.
 
-## 4. When a release is broken
+## 4. The PostHog dashboard
+
+"Fork — how it's going" (https://us.posthog.com/project/388234/dashboard/2139445) shows installs, the first run, and what people use. Its charts are defined in `scripts/dashboard-charts.mjs`.
+
+- **Every release updates it** as a last step. Charts are matched by name, so the link never changes. If that step fails, the release is still fine; fix the problem, then run `npm run dashboard`.
+- **Adding an event?** `npm run check` fails until the event is on a chart in `scripts/dashboard-charts.mjs`, or listed in `NOT_CHARTED` with a reason. Then `npm run dashboard` (or the next release) puts it live.
+- **Key:** a PostHog personal API key in `~/.config/fork/posthog-key` (chmod 600), with scopes Project read, Dashboard write, Insight write and Query read. It's never kept in the repo.
+
+## 5. When a release is broken
 
 The pill only ever offers a *newer* version, so there's no way to move people back. Instead:
 
 1. **Really bad** (Fork won't open, or updating fails)? Delete that release on GitHub straight away: `gh release delete vX.Y.Z --cleanup-tag`. The "latest" link then serves the previous version to anyone installing. Also run `git tag -d vX.Y.Z`.
 2. Fix it, add a **Fixed** line under Unreleased, and ship the next patch. Everyone who got the broken one updates to it.
 
-## 5. Road to 1.0
+## 6. Road to 1.0
 
 | Stage | Versions | What ships | Move on when |
 |---|---|---|---|

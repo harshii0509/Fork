@@ -8,6 +8,7 @@
     "start": "electron .",
     "check": "node check.mjs",
     "release": "node scripts/release.mjs",
+    "dashboard": "node scripts/posthog-dashboard.mjs",
     "dmg:background": "electron build/render-dmg-background.mjs",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper",
     "build:bloub": "esbuild vendor/bloub/src/entry.ts --bundle --format=iife --global-name=Bloub --minify --legal-comments=inline --banner:js=\"/* Bloub (MIT, see vendor/bloub/LICENSE). Built from vendor/bloub/src by npm run build:bloub. */\" --outfile=vendor/bloub/bloub.js",

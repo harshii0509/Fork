@@ -117,7 +117,7 @@
   .tab.active { background: color-mix(in srgb, var(--text) 10%, transparent); }
   /* Each tab's blob (blob.js) shows its state: ready, running, failed, finished while away, dozing. */
   .tblob { display: grid; place-items: center; flex: none; width: 16px; height: 16px; }
-  .tblob svg { margin: -3px; } /* 22px SVG, 16px slot: the blob fills it without making the row taller */
+  .tblob > * { margin: -3px; } /* 22px blob, 16px slot: the blob fills it without making the row taller */
   .tname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tcount { font-size: 11px; color: var(--dim); white-space: nowrap; }
   .tclose { opacity: 0; color: var(--dim); padding: 2px; border-radius: 4px; }

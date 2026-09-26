@@ -149,6 +149,7 @@ const pose = bloub.sample(1);
 assert.ok(pose.bodyPath.length > 20 && !/NaN|Infinity/.test(pose.bodyPath));
 assert.ok(pose.dots.length >= 2 && pose.dots.every((d) => Number.isFinite(d.x + d.r)));
 bloub.dispose();
+assert.equal(typeof bctx.Bloub.createPixelView, 'function'); // blob.js draws them as pixel art
 
 // --- Onboarding (onboarding.js, browser script): three cards, and every tour step points at something real ---
 const ob = { window: {} };
@@ -245,6 +246,36 @@ const trimmed = clean({ v: 1, windows: [{ tabs: [{ root: { cwd: here, screen: lo
 assert.ok(trimmed.length <= MAX_SCREEN && trimmed.startsWith('line\n'));   // keeps the end, cut at a line
 assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 50 }, tabs: [{ root: { cwd: here } }] }] }, ctx).windows[0].bounds, undefined);
 
+}
+
+// --- Dashboard (scripts/dashboard-charts.mjs): every event Fork sends is on a chart ---
+{
+  const { chartedEvents, NOT_CHARTED } = await import('./scripts/dashboard-charts.mjs');
+  // Event names in the first argument of each track( call, e.g. track(r.done ? 'welcome_done' : 'welcome_skipped', …).
+  // Only the first argument: values like { kind: 'ask_claude' } aren't events.
+  const sentEvents = (src) => {
+    const out = new Set();
+    for (const m of src.matchAll(/\btrack\(/g)) {
+      let i = m.index + m[0].length, depth = 0, arg = '';
+      for (; i < src.length; i++) {
+        const ch = src[i];
+        if ('([{'.includes(ch)) depth++;
+        if (')]}'.includes(ch)) { if (!depth) break; depth--; }
+        if (ch === ',' && !depth) break;
+        arg += ch;
+      }
+      for (const [, name] of arg.matchAll(/'([a-z]+(?:_[a-z]+)*)'/g)) out.add(name);
+    }
+    return out;
+  };
+  assert.deepEqual([...sentEvents("dt.track(r.done ? 'welcome_done' : 'welcome_skipped', { card: 'x_y' }); dt.track('brand_new_event');")],
+    ['welcome_done', 'welcome_skipped', 'brand_new_event']);
+  assert.deepEqual([...sentEvents("dt.track('palette_used', { kind: 'ask_claude', ok: !!r });")], ['palette_used']);
+  const charted = chartedEvents();
+  const sent = new Set(['renderer.js', 'main.js', 'onboarding.js'].flatMap((f) => [...sentEvents(readFileSync(f, 'utf8'))]));
+  assert.ok(sent.size > 20, 'found the events Fork sends');
+  for (const e of sent) assert.ok(charted.has(e) || e in NOT_CHARTED,
+    `Fork sends "${e}" but no dashboard chart shows it. Add it to scripts/dashboard-charts.mjs (or NOT_CHARTED with a reason).`);
 }
 
 console.log('check ok');
