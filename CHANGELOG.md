@@ -36,6 +36,9 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 ## Changelog
 
 ### Unreleased
+
+### 0.3.0 — 2026-09-26
+
 **New**
 - **"What went wrong?" knows the common errors itself.** Missing tools, typos in folder names, a port that's already in use, a missing script, Git asking who you are, merge conflicts and about 30 more are explained instantly, even offline and without Claude, with a fix Fork types for you. For anything unusual, **Ask AI** takes a look.
 - **⌘K answers in place.** Type what you want, like "how to run a dev server", and ⌘K shows the answer right there: what it does, the command, and **Run**. One Enter runs it; nothing is left half-typed in the terminal. Commands that need a name (a new folder, a branch, a GitHub link) ask for it in the card. **Ask AI** only shows when Fork's own list has no answer.
