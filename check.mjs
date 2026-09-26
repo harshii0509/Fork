@@ -1,9 +1,10 @@
 // node check.mjs — the context-aware suggestions pick the right next step.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { suggest } from './suggest.mjs';
 
 const labels = (dir) => suggest(dir).map((s) => s.label);
@@ -330,10 +331,10 @@ assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 
     assert.ok(!looksLikeCommand(no), String(no));
 }
 
-// --- Jev (jev.mjs): its two questions cover every preset and every known error, and the key is never committed ---
+// --- Jev (jev.mjs): its two questions cover every preset and every known error; it goes through Fork's server, no key in the app ---
 {
   const { ERRORS, explainEntry } = await import('./errors.mjs');
-  const { commandQuestion, errorQuestion, judge } = await import('./jev.mjs');
+  const { commandQuestion, errorQuestion, judge, INSTRUCTIONS } = await import('./jev.mjs');
   const { PALETTE, shape } = await import('./suggest.mjs');
   for (const p of PALETTE) { // ⌘K: every blank ({1}, {2}) has a field to type it in, and every field is used
     const blanks = [...p.cmd.matchAll(/\{(\d)\}/g)].map((m) => +m[1]);
@@ -348,9 +349,28 @@ assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 
   assert.deepEqual(Object.keys(cq.criteria), [...PALETTE.map((p) => p.label), 'none']);
   assert.ok(!/\{\d\}/.test(JSON.stringify(cq)), 'Jev sees named blanks (mkdir <Folder name>), not {1}');
   assert.deepEqual(Object.keys(eq.criteria), [...ERRORS.map((e) => e.id), 'none']);
-  assert.equal(await judge(null, {}, cq), null); // no key: no call, no error
+  // judge against a stand-in for Fork's server: its answer, or null when the server fails, is slow or is down
+  const { createServer } = await import('node:http');
+  let reply = (res) => res.end(JSON.stringify({ choice: 'Go up a folder', confidence: 0.8 })), got;
+  const srv = createServer((req, res) => { let b = ''; req.on('data', (d) => (b += d)); req.on('end', () => { got = JSON.parse(b); reply(res); }); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+  assert.deepEqual(await judge({ request: 'up one' }, cq, undefined, url), { choice: 'Go up a folder', confidence: 0.8 });
+  assert.deepEqual(got, { state: { request: 'up one' }, question: cq }); // only the text and the question: no key
+  reply = (res) => { res.statusCode = 502; res.end('{}'); };
+  assert.equal(await judge({ request: 'x' }, cq, undefined, url), null);
+  reply = (res) => res.end('{}'); // "nothing fits"
+  assert.equal(await judge({ request: 'x' }, cq, undefined, url), null);
+  srv.close();
+  assert.equal(await judge({ request: 'x' }, cq, undefined, url), null); // server gone
+  // The website only accepts Fork's exact instructions: keep its copy in step (when fork-website is next door).
+  const route = join(dirname(fileURLToPath(import.meta.url)), '../fork-website/app/api/jev/route.ts');
+  if (existsSync(route)) for (const i of Object.values(INSTRUCTIONS))
+    assert.ok(readFileSync(route, 'utf8').includes(JSON.stringify(i)), `fork-website's api/jev doesn't accept: ${i}`);
+  // No TypeSafe key anywhere Fork ships from.
   const { execFileSync } = await import('node:child_process');
-  assert.ok(execFileSync('git', ['check-ignore', 'typesafe.json'], { encoding: 'utf8' }).trim(), 'typesafe.json must be gitignored');
+  const tracked = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).split('\n').filter((f) => f && existsSync(f) && !/\.(png|jpe?g|gif|mp4|icns|dmg)$/.test(f));
+  for (const f of tracked) assert.ok(!/apikey_[A-Za-z0-9]{16,}/.test(readFileSync(f, 'utf8')), `${f} contains what looks like a TypeSafe key`);
 }
 
 // --- Ask AI (claude.mjs): Claude's reply becomes plain lines, code fences and blank lines dropped ---

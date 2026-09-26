@@ -36,6 +36,8 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 ## Changelog
 
 ### Unreleased
+**Better**
+- **Smarter matching goes through Fork's own server**, so Fork no longer carries a TypeSafe key inside the app. It works the same: plain words in ⌘K and errors worded differently still find the right answer.
 
 ### 0.3.0 — 2026-09-26
 

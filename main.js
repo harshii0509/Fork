@@ -8,7 +8,7 @@ import pty from 'node-pty';
 import { marked } from 'marked';
 import { suggest, PALETTE, shape, pm, scripts } from './suggest.mjs';
 import { diagnose, explainEntry, looksLikeCommand, ERRORS } from './errors.mjs';
-import { loadKey, judge, commandQuestion, errorQuestion } from './jev.mjs';
+import { judge, commandQuestion, errorQuestion } from './jev.mjs';
 import { list, readPreview, findEditor } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
@@ -233,7 +233,6 @@ function errorContext(cwd) {
     nvmrc: existsSync(join(dir, '.nvmrc')), hasBrew: onPath('brew'), hasGh: onPath('gh') };
 }
 // Jev (jev.mjs) only when the person acts and Smarter matching is on (smart, from the page's settings).
-const JEV_KEY = loadKey();
 const jevLog = app.isPackaged ? () => {} : console.log;
 const COMMAND_Q = commandQuestion(PALETTE.map((p) => ({ ...p, cmd: shape(p) }))), ERROR_Q = errorQuestion(ERRORS, (id) => explainEntry(id).text);
 // 1. Fork's library (instant). 2. Jev picks the closest known error, shown in Fork's own words. 3. null: "unusual".
@@ -241,13 +240,13 @@ ipcMain.handle('explain', async (_, output, cwd, smart) => {
   const ctx = errorContext(cwd), hit = diagnose(output, ctx);
   if (hit) return { ...hit, source: 'fork' };
   if (!smart) return null;
-  const a = await judge(JEV_KEY, { terminal_output: String(output).slice(-4000) }, ERROR_Q, jevLog);
+  const a = await judge({ terminal_output: String(output).slice(-4000) }, ERROR_Q, jevLog);
   const r = a && a.choice !== 'none' && a.confidence >= 0.6 ? explainEntry(a.choice, ctx) : null;
   return r && { ...r, source: 'jev' };
 });
 // ⌘K: which built-in command does this plain-English request mean? A label from PALETTE, or null.
 ipcMain.handle('palette:match', async (_, text) => {
-  const a = await judge(JEV_KEY, { request: String(text).slice(0, 300) }, COMMAND_Q, jevLog);
+  const a = await judge({ request: String(text).slice(0, 300) }, COMMAND_Q, jevLog);
   return a && a.choice !== 'none' && a.confidence >= 0.45 ? a.choice : null;
 });
 ipcMain.handle('explain:ai', async (_, output, cwd) => {
