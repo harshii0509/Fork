@@ -1,6 +1,6 @@
 {
   "name": "designer-terminal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "main": "main.js",
@@ -82,8 +82,17 @@
       "title": "Fork",
       "iconSize": 100,
       "contents": [
-        { "x": 170, "y": 190, "type": "file" },
-        { "x": 430, "y": 190, "type": "link", "path": "/Applications" }
+        {
+          "x": 170,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 430,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     }
   }

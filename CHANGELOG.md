@@ -36,6 +36,9 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 ## Changelog
 
 ### Unreleased
+
+### 0.2.1 — 2026-09-26
+
 **Better**
 - **New versions show up within the hour.** Fork looks for updates every hour and whenever you switch back to it, instead of every 6 hours. It still asks GitHub at most once an hour.
 
