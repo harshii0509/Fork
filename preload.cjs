@@ -25,7 +25,8 @@ contextBridge.exposeInMainWorld('dt', {
   recents: (add) => ipcRenderer.invoke('recents', add),
   ask: (request, cwd) => ipcRenderer.invoke('ask', request, cwd),
   appearance: (dark) => ipcRenderer.send('appearance', dark),
-  explain: (output, cwd) => ipcRenderer.invoke('explain', output, cwd),
+  explain: (output, cwd) => ipcRenderer.invoke('explain', output, cwd), // Fork's library (errors.mjs), or null
+  explainAI: (output, cwd) => ipcRenderer.invoke('explain:ai', output, cwd), // ask Claude
 
   version: () => ipcRenderer.invoke('version'),
   updateCheck: () => ipcRenderer.invoke('update:check'),

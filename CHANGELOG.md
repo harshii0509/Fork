@@ -37,6 +37,7 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 **New**
+- **"What went wrong?" knows the common errors itself.** Missing tools, typos in folder names, a port that's already in use, a missing script, Git asking who you are, merge conflicts and about 30 more are explained instantly, even offline and without Claude, with a fix Fork types for you. For anything unusual, **Ask Claude** takes a look.
 - **Fork reopens the way you left it.** Quit, close the window or update, and next time your tabs, splits and folders are back, with what was on screen above a quiet "Restored" line. If Claude was running, it picks up the conversation where it left off. Closing every tab yourself means you're done, so the next start is fresh. Turn it off in **Settings → Startup**.
 - **Find with ⌘F.** Search what's in a terminal: every match lights up, Enter and ⇧Enter move between them, Esc closes. ⌘G finds the next one.
 - **Links you can click.** ⌘-click any web address in the output to open it in your browser. Your own app (localhost) shows up next to the terminal, like **Show it**.
@@ -44,6 +45,7 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 - **The blob is pixel art now.** Every blob (in the sidebar, beside "Something is running", in "What went wrong?" and on the welcome cards) is drawn in solid square pixels, like a little game sprite. It still breathes, blinks, thinks and pulls faces the same way, and follows your theme colours.
 
 **Better**
+- **Explanations read only the command that failed**, not whatever else is on screen, so they're more accurate. If Claude's suggestion isn't a real command, Fork doesn't offer to type it.
 - **Scroll back ten times further:** each terminal keeps its last 10,000 lines instead of 1,000, so a long Claude conversation is still there.
 - **Smoother with busy output.** Terminals are drawn by your Mac's graphics chip, so long output and Claude's screens scroll without stutter.
 

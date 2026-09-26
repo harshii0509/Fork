@@ -151,6 +151,50 @@ assert.ok(pose.dots.length >= 2 && pose.dots.every((d) => Number.isFinite(d.x + 
 bloub.dispose();
 assert.equal(typeof bctx.Bloub.createPixelView, 'function'); // blob.js draws them as pixel art
 
+// --- Games (games.js, browser script): the rules of Snake, Stack and Space Run ---
+const gm = { window: {} };
+runInNewContext(readFileSync(new URL('./games.js', import.meta.url), 'utf8'), gm);
+const { snake, stack, space, screen, seeded, W: GW, H: GH } = gm.window.Games.logic;
+{
+  const r = seeded(1), s = snake.init(r);
+  s.food = { x: 8, y: 5 }; // right in front of the head
+  snake.step(s, new Set(), r);
+  assert.equal(s.body.length, 5); assert.equal(s.score, 1); // ate and grew
+  assert.ok(!s.body.some((p) => p.x === s.food.x && p.y === s.food.y)); // new food lands somewhere free
+  snake.press(s, 'left'); assert.equal(s.queue.length, 0); // can't turn back on yourself
+  snake.press(s, 'up'); snake.press(s, 'left'); assert.deepEqual([...s.queue], ['up', 'left']); // quick turns queue up
+  const w = snake.init(r); w.food = null;
+  for (let i = 0; i < 20 && !w.over; i++) snake.step(w, new Set(), r);
+  assert.ok(w.over); // ran into the wall
+  const c = snake.init(r); c.food = null;
+  c.body = [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 4, y: 6 }, { x: 5, y: 6 }, { x: 6, y: 6 }]; c.dir = 'down';
+  snake.step(c, new Set(), r); assert.ok(c.over); // bit itself
+}
+{
+  const r = seeded(2), s = stack.init(r);
+  for (let i = 0; i < 40; i++) { stack.press(s, 'up', r); stack.press(s, 'left', r); }
+  assert.ok(s.piece.cells.every(([x]) => s.piece.x + x >= 0)); // turning at the wall stays inside the well
+  s.board[19] = Array(10).fill(1); s.board[19][0] = 0;
+  s.piece = { k: 'I', cells: [[0, 0], [0, 1], [0, 2], [0, 3]], x: 0, y: 0 };
+  stack.press(s, 'fire', r); // hard drop into the gap
+  assert.equal(s.lines, 1); assert.ok(s.score >= 40); assert.equal(s.board[19].filter(Boolean).length, 1); // the full row cleared; the rest of the I dropped into it
+  const f = stack.init(r);
+  for (let i = 0; i < 200 && !f.over; i++) stack.press(f, 'fire', r);
+  assert.ok(f.over); // piling up to the top ends the game
+}
+{
+  const r = seeded(3), s = space.init(r);
+  s.foes = [{ x: 20, y: s.ship.y, base: s.ship.y, type: 0, ph: 0, speed: 0 }];
+  for (let i = 0; i < 12; i++) space.step(s, new Set(['fire']), r);
+  assert.ok(s.score >= 5); // shot it down
+  const h = space.init(r);
+  h.foes = [{ x: h.ship.x + 2, y: h.ship.y, base: h.ship.y, type: 0, ph: 0, speed: 0 }];
+  space.step(h, new Set(), r); assert.equal(h.lives, 2); // flew into it
+  for (let i = 0; i < 400 && !h.over; i++) { h.shots.push({ x: h.ship.x + 3, y: h.ship.y + 2 }); space.step(h, new Set(), r); }
+  assert.ok(h.over); // out of lives
+  for (const g of [snake, stack, space]) { const sc = screen(); g.draw(sc, g.init(seeded(4))); assert.ok(sc.b.some(Boolean) && sc.b.length === GW * GH); }
+}
+
 // --- Onboarding (onboarding.js, browser script): three cards, and every tour step points at something real ---
 const ob = { window: {} };
 runInNewContext(readFileSync(new URL('./onboarding.js', import.meta.url), 'utf8'), ob);
@@ -246,6 +290,31 @@ const trimmed = clean({ v: 1, windows: [{ tabs: [{ root: { cwd: here, screen: lo
 assert.ok(trimmed.length <= MAX_SCREEN && trimmed.startsWith('line\n'));   // keeps the end, cut at a line
 assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 50 }, tabs: [{ root: { cwd: here } }] }] }, ctx).windows[0].bounds, undefined);
 
+}
+
+// --- "What went wrong?" without AI (errors.mjs): every sample lands on its own entry, with the right fix ---
+{
+  const { ERRORS, NOT_ERRORS, diagnose } = await import('./errors.mjs');
+  const ids = new Set();
+  for (const e of ERRORS) {
+    assert.ok(!ids.has(e.id), `errors.mjs: "${e.id}" is used twice`);
+    ids.add(e.id);
+    assert.ok(e.samples?.length, `errors.mjs: "${e.id}" needs at least one sample`);
+    for (const s of e.samples) {
+      const { out, ctx, ...want } = typeof s === 'string' ? { out: s } : s;
+      const r = diagnose(out, ctx);
+      assert.equal(r?.id, e.id, `errors.mjs: this sample should be "${e.id}" but got "${r?.id}":\n${out}`);
+      if ('fix' in want) assert.equal(r.fix, want.fix, `errors.mjs: "${e.id}" fix`);
+      assert.ok(r.text && !/undefined/.test(r.text), `errors.mjs: "${e.id}" text reads "${r.text}"`);
+    }
+  }
+  for (const out of NOT_ERRORS) assert.equal(diagnose(out), null, `errors.mjs: normal output was taken for an error:\n${out}`);
+  assert.equal(diagnose(''), null);
+  const { looksLikeCommand } = await import('./errors.mjs');
+  for (const ok of ['npm install', 'git push -u origin main', 'ls', './build.sh', 'NODE_ENV=production npm run build', 'cd ~/site && npm i'])
+    assert.ok(looksLikeCommand(ok), ok);
+  for (const no of ['Run the command again and share the exact command text you typed.', 'Check your Wi-Fi.', '', undefined, 'Open VS Code'])
+    assert.ok(!looksLikeCommand(no), String(no));
 }
 
 // --- Dashboard (scripts/dashboard-charts.mjs): every event Fork sends is on a chart ---

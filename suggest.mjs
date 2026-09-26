@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const has = (dir, f) => existsSync(join(dir, f));
-const scripts = (dir) => {
+export const scripts = (dir) => {
   try { return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).scripts || {}; }
   catch { return {}; }
 };

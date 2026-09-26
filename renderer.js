@@ -88,6 +88,12 @@ async function newPane(cwd, { screen, when } = {}) {
     return true;
   });
   term.textarea.addEventListener('focus', () => focusPane(id)); // clicking a pane makes it active
+  // Claude Code starts the title with a spinner (◐ ◓ ◑ ◒) while it works and ✳ while it waits for you.
+  term.onTitleChange((title) => {
+    const was = pane.thinking;
+    pane.thinking = pane.busy && pane.tool === 'claude' && /^\S /.test(title) && !title.startsWith('✳');
+    if (was && !pane.thinking) workDone(pane);
+  });
   new ResizeObserver(() => {
     if (!el.offsetParent) return; // hidden tab
     fit.fit();
@@ -113,6 +119,9 @@ async function newPane(cwd, { screen, when } = {}) {
   });
   term.parser.registerOscHandler(133, (data) => {
     if (data.startsWith('C')) {
+      // Where this command's output starts, so "What went wrong?" reads only that. A marker follows the line as the buffer scrolls.
+      pane.cmdMark?.dispose();
+      pane.cmdMark = term.registerMarker(0);
       pane.busy = true; pane.failed = false; pane.lastUsed = Date.now(); if (pane === active()) hideOops();
       pane.tool = data.slice(2); // the command's first word; analytics.mjs keeps it only if it's a known tool
       dt.track('command_run', { tool: pane.tool, source: pane.suggested ? 'fork' : 'typed' });
@@ -126,6 +135,8 @@ async function newPane(cwd, { screen, when } = {}) {
       if (tabOf(pane.id) !== tab()) pane.unseen = true; // finished while you were elsewhere
       pane.lastUsed = Date.now();
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
+      pane.thinking = false;
+      workDone(pane);
     }
     syncBusy();
     renderTabs();
@@ -189,6 +200,7 @@ $('sideGrip').onpointerdown = (e) => drag(e, (x) => { $('app').style.setProperty
 
 function focusPane(id) {
   $('app').classList.remove('in-settings'); // ⌘T, ⌘1–9, splits: back to the terminal
+  if (Games.isOpen()) Games.close(); // and away from a game
   const t = tabOf(id);
   if (!t) return;
   if (t === tab() && t.activeId === id) return;
@@ -341,6 +353,29 @@ function syncBusy() {
   $('app').classList.toggle('busy', busy);
   busy ? runBlob.start() : runBlob.stop();
 }
+
+// --- Games (games.js): Snake, Stack and Space Run, on a card over the terminals ------------------
+// Opened while something runs, the game keeps an eye on that terminal and pauses when it's done.
+let gameWatch = null; // the pane that was busy when the game opened
+function openGame(id) {
+  const p = active();
+  gameWatch = p?.busy ? p.id : null;
+  $('app').classList.remove('in-settings');
+  Games.open(id);
+}
+function workDone(pane) {
+  if (!Games.isOpen() || pane.id !== gameWatch) return;
+  Games.workDone(pane.tool === 'claude' ? 'Claude’s done' : 'Your command finished');
+  if (!pane.busy) gameWatch = null; // a command that finished has nothing more to say; Claude takes turns
+}
+Games.setup({
+  track: dt.track,
+  onClose: () => active()?.term.focus(),
+  onBack: () => { const id = gameWatch; Games.close(); if (id && panes.has(id)) focusPane(id); },
+});
+$('playGame').onclick = () => openGame();
+// Closing ⌘K or Settings goes back to whatever you were in: the game, if one is open, or the terminal.
+const backToWork = () => (Games.isOpen() ? Games.focus() : active()?.term.focus());
 
 // The core mechanic: put the real command in the prompt. Moving around runs instantly;
 // anything that changes things waits for Enter so the person stays in control and learns it.
@@ -617,27 +652,45 @@ $('readyClose').onclick = () => $('ready').classList.remove('show');
 let fix = null;
 function showOops() {
   $('oopsText').textContent = "That didn't work.";
-  $('explainBtn').style.display = ''; $('fixBtn').style.display = 'none';
+  $('explainBtn').style.display = ''; $('fixBtn').style.display = 'none'; $('askAiBtn').style.display = 'none';
   $('oops').classList.add('show');
 }
 const oopsBlob = Blobs.mount($('oopsBlob'), { size: 40, expression: 'curious' });
 function reading(on) { $('oopsBlob').hidden = !on; on ? oopsBlob.start() : oopsBlob.stop(); }
 function hideOops() { $('oops').classList.remove('show'); reading(false); }
-function lastLines(n = 40) {
-  const b = active().term.buffer.active, end = b.baseY + b.cursorY, out = [];
-  for (let i = Math.max(0, end - n); i <= end; i++) out.push(b.getLine(i)?.translateToString(true) ?? '');
+// The failed command and what it printed: from its prompt line (at most 80 lines), or the last 40 lines.
+function lastLines() {
+  const p = active(), b = p.term.buffer.active, end = b.baseY + b.cursorY, out = [];
+  const from = p.cmdMark && !p.cmdMark.isDisposed && p.cmdMark.line > 0 ? Math.max(p.cmdMark.line - 1, end - 80) : end - 40;
+  for (let i = Math.max(0, from); i <= end; i++) out.push(b.getLine(i)?.translateToString(true) ?? '');
   return out.join('\n').trim();
 }
+// "What went wrong?": Fork's own library first (errors.mjs), instantly. Anything it doesn't know, Claude can look at.
+let failed = null; // { output, cwd } of the command being explained
+function explained({ text, fix: f }, ask) {
+  $('oopsText').textContent = text;
+  fix = f;
+  $('fixBtn').style.display = fix ? '' : 'none';
+  $('askAiBtn').textContent = ask === 'maybe' ? 'Not it? Ask Claude' : 'Ask Claude';
+  $('askAiBtn').classList.toggle('quiet', ask === 'maybe');
+  $('askAiBtn').style.display = ask ? '' : 'none';
+}
 $('explainBtn').onclick = async () => {
-  dt.track('error_explained');
   $('explainBtn').style.display = 'none';
+  failed = { output: lastLines(), cwd: active()?.cwd };
+  const r = await dt.explain(failed.output, failed.cwd);
+  if (r) explained(r, 'maybe');
+  else explained({ text: "This one's unusual. Want Claude to take a look?", fix: null }, 'yes');
+  dt.track('error_explained', r ? { source: 'fork', id: r.id } : { source: 'unknown' }); // id is from Fork's list, never the error
+};
+$('askAiBtn').onclick = async () => {
+  $('askAiBtn').style.display = 'none'; $('fixBtn').style.display = 'none';
   $('oopsText').textContent = 'Reading the error…';
   reading(true);
-  const r = await dt.explain(lastLines(), active()?.cwd);
+  const r = await dt.explainAI(failed.output, failed.cwd);
   reading(false);
-  $('oopsText').textContent = r.text;
-  fix = r.fix;
-  $('fixBtn').style.display = fix ? '' : 'none';
+  explained(r, null);
+  dt.track('error_explained', { source: 'ai', ok: !r.failed });
 };
 $('fixBtn').onclick = () => { hideOops(); send(fix, 'Suggested fix. Read it, then press Enter.', false); dt.track('fix_used'); };
 $('oopsClose').onclick = hideOops;
@@ -814,10 +867,16 @@ $('replayTour').onclick = replayTour;
 
 // --- ⌘K: every command, by what it does -----------------------------------------------
 let palette = [], shown = [], sel = 0;
-dt.palette().then((p) => { palette = p; });
+const GAMES = [
+  { label: 'Play a game', cmd: 'Snake, Stack, Space Run', game: '' },
+  { label: 'Play Snake', cmd: 'Game', game: 'snake' },
+  { label: 'Play Stack', cmd: 'Game · falling blocks', game: 'stack' },
+  { label: 'Play Space Run', cmd: 'Game · shoot-em-up', game: 'space' },
+];
+dt.palette().then((p) => { palette = [...p, ...GAMES]; });
 
 function openPal() { $('palIn').value = ''; renderPal(); $('palOv').classList.add('show'); $('palIn').focus(); dt.track('palette_opened'); }
-function closePal() { $('palOv').classList.remove('show'); active()?.term.focus(); }
+function closePal() { $('palOv').classList.remove('show'); backToWork(); }
 function renderPal() {
   const text = $('palIn').value.trim().toLowerCase();
   const words = text.split(/\s+/).filter(Boolean);
@@ -830,6 +889,7 @@ function renderPal() {
 }
 async function choose(i) {
   const p = shown[i]; if (!p) return;
+  if (p.game !== undefined) { closePal(); openGame(p.game); dt.track('palette_used', { kind: 'game' }); return; }
   if (!p.ask) { closePal(); send(p.cmd, p.why, p.run); dt.track('palette_used', { kind: 'preset' }); return; }
   $('palList').innerHTML = '';
   $('palStatus').textContent = 'Thinking…'; $('palStatus').classList.add('show');
@@ -934,6 +994,7 @@ async function applySettings(s) {
     blue: t.blue, magenta: t.magenta, cyan: t.cyan, mono: fontStack(s.font), 'mono-size': `${s.size}px` }; // the last five: code previews
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(`--${k}`, v);
   Blobs.setColor(t.accent, t.red);
+  Games.setColors({ bg: t.background, ink: t.foreground, accent: t.accent });
   root.style.colorScheme = t.dark ? 'dark' : 'light'; // native bits (dropdowns, spinners) match the theme
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
@@ -1005,7 +1066,7 @@ function openSettings() {
 function closeSettings() {
   if (!inSettings()) return;
   $('app').classList.remove('in-settings');
-  active()?.term.focus();
+  backToWork();
 }
 
 const SIZE = [8, 32];

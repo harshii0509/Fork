@@ -3,7 +3,9 @@
 // so a new event can't be forgotten. Events deliberately left off go in NOT_CHARTED, with a reason.
 
 export const NAME = 'Fork — how it\'s going';
-export const NOT_CHARTED = {}; // event: why it isn't on the dashboard
+export const NOT_CHARTED = { // event: why it isn't on the dashboard
+  game_played: 'new; chart it once we know whether people play',
+};
 
 // --- Building blocks -------------------------------------------------------------------------------
 const ev = (event, name, extra = {}) => ({ kind: 'EventsNode', event, name: event, custom_name: name, ...extra });
@@ -70,6 +72,10 @@ export const INSIGHTS = [
     trend([ev('palette_used', 'Asked AI', where('kind', 'ask_claude'))], { display: 'ActionsBarValue', breakdown: 'ok' })],
   ['When something fails: explained → fixed', 'A command failed, the person clicked "What went wrong?", then "Type the fix".',
     funnel([ev('command_failed', 'A command failed'), ev('error_explained', 'Clicked "What went wrong?"'), ev('fix_used', 'Used the fix')], { within: 30, unit: 'minute' })],
+  ['Errors Fork explains itself', 'Which common errors people hit, answered by Fork\'s own library (errors.mjs), last 30 days. The top ones deserve the best copy.',
+    trend([ev('error_explained', 'Explained by Fork', where('source', 'fork'))], { from: '-30d', display: 'ActionsBarValue', breakdown: 'id' })],
+  ['Explained by Fork vs AI', 'fork = the library knew it · unknown = it didn\'t (worth a new entry) · ai = someone asked Claude.',
+    trend([ev('error_explained', 'Explanations')], { from: '-30d', display: 'ActionsBarValue', breakdown: 'source' })],
   ['What fails most', 'Failed commands by tool, last 30 days. Good candidates for better help.',
     trend([ev('command_failed', 'Failures')], { from: '-30d', display: 'ActionsBarValue', breakdown: 'tool' })],
 

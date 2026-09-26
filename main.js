@@ -1,12 +1,13 @@
 import { app, BrowserWindow, ipcMain, dialog, nativeTheme, Menu, screen, shell } from 'electron';
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { chmodSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pty from 'node-pty';
 import { marked } from 'marked';
-import { suggest, PALETTE } from './suggest.mjs';
+import { suggest, PALETTE, pm, scripts } from './suggest.mjs';
+import { diagnose, looksLikeCommand } from './errors.mjs';
 import { list, readPreview, findEditor } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
@@ -228,16 +229,25 @@ ipcMain.handle('ask', async (_, request, cwd) => {
   return { cmd: lines[0], why: lines[1] || '' };
 });
 
-ipcMain.handle('explain', async (_, output, cwd) => {
+// "What went wrong?": Fork's own library of common errors first (errors.mjs), instant and offline.
+// null = not one Fork knows; the person can then ask Claude (explain:ai).
+const onPath = (bin) => (process.env.PATH || '').split(':').some((d) => d && existsSync(join(d, bin)));
+function errorContext(cwd) {
+  const dir = cwd && isDir(cwd) ? cwd : homedir();
+  return { pm: pm(dir), scripts: Object.keys(scripts(dir)), hasNodeModules: existsSync(join(dir, 'node_modules')),
+    nvmrc: existsSync(join(dir, '.nvmrc')), hasBrew: onPath('brew'), hasGh: onPath('gh') };
+}
+ipcMain.handle('explain', (_, output, cwd) => diagnose(output, errorContext(cwd)));
+ipcMain.handle('explain:ai', async (_, output, cwd) => {
   const lines = await askClaude(
     'A designer new to the terminal ran a command and it failed. In at most 2 short, friendly sentences, ' +
     'explain what went wrong in plain English. Be direct: no jargon, no filler. Then a final line starting with "FIX: " followed by ' +
     'ONE command that fixes it, or "FIX: none". No code fences.',
     `Current folder: ${cwd}\nTerminal output:\n${output}`);
-  if (!lines) return { text: "Couldn't reach Claude. Check you are logged in (run: claude).", fix: null };
+  if (!lines) return { text: "Couldn't reach Claude. To log in, open a new tab and type claude.", fix: null, failed: true };
   const fixLine = lines.findLast((l) => l.startsWith('FIX:'));
   const fix = fixLine?.slice(4).trim();
-  return { text: lines.filter((l) => l !== fixLine).join(' '), fix: fix && fix !== 'none' ? fix : null };
+  return { text: lines.filter((l) => l !== fixLine).join(' '), fix: fix !== 'none' && looksLikeCommand(fix) ? fix : null }; // never type a sentence
 });
 
 // --- Reopen the way you left it (session.mjs) ------------------------------------------------------
