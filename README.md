@@ -20,5 +20,6 @@ Requires an Apple Silicon Mac (M1 or newer).
     npm start        # run from source
     npm run app      # build Fork.app and install it into /Applications
     npm run dist     # build dist/Fork.dmg
+    npm run release -- patch   # ship a new version (see RELEASING.md)
 
-See [DISTRIBUTION.md](DISTRIBUTION.md) for how releases work.
+See [RELEASING.md](RELEASING.md) for version numbers and shipping, and [DISTRIBUTION.md](DISTRIBUTION.md) for how installing and updating work.

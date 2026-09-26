@@ -198,4 +198,20 @@ assert.equal(sent.length, 1);
 const again = createAnalytics({ dir: usageDir, props: {}, send: () => {} }); // same install: same ID, still off
 assert.ok(!again.firstLaunch && !again.isOn());
 
+// --- Versions (version.mjs): the update pill only offers something newer; betas come before their final ---
+const { newer, bump } = await import('./version.mjs');
+assert.ok(newer('0.2.1', '0.2.0'));
+assert.ok(newer('0.10.0', '0.9.9'));
+assert.ok(!newer('0.2.0', '0.2.0'));
+assert.ok(!newer('0.2.0', '0.2.1'));
+assert.ok(newer('0.3.0', '0.3.0-beta.2') && newer('0.3.0-beta.2', '0.3.0-beta.1'));
+assert.ok(!newer('0.3.0-beta.1', '0.3.0') && newer('0.3.0-beta.1', '0.2.1'));
+assert.ok(!newer('nonsense', '0.1.0') && !newer('0.2.0', 'nonsense'));
+assert.equal(bump('0.2.0', 'patch'), '0.2.1');
+assert.equal(bump('0.2.1', 'minor'), '0.3.0');
+assert.equal(bump('0.9.3', 'major'), '1.0.0');
+assert.equal(bump('0.2.1', 'beta'), '0.3.0-beta.1');
+assert.equal(bump('0.3.0-beta.1', 'beta'), '0.3.0-beta.2');
+assert.equal(bump('0.3.0-beta.2', 'minor'), '0.3.0');
+
 console.log('check ok');

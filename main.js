@@ -9,11 +9,15 @@ import { marked } from 'marked';
 import { suggest, PALETTE } from './suggest.mjs';
 import { list, readPreview, findEditor } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
+import { newer } from './version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // zsh can't read inside app.asar; point at the unpacked copy when packaged (same path when run with npm start).
 const SHELL_DIR = join(HERE, 'shell').replace('app.asar', 'app.asar.unpacked');
 const RECENTS = () => join(app.getPath('userData'), 'recents.json');
+
+// FORK_DATA_DIR=/some/empty/dir npm start → a clean first run (onboarding) without touching your real data.
+if (process.env.FORK_DATA_DIR) app.setPath('userData', process.env.FORK_DATA_DIR);
 
 // Launched from inside Claude Code? Don't leak its session markers into our shells.
 for (const k of Object.keys(process.env)) if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID|CLAUDE_EFFORT)/.test(k)) delete process.env[k];
@@ -211,11 +215,6 @@ ipcMain.handle('explain', async (_, output, cwd) => {
 // --- Updates: a pill when GitHub has a newer release; Update reruns install.sh ------------------
 // ponytail: not electron-updater, because Squirrel.Mac won't update an ad-hoc signed app. Swap once notarized.
 const REPO = 'harshii0509/Fork';
-const newer = (a, b) => {
-  const x = a.split('.').map(Number), y = b.split('.').map(Number);
-  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
-  return false;
-};
 async function release(which) {
   try {
     const r = await fetch(`https://api.github.com/repos/${REPO}/releases/${which}`, { signal: AbortSignal.timeout(10_000) });

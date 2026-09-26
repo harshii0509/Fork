@@ -63,7 +63,7 @@ The app builds and installs locally. Everything lives in `package.json`:
 - `main.js` points `ZDOTDIR` at `app.asar.unpacked/shell`, and borrows `PATH` from an interactive login shell so `claude` is found when the app is opened from Finder or the Dock.
 - **Icon:** `build/icon-art.png` is the artwork (1024×1024, full bleed). `build/icon.svg` fits it into the macOS shape (an 824px rounded square with a shadow on the 1024 canvas) and is rendered to `build/icon.png`, which the build uses. To change the icon, replace `icon-art.png`, re-render `icon.png` from `icon.svg` (any SVG renderer; Claude used an offscreen Electron window), then run `npm run app`. If the Dock keeps the old icon, run `killall Dock`.
 - **Installer window** (what opening `Fork.dmg` shows): a cream background with a hand-drawn arrow and "Drag Fork into Applications". The design is `build/dmg-background.html` (600×400). `npm run dmg:background` renders it to `build/background.png` and `background@2x.png`, which electron-builder picks up by itself. The window title (`Fork`), icon size and the two icon spots (their centres, which sit on the arrow's line) are in `package.json` → `build.dmg`. Move the icons and the arrow together.
-- **Settings:** the installed app keeps its own settings and recent folders (`~/Library/Application Support/Fork`), separate from `npm start` (`…/designer-terminal`), so both can run side by side.
+- **Settings:** the installed app and `npm start` share one settings folder, `~/Library/Application Support/designer-terminal` (Electron names it after `name` in `package.json`, not `build.productName`). Don't rename it: everyone's settings, recent folders and usage ID live there. For a clean first run from source, use `FORK_DATA_DIR=/some/empty/folder npm start`.
 
 **Name check before going public:** there is already a well-known Mac Git client called Fork (fork.dev, `/Applications/Fork.app`). Anyone who has it would get a clash, and the name may be taken. Decide before the first public release.
 
@@ -129,19 +129,14 @@ First release:
    - `curl -fsSIL https://github.com/harshii0509/Fork/releases/latest/download/Fork.dmg` ends in `200`.
    - Run the install one-liner. It lands in /Applications and opens with no warning.
 
-Every later release:
-
-1. Bump `version` in `package.json`. The update pill compares against it, so skipping this means nobody hears about the release.
-2. `npm run dist`.
-3. Copy that version's CHANGELOG entry into `notes.md`, in plain language. It's exactly what people read in the update card and in What's new.
-4. `gh release create vX.Y.Z dist/Fork.dmg --title "Fork X.Y.Z" --notes-file notes.md`, then delete `notes.md`.
+Every later release: `npm run release -- patch` (or `minor`, `major`, `beta`). See [RELEASING.md](RELEASING.md) for version numbers, the changelog, betas and what to do when a release is broken.
 
 The "latest" URL and the curl command stay the same.
 
-**How people hear about it:** a packaged Fork asks GitHub for the latest release on launch and every 6 hours (`update:check` in `main.js`). If it's newer, a small "Fork X.Y.Z" pill shows in the top bar. Clicking it opens the release notes with **Update and restart**. That quits Fork, runs `install.sh` (the same one-liner users installed with), and reopens the new version. On the first launch of a new version, a "What's new" card shows the notes once. Offline, nothing shows. `npm start` never checks.
+**How people hear about it:** a packaged Fork asks GitHub for the latest release on launch, every hour, and when its window comes to the front, at most one GitHub call an hour (`update:check` in `main.js`). If it's newer, a small "Fork X.Y.Z" pill shows in the top bar. Clicking it opens the release notes with **Update and restart**. That quits Fork, runs `install.sh` (the same one-liner users installed with), and reopens the new version. On the first launch of a new version, a "What's new" card shows the notes once. Offline, nothing shows. `npm start` never checks.
 
 **Anonymous usage (PostHog):** a packaged Fork sends anonymous usage events to PostHog, so we can see how new people find their way around (`analytics.mjs`). It's on by default. The start screen says so, with a **Turn off** link, and **Settings → Privacy → Share anonymous usage** switches it off or on.
-- **Who:** one random ID per install, stored in `~/Library/Application Support/Fork/analytics.json`. No login, name or email. Turn on **Discard client IP data** in the PostHog project settings.
+- **Who:** one random ID per install, stored in `~/Library/Application Support/designer-terminal/analytics.json`. No login, name or email. Turn on **Discard client IP data** in the PostHog project settings.
 - **What:** which features get used: `app_opened` / `app_closed`, `start_choice`, `command_run` / `command_failed` (just the tool, like `git` or `claude`, from an allow-list; anything else becomes `other`), `folder_opened`, `file_previewed` (the file type only), `palette_opened` / `palette_used`, `tab_opened`, `pane_split`, `setting_changed`, `update_clicked`, and a few more (search `dt.track(` in `renderer.js`).
 - **Never:** commands, file or folder names, paths, terminal output, or what's typed in ⌘K.
 - **Key:** `POSTHOG_KEY` / `POSTHOG_HOST` at the top of `analytics.mjs`. An empty key sends nothing. `npm start` never sends: it prints each event to the terminal it was started from. `FORK_ANALYTICS=1 npm start` sends for real, for testing.
