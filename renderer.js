@@ -706,7 +706,9 @@ async function checkUpdate() {
   if (update) $('updPillV').textContent = `Fork ${update.version}`;
 }
 checkUpdate();
-setInterval(checkUpdate, 6 * 3600_000);
+// Hourly, and whenever Fork comes to the front. Cheap: main asks GitHub at most once an hour.
+setInterval(checkUpdate, 3600_000);
+window.addEventListener('focus', checkUpdate);
 $('updPill').onclick = () => showUpdate(`Fork ${update.version} is out`, update.notes, true);
 $('updLater').onclick = $('updOk').onclick = closeUpdate;
 $('updGo').onclick = () => { $('updGo').textContent = 'Closing…'; dt.track('update_clicked'); dt.updateInstall(); };

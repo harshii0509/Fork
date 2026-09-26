@@ -2,6 +2,8 @@
 
 Newest first. **Proposed** holds ideas we talked about but haven't built yet, with the open questions to answer before building. **Changelog** is what actually changed.
 
+Add each change people will notice under **Unreleased** as you make it, in plain words: it becomes the release notes, the update card and What's new word for word. `npm run release` turns it into the version heading (see [RELEASING.md](RELEASING.md)).
+
 ---
 
 ## Proposed
@@ -32,6 +34,10 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 ---
 
 ## Changelog
+
+### Unreleased
+**Better**
+- **New versions show up within the hour.** Fork looks for updates every hour and whenever you switch back to it, instead of every 6 hours. It still asks GitHub at most once an hour.
 
 ### 2026-09-26: Fork 0.2.0 released
 Everything below, down to "updates", ships in 0.2.0: the first version that updates itself. People on 0.1.0 reinstall once.
