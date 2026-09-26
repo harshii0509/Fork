@@ -7,9 +7,14 @@ ZDOTDIR=$HOME   # so ~/.zlogin and anything reading $ZDOTDIR behaves as usual
 
 # --- Tell the app where we are and how the last command went ----------------
 # OSC 7 = current folder (sidebar + breadcrumb follow `cd`).
-# OSC 133 C = a command started (app goes "busy"), D;<code> = it finished.
+# OSC 133 C;<first word> = a command started (app goes "busy"), D;<code> = it finished.
+# Only the first word (e.g. "git") leaves the shell, for anonymous usage counts. Never the rest.
 __dt_ran=0
-__dt_preexec() { __dt_ran=1; printf '\e]133;C\a'; }
+__dt_preexec() {
+  __dt_ran=1
+  local w=${${(z)1}[1]}
+  printf '\e]133;C;%s\a' "${w//[^A-Za-z0-9._-]/}"
+}
 __dt_precmd() {
   local code=$?
   (( __dt_ran )) && printf '\e]133;D;%s\a' $code

@@ -1,9 +1,12 @@
 // Every icon in the app, from Lucide (lucide.dev, lucide-static v1.48.0, ISC licence). To add one, copy
-// the inside of its <svg> from lucide.dev. fileIcon() picks a file's icon and theme colour by its type.
+// the inside of its <svg> from lucide.dev. fileIcon() picks a file's icon by its type.
 // Pure data + functions, no DOM: check.mjs tests it.
 window.ICONS = {
   "columns-2": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>',
   "rows-2": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 12h18"/>',
+  "panel-left": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  "arrow-left": '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  "arrow-right": '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   "panel-right": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
   search: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
   settings: '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
@@ -37,27 +40,27 @@ window.icon = (name, cls = '') =>
   `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" ` +
   `stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
-// Kinds of file, each with an icon and a theme colour, so a folder reads at a glance.
+// Kinds of file, each with its own icon, so a folder reads at a glance. All one gray (--tree in index.html).
 window.fileIcon = (() => {
   const KINDS = [
-    ['file-image', 'magenta', 'png jpg jpeg gif webp avif svg ico bmp heic'],
-    ['file-video', 'magenta', 'mp4 mov m4v webm'],
-    ['file-audio', 'magenta', 'mp3 wav m4a aac ogg'],
-    ['pen-tool', 'magenta', 'fig sketch psd ai xd'],
-    ['file-code', 'blue', 'js jsx ts tsx mjs cjs vue svelte astro py rb go rs swift kt java c h cpp php sh zsh'],
-    ['file-code', 'cyan', 'css scss sass less'],
-    ['file-code', 'warn', 'html htm xml'],
-    ['file-braces', 'warn', 'json jsonc json5 yaml yml toml'],
-    ['file-cog', 'warn', 'lock env ini'],
-    ['file-text', 'dim', 'md mdx txt rtf'],
-    ['file-text', 'bad', 'pdf'],
-    ['file-type', 'text', 'ttf otf woff woff2'],
-    ['file-archive', 'dim', 'zip tar gz tgz rar 7z dmg'],
+    ['file-image', 'png jpg jpeg gif webp avif svg ico bmp heic'],
+    ['file-video', 'mp4 mov m4v webm'],
+    ['file-audio', 'mp3 wav m4a aac ogg'],
+    ['pen-tool', 'fig sketch psd ai xd'],
+    ['file-code', 'js jsx ts tsx mjs cjs vue svelte astro py rb go rs swift kt java c h cpp php sh zsh'],
+    ['file-code', 'css scss sass less'],
+    ['file-code', 'html htm xml'],
+    ['file-braces', 'json jsonc json5 yaml yml toml'],
+    ['file-cog', 'lock env ini'],
+    ['file-text', 'md mdx txt rtf'],
+    ['file-text', 'pdf'],
+    ['file-type', 'ttf otf woff woff2'],
+    ['file-archive', 'zip tar gz tgz rar 7z dmg'],
   ];
   const BY_EXT = {};
-  for (const [icon, color, exts] of KINDS) for (const ext of exts.split(' ')) BY_EXT[ext] = { icon, color: `var(--${color})` };
+  for (const [icon, exts] of KINDS) for (const ext of exts.split(' ')) BY_EXT[ext] = { icon };
   return (name) => {
     const dot = name.lastIndexOf('.');
-    return (dot > 0 && BY_EXT[name.slice(dot + 1).toLowerCase()]) || { icon: 'file', color: 'var(--dim)' };
+    return (dot > 0 && BY_EXT[name.slice(dot + 1).toLowerCase()]) || { icon: 'file' };
   };
 })();

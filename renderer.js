@@ -7,7 +7,7 @@ for (const el of document.querySelectorAll("[data-icon]")) el.outerHTML = icon(e
 // --- Tabs and panes -------------------------------------------------------------
 // Window -> tabs (listed in the sidebar) -> panes (split tree, see panes.js). Each pane is
 // one xterm + one shell. The active pane drives the sidebar, breadcrumb, chips and banner.
-const panes = new Map(); // id -> { id, term, fit, el, cwd, busy }
+const panes = new Map(); // id -> { id, term, fit, el, cwd, busy, failed, unseen, lastUsed }
 let tabs = [], tabIx = 0, home = '', chips = [];
 const tab = () => tabs[tabIx];
 const active = () => panes.get(tab()?.activeId);
@@ -26,7 +26,7 @@ async function newPane(cwd) {
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(inner);
-  const pane = { id, term, fit, el, cwd: cwd || '', busy: false, tail: '' };
+  const pane = { id, term, fit, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null };
   panes.set(id, pane);
 
   // Drop a file (from the sidebar or Finder) to type its path at the cursor, e.g. to show Claude a file.
@@ -50,8 +50,17 @@ async function newPane(cwd) {
     term.focus();
   });
 
-  term.onData((d) => { dt.write(id, d); if (d.includes('\r') && pane === active()) setHint(''); });
-  term.attachCustomKeyEventHandler((e) => !e.metaKey); // every ⌘ shortcut belongs to the app
+  term.onData((d) => { dt.write(id, d); pane.lastUsed = Date.now(); if (d.includes('\r') && pane === active()) setHint(''); });
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.metaKey) return false; // every ⌘ shortcut belongs to the app
+    // Shift+Enter: a new line instead of "run/send". A terminal can't send Shift, so use ESC+Return,
+    // the same thing Claude's /terminal-setup sets up in VS Code. (In zsh it also adds a line.)
+    if (e.key === 'Enter' && e.shiftKey && !e.altKey && !e.ctrlKey && !e.isComposing) {
+      if (e.type === 'keydown') { dt.write(id, '\x1b\r'); pane.lastUsed = Date.now(); }
+      return false; // swallow keydown/keypress/keyup so xterm doesn't also send a plain Return
+    }
+    return true;
+  });
   term.textarea.addEventListener('focus', () => focusPane(id)); // clicking a pane makes it active
   new ResizeObserver(() => {
     if (!el.offsetParent) return; // hidden tab
@@ -65,6 +74,11 @@ async function newPane(cwd) {
     if (m) {
       let p = m[1];
       try { p = decodeURIComponent(p); } catch {}
+      if (p !== pane.cwd) {
+        // Folder history for ← →. A move we asked for keeps its place; any other cd drops what was ahead.
+        if (pane.nav === p) pane.nav = null;
+        else { pane.hist = [...pane.hist.slice(0, pane.at + 1), p]; pane.at = pane.hist.length - 1; }
+      }
       pane.cwd = p;
       if (pane === active()) refresh();
       renderTabs();
@@ -72,10 +86,19 @@ async function newPane(cwd) {
     return true;
   });
   term.parser.registerOscHandler(133, (data) => {
-    if (data === 'C') { pane.busy = true; if (pane === active()) hideOops(); }
+    if (data.startsWith('C')) {
+      pane.busy = true; pane.failed = false; pane.lastUsed = Date.now(); if (pane === active()) hideOops();
+      pane.tool = data.slice(2); // the command's first word; analytics.mjs keeps it only if it's a known tool
+      dt.track('command_run', { tool: pane.tool, source: pane.suggested ? 'fork' : 'typed' });
+      pane.suggested = false;
+    }
     if (data.startsWith('D')) {
       pane.busy = false;
       const code = Number(data.split(';')[1]);
+      pane.failed = !!code && code !== 130;
+      if (pane.failed) dt.track('command_failed', { tool: pane.tool });
+      if (tabOf(pane.id) !== tab()) pane.unseen = true; // finished while you were elsewhere
+      pane.lastUsed = Date.now();
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
     }
     syncBusy();
@@ -144,6 +167,7 @@ function focusPane(id) {
   if (t === tab() && t.activeId === id) return;
   tabIx = tabs.indexOf(t);
   t.activeId = id;
+  for (const pid of Panes.leaves(t.root)) panes.get(pid).unseen = false;
   render();
   hideOops();
   setHint('');
@@ -162,6 +186,7 @@ async function split(dir) {
   const cur = active();
   if (!cur) return;
   const p = await newPane(cur.cwd); // a split opens in the same folder
+  dt.track('pane_split', { dir });
   tab().root = Panes.split(tab().root, cur.id, p.id, dir);
   focusPane(p.id);
 }
@@ -177,6 +202,7 @@ function closePane(id, { exited = false, force = false } = {}) {
   panes.delete(id);
   t.root = Panes.remove(t.root, id);
   if (!t.root) {
+    t.blob?.destroy();
     tabs.splice(tabs.indexOf(t), 1);
     if (!tabs.length) return window.close(); // last tab closes the window
     tabIx = t === cur ? Math.min(tabIx, tabs.length - 1) : tabs.indexOf(cur);
@@ -204,13 +230,51 @@ function renderTabs() {
     const ps = Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
     const p = panes.get(t.activeId) || ps[0];
     const name = !p?.cwd ? 'New tab' : p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/';
-    return `<div class="tab ${i === tabIx ? 'active' : ''}" data-i="${i}" ${i < 9 ? `data-key="⌘${i + 1}"` : ''} title="${esc(p?.cwd || '')}">
-      <span class="tdot ${ps.some((x) => x.busy) ? 'busy' : ''}"></span>
+    const where = p?.cwd ? ` · ${p.cwd}` : '';
+    return `<div class="tab ${i === tabIx ? 'active' : ''}" data-i="${i}" ${i < 9 ? `data-key="⌘${i + 1}"` : ''} title="${esc(tabState(t).label + where)}">
+      <span class="tblob"></span>
       <span class="tname">${esc(name)}</span>
       ${ps.length > 1 ? `<span class="tcount">${ps.length} panes</span>` : ''}
       <button class="tclose" data-close="${i}" aria-label="Close tab">${icon("x")}</button></div>`;
   }).join('');
+  // The rows were just rebuilt; move each tab's own blob back in so its animation carries on.
+  $('tabs').querySelectorAll('.tblob').forEach((slot, i) => {
+    const t = tabs[i];
+    t.blob ||= Blobs.status(22);
+    t.blob.el.className = 'tblob';
+    slot.replaceWith(t.blob.el);
+  });
+  syncTabBlobs();
 }
+
+// What each tab's blob shows. With split panes, the most pressing pane wins.
+const DOZE_AFTER = 5 * 60e3;
+const LOOKS = {
+  running: { label: 'Running', state: 'thinking' },
+  failed: { label: 'Last command failed', state: 'idle', expression: 'sad', tint: 'bad' },
+  done: { label: 'Finished while you were away', state: 'notify' },
+  dozing: { label: 'Dozing', state: 'sleep' },
+  ready: { label: 'Ready', state: 'idle' },
+};
+function tabState(t) {
+  const ps = Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
+  const key = ps.some((p) => p.busy) ? 'running'
+    : ps.some((p) => p.failed) ? 'failed'
+    : ps.some((p) => p.unseen) ? 'done'
+    : ps.length && ps.every((p) => Date.now() - p.lastUsed > DOZE_AFTER) ? 'dozing'
+    : 'ready';
+  return LOOKS[key];
+}
+function syncTabBlobs() {
+  for (const t of tabs) {
+    if (!t.blob) continue;
+    const look = tabState(t);
+    t.blob.set(look.state, look.expression, look.tint);
+    t.blob.el.setAttribute('aria-label', look.label);
+    t.blob.el.setAttribute('role', 'img');
+  }
+}
+setInterval(syncTabBlobs, 30e3); // so an untouched tab dozes off on its own
 
 $('tabs').onclick = (e) => {
   const c = e.target.closest('.tclose');
@@ -218,20 +282,25 @@ $('tabs').onclick = (e) => {
   const t = e.target.closest('.tab');
   if (t) goTab(+t.dataset.i);
 };
-$('newTab').onclick = () => newTab(active()?.cwd);
+$('newTab').onclick = () => { newTab(active()?.cwd); dt.track('tab_opened'); };
+const toggleSide = () => { $('app').classList.toggle('no-side'); dt.track('sidebar_toggled'); }; // panes refit via their ResizeObserver
+$('sideToggle').onclick = $('sideShow').onclick = toggleSide;
 $('splitR').onclick = () => split('row');
 $('splitD').onclick = () => split('col');
 
 dt.onCmd((cmd) => ({
-  'new-tab': () => newTab(active()?.cwd),
+  'new-tab': () => { newTab(active()?.cwd); dt.track('tab_opened'); },
   close: () => active() && closePane(active().id),
   'split-right': () => split('row'),
   'split-down': () => split('col'),
   'next-tab': () => goTab(tabIx + 1),
   'prev-tab': () => goTab(tabIx - 1),
   settings: () => (inSettings() ? closeSettings() : openSettings()),
-  'toggle-sidebar': () => $('app').classList.toggle('no-side'), // panes refit via their ResizeObserver
+  'toggle-sidebar': toggleSide,
   'toggle-preview': togglePv,
+  back: () => go(-1),
+  forward: () => go(1),
+  tour: replayTour,
 }[cmd]?.()));
 
 const runBlob = Blobs.mount($('runBlob'), { size: 34 });
@@ -249,9 +318,28 @@ function send(cmd, why, run) {
   if (cmd === '\x03') { dt.write(p.id, cmd); p.term.focus(); return; }
   if (p.busy) { setHint('Something is running. Stop it first (Ctrl+C), then try again.', true); return; }
   dt.write(p.id, '\x15' + cmd + (run ? '\r' : '')); // Ctrl+U clears anything half-typed first
+  p.suggested = true;
   setHint(run ? '' : why);
   p.term.focus();
 }
+
+// ← → in the sidebar (and ⌘[ ⌘]): back and forward through the folders this pane has been in.
+function go(step) {
+  const p = active(), path = p?.hist[p.at + step];
+  if (!path) return;
+  if (p.busy) return setHint('Something is running. Stop it first (Ctrl+C), then try again.', true);
+  p.at += step;
+  p.nav = path;
+  dt.track('folder_opened', { via: step < 0 ? 'back' : 'forward' });
+  send(`cd ${q(path)}`, '', true);
+}
+function syncArrows() {
+  const p = active();
+  $('back').disabled = !(p?.at > 0);
+  $('fwd').disabled = !(p && p.at < p.hist.length - 1);
+}
+$('back').onclick = () => go(-1);
+$('fwd').onclick = () => go(1);
 
 function setHint(text, warn) {
   const h = $('hint');
@@ -266,7 +354,7 @@ const expanded = new Set(); // folders opened with ▸ (full paths), remembered 
 let treeDirs = [], refreshing = 0;
 
 // A file's type icon in the theme colour for its kind (icons.js).
-const fileIconHtml = (name) => { const f = fileIcon(name); return `<span class="fi" style="color:${f.color}">${icon(f.icon)}</span>`; };
+const fileIconHtml = (name) => `<span class="fi">${icon(fileIcon(name).icon)}</span>`;
 
 // One row per file or folder; open folders list their contents underneath, indented.
 async function rows(dir, entries, depth, dirs) {
@@ -281,11 +369,12 @@ async function rows(dir, entries, depth, dirs) {
     return `<div class="entry${e.noise ? ' noise' : ''}${path === shownFile() ? ' on' : ''}" draggable="true" style="--depth:${depth}"
         data-path="${esc(path)}" data-folder="${e.folder}" title="${esc(e.name)}">
       ${e.folder ? `<button class="twisty${open ? ' open' : ''}" aria-label="${open ? 'Collapse' : 'Expand'}">${icon("chevron-right")}</button>` : '<span class="twisty"></span>'}
-      ${e.folder ? `<span class="fi" style="color:var(--accent)">${icon(open ? "folder-open" : "folder")}</span>` : fileIconHtml(e.name)}<span>${esc(e.name)}</span></div>${kids}`;
+      ${e.folder ? `<span class="fi">${icon(open ? "folder-open" : "folder")}</span>` : fileIconHtml(e.name)}<span>${esc(e.name)}</span></div>${kids}`;
   }))).join('');
 }
 
 async function refresh() {
+  syncArrows();
   const cwd = active()?.cwd;
   if (!cwd) return;
   const run = ++refreshing;
@@ -314,7 +403,10 @@ async function refresh() {
   renderTabs();
 }
 
-$('crumbs').onclick = (e) => { const b = e.target.closest('.crumb'); if (b) send(`cd ${q(b.dataset.path)}`, '', true); };
+$('crumbs').onclick = (e) => {
+  const b = e.target.closest('.crumb');
+  if (b) { send(`cd ${q(b.dataset.path)}`, '', true); dt.track('folder_opened', { via: 'crumb' }); }
+};
 // ▸ opens a folder in place; its name moves there; a file opens in the preview panel.
 $('entries').onclick = (e) => {
   const row = e.target.closest('.entry'); if (!row) return;
@@ -323,6 +415,7 @@ $('entries').onclick = (e) => {
   if (e.target.closest('.twisty')) { expanded.has(path) ? expanded.delete(path) : expanded.add(path); return refresh(); }
   const cwd = active()?.cwd || '';
   send(`cd ${q(path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path)}`, '', true); // relative reads better
+  dt.track('folder_opened', { via: 'sidebar' });
 };
 $('entries').ondragstart = (e) => {
   const row = e.target.closest('.entry'); if (!row) return;
@@ -358,7 +451,7 @@ function showPv(mode) {
   markShown();
 }
 function hidePv() { $('app').classList.remove('has-pv'); markShown(); active()?.term.focus(); }
-function togglePv() { pvOpen() ? hidePv() : showPv(); }
+function togglePv() { pvOpen() ? hidePv() : showPv(); dt.track('preview_toggled'); }
 function markShown() { for (const r of $('entries').querySelectorAll('.entry')) r.classList.toggle('on', r.dataset.path === shownFile()); }
 function syncWatch() { dt.watch([...new Set([...treeDirs, ...(pv.file ? [dirOf(pv.file)] : [])])]); }
 
@@ -369,6 +462,7 @@ const codeView = (r) => `<div class="pv-code"><pre class="gutter">${Array.from({
 async function openFile(path, changed) {
   const view = $('pvFile'), top = changed ? view.scrollTop : 0; // a file Claude just edited keeps its scroll
   const firstTime = pv.file !== path;
+  if (firstTime) dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon }); // the type, never the name
   pv.file = path;
   showPv('file');
   if (firstTime) syncWatch();
@@ -465,7 +559,7 @@ function appFound(url) {
   $('readyUrl').textContent = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
   $('ready').classList.add('show');
 }
-$('readyShow').onclick = () => loadApp(readyUrl);
+$('readyShow').onclick = () => { loadApp(readyUrl); dt.track('app_preview_shown'); };
 $('readyClose').onclick = () => $('ready').classList.remove('show');
 
 // --- When something fails ------------------------------------------------------
@@ -484,6 +578,7 @@ function lastLines(n = 40) {
   return out.join('\n').trim();
 }
 $('explainBtn').onclick = async () => {
+  dt.track('error_explained');
   $('explainBtn').style.display = 'none';
   $('oopsText').textContent = 'Reading the error…';
   reading(true);
@@ -493,7 +588,7 @@ $('explainBtn').onclick = async () => {
   fix = r.fix;
   $('fixBtn').style.display = fix ? '' : 'none';
 };
-$('fixBtn').onclick = () => { hideOops(); send(fix, 'Suggested fix. Read it, then press Enter.', false); };
+$('fixBtn').onclick = () => { hideOops(); send(fix, 'Suggested fix. Read it, then press Enter.', false); dt.track('fix_used'); };
 $('oopsClose').onclick = hideOops;
 
 // --- Start screen: never a blank prompt ------------------------------------------
@@ -502,32 +597,64 @@ async function openStart() {
   $('recents').innerHTML = list.length ? '<div class="label" style="margin-top:0">Recent</div>' + list.map((p) =>
     `<button class="opt" data-path="${esc(p)}"><span class="ico">${icon("folder")}</span>
       <span>${esc(p.split('/').pop())}<small>${esc(p)}</small></span></button>`).join('') : '';
+  $('usageNote').hidden = !(await dt.analytics());
   $('startOv').classList.add('show');
 }
-function closeStart() { $('startOv').classList.remove('show'); active()?.term.focus(); }
+function closeStart() {
+  $('startOv').classList.remove('show');
+  active()?.term.focus();
+  if (tourNext) { tourNext = false; setTimeout(runTour, 400); } // after the folder list and suggestions load
+}
 async function workIn(path) { await dt.recents(path); send(`cd ${q(path)}`, '', true); closeStart(); }
 
-$('recents').onclick = (e) => { const b = e.target.closest('.opt'); if (b) workIn(b.dataset.path); };
-$('pick').onclick = async () => { const p = await dt.pickFolder(); if (p) workIn(p); };
+$('recents').onclick = (e) => { const b = e.target.closest('.opt'); if (b) { workIn(b.dataset.path); dt.track('start_choice', { choice: 'recent' }); } };
+$('pick').onclick = async () => { const p = await dt.pickFolder(); if (p) { workIn(p); dt.track('start_choice', { choice: 'pick' }); } };
 $('cloneOpt').onclick = () => { $('clone').classList.add('show'); $('cloneUrl').focus(); };
 $('cloneGo').onclick = async () => {
   const url = $('cloneUrl').value.trim();
   if (!url) return;
   const dest = await dt.pickFolder(); // where should the project live?
   if (!dest) return;
+  dt.track('start_choice', { choice: 'clone' });
   const name = url.replace(/\/+$/, '').split('/').pop().replace(/\.git$/, '');
   closeStart();
   send(`cd ${q(dest)} && git clone ${q(url)} && cd ${q(name)}`,
     `Downloads ${name} into ${dest.split('/').pop()}, then moves into it.`, false);
 };
 $('cloneUrl').onkeydown = (e) => { if (e.key === 'Enter') $('cloneGo').click(); };
-$('skip').onclick = closeStart;
+$('skip').onclick = () => { closeStart(); dt.track('start_choice', { choice: 'skip' }); };
+
+// --- First run: welcome cards, then once they've picked where to work, the spotlight tour ---------
+// (onboarding.js). Skipping the cards skips the tour too. Settings → Help and the Help menu replay it.
+let tourNext = false;
+const firstRun = (() => { try { return !localStorage.getItem('dt-onboarded'); } catch { return false; } })();
+async function runWelcome() {
+  try { localStorage.setItem('dt-onboarded', '1'); } catch {}
+  const r = await Onboarding.welcome();
+  dt.track(r.done ? 'welcome_done' : 'welcome_skipped', r.done ? {} : { card: r.card });
+  tourNext = r.done;
+  openStart();
+}
+async function runTour() {
+  $('app').classList.remove('no-side'); // everything the tour points at must be on screen
+  closeSettings(); closePal();
+  const r = await Onboarding.tour();
+  dt.track(r.done ? 'tour_done' : 'tour_skipped', { step: r.step, of: r.of });
+  active()?.term.focus();
+}
+function replayTour() {
+  if ($('welcomeOv').classList.contains('show') || document.querySelector('.tour')) return; // already running
+  dt.track('tour_replayed');
+  closeSettings(); closePal(); closeStart();
+  runWelcome();
+}
+$('replayTour').onclick = replayTour;
 
 // --- ⌘K: every command, by what it does -----------------------------------------------
 let palette = [], shown = [], sel = 0;
 dt.palette().then((p) => { palette = p; });
 
-function openPal() { $('palIn').value = ''; renderPal(); $('palOv').classList.add('show'); $('palIn').focus(); }
+function openPal() { $('palIn').value = ''; renderPal(); $('palOv').classList.add('show'); $('palIn').focus(); dt.track('palette_opened'); }
 function closePal() { $('palOv').classList.remove('show'); active()?.term.focus(); }
 function renderPal() {
   const text = $('palIn').value.trim().toLowerCase();
@@ -541,10 +668,11 @@ function renderPal() {
 }
 async function choose(i) {
   const p = shown[i]; if (!p) return;
-  if (!p.ask) { closePal(); send(p.cmd, p.why, p.run); return; }
+  if (!p.ask) { closePal(); send(p.cmd, p.why, p.run); dt.track('palette_used', { kind: 'preset' }); return; }
   $('palList').innerHTML = '';
   $('palStatus').textContent = 'Thinking…'; $('palStatus').classList.add('show');
   const r = await dt.ask($('palIn').value.trim(), active()?.cwd);
+  dt.track('palette_used', { kind: 'ask_claude', ok: !!r });
   if (!r) { $('palStatus').textContent = "Claude couldn't turn that into a command. Try saying it differently."; return; }
   closePal();
   send(r.cmd, r.why, false); // AI suggestions are never run automatically
@@ -562,6 +690,36 @@ $('palIn').onkeydown = (e) => {
 $('palList').onclick = (e) => { const li = e.target.closest('li'); if (li) choose(+li.dataset.i); };
 $('openPal').onclick = openPal;
 
+// --- Updates: a quiet pill when a newer Fork is out, and What's new once after updating ----------
+let update = null;
+function showUpdate(title, notes, isUpdate) {
+  $('updTitle').textContent = title;
+  $('updNotes').innerHTML = DOMPurify.sanitize(notes);
+  for (const id of ['updLater', 'updGo', 'updWarn']) $(id).style.display = isUpdate ? '' : 'none';
+  $('updOk').style.display = isUpdate ? 'none' : '';
+  $('updOv').classList.add('show');
+}
+function closeUpdate() { $('updOv').classList.remove('show'); active()?.term.focus(); }
+async function checkUpdate() {
+  update = await dt.updateCheck();
+  $('updPill').hidden = !update;
+  if (update) $('updPillV').textContent = `Fork ${update.version}`;
+}
+checkUpdate();
+setInterval(checkUpdate, 6 * 3600_000);
+$('updPill').onclick = () => showUpdate(`Fork ${update.version} is out`, update.notes, true);
+$('updLater').onclick = $('updOk').onclick = closeUpdate;
+$('updGo').onclick = () => { $('updGo').textContent = 'Closing…'; dt.track('update_clicked'); dt.updateInstall(); };
+$('updNotes').onclick = (e) => { const a = e.target.closest('a[href]'); if (a) { e.preventDefault(); dt.openExternal(a.href); } };
+// Once, on the first launch of a new version. A fresh install has nothing saved, so no changelog on day one.
+dt.version().then(async (v) => {
+  let seen;
+  try { seen = localStorage.getItem('dt-seen-version'); localStorage.setItem('dt-seen-version', v); } catch {}
+  if (!seen || seen === v || firstRun) return; // the welcome cards come first
+  const r = await dt.updateNotes();
+  if (r) showUpdate(`What's new in Fork ${v}`, r.notes, false);
+});
+
 // --- Settings: theme, font, size, smoothing ----------------------------------------
 // Saved in localStorage: shared by every window and kept across launches; the `storage` event
 // makes other open windows follow along. A theme is an xterm palette; the UI mixes its colours from it.
@@ -574,27 +732,44 @@ function installed(font) {
   const w = (f) => { c.font = `20px ${f}`; return c.measureText('mmmwwwiiil10O').width; };
   return w(`"${font}", monospace`) !== w('monospace') || w(`"${font}", serif`) !== w('serif');
 }
-const DEFAULTS = { theme: 'Designer', font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'default',
-  translucent: 'on', frost: 'on' };
-const load = () => { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('dt-settings')) }; } catch { return { ...DEFAULTS }; } };
+// Appearance is Light, Dark or System; each side keeps its own theme, and System swaps them with macOS.
+const DEFAULTS = { mode: 'system', darkTheme: 'Designer', lightTheme: 'Catppuccin Latte',
+  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on' };
+function load() {
+  let s;
+  try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
+  // Settings saved before Light/Dark/System had one `theme`: keep it, on its own side.
+  if (s.theme && !s.mode) {
+    const dark = THEMES.find((t) => t.name === s.theme)?.dark ?? true;
+    s.mode = dark ? 'dark' : 'light';
+    s[dark ? 'darkTheme' : 'lightTheme'] = s.theme;
+  }
+  if (s.smoothing && s.smoothing !== 'off') s.smoothing = 'on'; // was Default / Thin / Off
+  delete s.theme; delete s.frost;
+  return { ...DEFAULTS, ...s };
+}
 let settings = load();
 
-const themeOf = (name) => THEMES.find((t) => t.name === name) || THEMES[0];
+const sysDark = matchMedia('(prefers-color-scheme: dark)'); // macOS's own, while themeSource is 'system'
+const isDark = (s) => (s.mode === 'system' ? sysDark.matches : s.mode === 'dark');
+const themeOf = (name, dark) => THEMES.find((t) => t.name === name && t.dark === dark)
+  || themeOf(dark ? DEFAULTS.darkTheme : DEFAULTS.lightTheme, dark);
+const currentTheme = (s) => (isDark(s) ? themeOf(s.darkTheme, true) : themeOf(s.lightTheme, false));
 const fontStack = (f) => `"${f}", Menlo, monospace`;
-const xtermOpts = (s) => ({ theme: themeOf(s.theme), fontFamily: fontStack(s.font), fontSize: s.size });
+const xtermOpts = (s) => ({ theme: currentTheme(s), fontFamily: fontStack(s.font), fontSize: s.size });
 
 let applying = 0;
 async function applySettings(s) {
-  const t = themeOf(s.theme), root = document.documentElement;
+  const t = currentTheme(s), root = document.documentElement;
   const vars = { bg: t.background, text: t.foreground, accent: t.accent, 'on-accent': t.onAccent, ok: t.green, warn: t.yellow, bad: t.red,
+    tree: t.dark ? '#e6e6e6' : t.foreground, // files and folders; #e6e6e6 would vanish on a light theme
     blue: t.blue, magenta: t.magenta, cyan: t.cyan, mono: fontStack(s.font), 'mono-size': `${s.size}px` }; // the last five: code previews
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(`--${k}`, v);
-  Blobs.setColor(t.accent);
+  Blobs.setColor(t.accent, t.red);
   root.style.colorScheme = t.dark ? 'dark' : 'light'; // native bits (dropdowns, spinners) match the theme
   root.dataset.smooth = s.smoothing;
-  root.dataset.frost = s.frost;
   root.dataset.translucent = s.translucent;
-  dt.appearance(t.dark);
+  dt.appearance(s.mode); // the frosted sidebar follows too
   const run = ++applying;
   await document.fonts.load(`${s.size}px "${s.font}"`).catch(() => {}); // else xterm measures the fallback font
   if (run !== applying) return; // a newer change (e.g. hovering the next swatch) already won
@@ -609,30 +784,38 @@ function save(patch) {
   try { localStorage.setItem('dt-settings', JSON.stringify(settings)); } catch {}
   applySettings(settings);
   renderSettings();
+  for (const [setting, value] of Object.entries(patch)) dt.track('setting_changed', { setting, value });
 }
 
 // Settings is a mode: the sidebar lists sections, the main area shows the page (terminals keep running, hidden).
 const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
-const SEGS = [['setSmooth', 'smoothing']]; // segmented controls -> setting
-const SWITCHES = [['setTranslucent', 'translucent'], ['setFrost', 'frost']]; // checkboxes -> 'on'/'off'
+const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;
-    $('setTheme').innerHTML = `<optgroup label="Dark">${opts(THEMES.filter((t) => t.dark).map((t) => t.name))}</optgroup>
-      <optgroup label="Light">${opts(THEMES.filter((t) => !t.dark).map((t) => t.name))}</optgroup>`;
+    $('setLight').innerHTML = opts(THEMES.filter((t) => !t.dark).map((t) => t.name));
+    $('setDark').innerHTML = opts(THEMES.filter((t) => t.dark).map((t) => t.name));
     $('setFont').innerHTML = `<optgroup label="Included">${opts(BUNDLED)}</optgroup>
       <optgroup label="On your Mac">${opts(SYSTEM.filter(installed))}</optgroup>`;
   }
-  $('setTheme').value = settings.theme;
+  // Light or Dark: one "Theme" picker for that side. System: both, since macOS decides which shows.
+  const both = settings.mode === 'system';
+  $('lightRow').hidden = settings.mode === 'dark';
+  $('darkRow').hidden = settings.mode === 'light';
+  for (const [row, name] of [['lightRow', 'Light theme'], ['darkRow', 'Dark theme']])
+    $(row).querySelector('.theme-label').textContent = both ? name : 'Theme';
+  $('setLight').value = themeOf(settings.lightTheme, false).name;
+  $('setDark').value = themeOf(settings.darkTheme, true).name;
   $('setFont').value = settings.font;
   $('setSize').value = settings.size;
   for (const [id, key] of SWITCHES) $(id).checked = settings[key] === 'on';
   for (const [id, key] of SEGS) for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === settings[key]);
 
   // The terminal is hidden here, so show what the choice looks like on a fake one.
-  const t = themeOf(settings.theme), c = (k, s) => `<span style="color:${t[k]}">${s}</span>`;
+  const t = currentTheme(settings), c = (k, s) => `<span style="color:${t[k]}">${s}</span>`;
   const p = $('preview');
   p.style.cssText = `background:${t.background};color:${t.foreground};font:${settings.size}px/1.25 ${fontStack(settings.font)}`;
   p.innerHTML = [
@@ -644,7 +827,11 @@ function renderSettings() {
   ].join('\n') + `<div class="dots">${['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
     .flatMap((k) => [k, 'bright' + k[0].toUpperCase() + k.slice(1)]).map((k) => `<i style="background:${t[k]}"></i>`).join('')}</div>`;
 }
-function openSettings() { renderSettings(); $('app').classList.add('in-settings'); }
+function openSettings() {
+  renderSettings();
+  $('app').classList.add('in-settings');
+  dt.analytics().then((on) => { $('setUsage').checked = on; });
+}
 function closeSettings() {
   if (!inSettings()) return;
   $('app').classList.remove('in-settings');
@@ -653,16 +840,25 @@ function closeSettings() {
 
 const SIZE = [8, 32];
 const setSize = (n) => save({ size: clamp(Math.round(n) || settings.size, ...SIZE) });
-$('setTheme').onchange = () => save({ theme: $('setTheme').value });
+$('setLight').onchange = () => save({ lightTheme: $('setLight').value });
+$('setDark').onchange = () => save({ darkTheme: $('setDark').value });
 $('setFont').onchange = () => save({ font: $('setFont').value });
 $('setSize').oninput = () => { const n = +$('setSize').value; if (Number.isInteger(n) && n >= SIZE[0] && n <= SIZE[1]) save({ size: n }); }; // "1" on the way to "14" waits
 $('setSize').onchange = () => setSize(+$('setSize').value);
 $('sizeUp').onclick = () => setSize(settings.size + 1);
 $('sizeDown').onclick = () => setSize(settings.size - 1);
 for (const [id, key] of SWITCHES) $(id).onchange = () => save({ [key]: $(id).checked ? 'on' : 'off' });
+// Anonymous usage lives in the main process (analytics.mjs), not in settings: main is what sends it.
+$('setUsage').onchange = () => dt.analytics($('setUsage').checked);
+$('usageOff').onclick = () => { dt.analytics(false); $('usageNote').hidden = true; };
 for (const [id, key] of SEGS) $(id).onclick = (e) => { const b = e.target.closest('button'); if (b) save({ [key]: b.dataset.v }); };
 $('openSettings').onclick = () => (inSettings() ? closeSettings() : openSettings());
 $('closeSettings').onclick = closeSettings;
+sysDark.addEventListener('change', () => {
+  if (settings.mode !== 'system') return;
+  applySettings(settings);
+  if (inSettings()) renderSettings();
+});
 window.addEventListener('storage', (e) => {
   if (e.key !== 'dt-settings') return;
   settings = load();
@@ -694,17 +890,14 @@ document.addEventListener('keydown', (e) => {
     const n = Panes.neighbor(rects, active().id, e.key);
     if (n) focusPane(+n);
   }
-  if (e.key === 'Escape') { closePal(); closeSettings(); if ($('startOv').classList.contains('show')) closeStart(); }
+  if (e.key === 'Escape') { if ($('updOv').classList.contains('show')) return closeUpdate(); closePal(); closeSettings(); if ($('startOv').classList.contains('show')) closeStart(); }
 }, true);
 document.addEventListener('keyup', (e) => { if (e.key === 'Meta') hideKeys(); });
 window.addEventListener('blur', hideKeys);
-// "Stay frosted when unfocused: Off" is CSS (visualEffectState can't change after the window exists).
-const setBlurred = () => document.documentElement.classList.toggle('blurred', !document.hasFocus());
-window.addEventListener('blur', setBlurred);
-window.addEventListener('focus', setBlurred);
-setBlurred();
 for (const ov of ['palOv', 'startOv']) $(ov).onclick = (e) => { if (e.target.id === ov) ov === 'palOv' ? closePal() : closeStart(); };
+$('updOv').onclick = (e) => { if (e.target.id === 'updOv') closeUpdate(); };
 
-// A new window starts with one tab in the home folder, and the start screen on top.
+// A new window starts with one tab in the home folder, and the start screen on top
+// (the very first time, the welcome cards before it).
 // Fonts must be loaded before the first xterm measures its cells.
-applySettings(settings).then(() => newTab()).then(openStart);
+applySettings(settings).then(() => newTab()).then(() => (firstRun ? runWelcome() : openStart()));

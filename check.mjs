@@ -100,12 +100,11 @@ assert.ok(used.length > 20);
 for (const name of used) assert.ok(ic.ICONS[name], `icon "${name}" is used but not in icons.js`);
 for (const [name, svg] of Object.entries(ic.ICONS)) assert.match(svg, /^<(path|rect|circle)[^]*\/>$/, name);
 assert.match(ic.icon('x'), /^<svg class="ic" viewBox="0 0 24 24"[^>]*><path d="M18 6 6 18"\/>/);
-const kinds = { 'hero.PNG': ['file-image', 'magenta'], 'intro.mp4': ['file-video', 'magenta'], 'Home.fig': ['pen-tool', 'magenta'],
-  'Button.tsx': ['file-code', 'blue'], 'app.css': ['file-code', 'cyan'], 'index.html': ['file-code', 'warn'],
-  'package.json': ['file-braces', 'warn'], 'pnpm-lock.lock': ['file-cog', 'warn'], 'README.md': ['file-text', 'dim'],
-  'Inter.woff2': ['file-type', 'text'], 'Makefile': ['file', 'dim'], 'archive.tar.gz': ['file-archive', 'dim'] };
-for (const [name, [icon, color]] of Object.entries(kinds)) {
-  assert.deepEqual({ ...ic.fileIcon(name) }, { icon, color: `var(--${color})` }, name);
+const kinds = { 'hero.PNG': 'file-image', 'intro.mp4': 'file-video', 'Home.fig': 'pen-tool', 'Button.tsx': 'file-code',
+  'app.css': 'file-code', 'index.html': 'file-code', 'package.json': 'file-braces', 'pnpm-lock.lock': 'file-cog',
+  'README.md': 'file-text', 'Inter.woff2': 'file-type', 'Makefile': 'file', 'archive.tar.gz': 'file-archive' };
+for (const [name, icon] of Object.entries(kinds)) {
+  assert.deepEqual({ ...ic.fileIcon(name) }, { icon }, name);
   assert.ok(ic.ICONS[icon], icon);
 }
 
@@ -150,5 +149,53 @@ const pose = bloub.sample(1);
 assert.ok(pose.bodyPath.length > 20 && !/NaN|Infinity/.test(pose.bodyPath));
 assert.ok(pose.dots.length >= 2 && pose.dots.every((d) => Number.isFinite(d.x + d.r)));
 bloub.dispose();
+
+// --- Onboarding (onboarding.js, browser script): three cards, and every tour step points at something real ---
+const ob = { window: {} };
+runInNewContext(readFileSync(new URL('./onboarding.js', import.meta.url), 'utf8'), ob);
+const { CARDS, STEPS } = ob.window.Onboarding;
+const page = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+assert.equal(CARDS.length, 3);
+for (const c of CARDS) assert.ok(c.title && c.text && c.expression, c.title);
+assert.equal(STEPS.length, 6);
+for (const s of STEPS) {
+  assert.ok(s.title && s.text && ['inside', 'right', 'below'].includes(s.place), s.title);
+  for (const sel of s.targets) {
+    const [, tag, kind, name] = sel.match(/^([a-z\d]*)([#.])([\w-]+)$/);
+    const attr = kind === '#' ? `id="${name}"` : `class="${name}"`;
+    assert.ok(page.includes(tag ? `<${tag} ${attr}` : attr), `tour target ${sel} is not in index.html`);
+  }
+}
+for (const id of ['welcomeOv', 'welcomeBlob', 'welcomeTitle', 'welcomeText', 'welcomeDots', 'welcomeNext', 'welcomeSkip', 'replayTour'])
+  assert.ok(page.includes(`id="${id}"`), id);
+
+// --- Anonymous usage (analytics.mjs): only allow-listed tools and plain values; nothing when off ---
+const { createAnalytics, toolOf } = await import('./analytics.mjs');
+assert.equal(toolOf('claude'), 'claude');
+assert.equal(toolOf('git'), 'git');
+assert.equal(toolOf('my-secret-script.sh'), 'other');
+assert.equal(toolOf(''), 'other');
+assert.equal(toolOf(undefined), 'other');
+const usageDir = fresh(), sent = [];
+const usage = createAnalytics({ dir: usageDir, props: { app_version: '9.9.9' }, send: (b) => sent.push(...b) });
+assert.ok(usage.firstLaunch && usage.isOn());
+usage.track('command_run', { tool: 'rm-client-files', source: 'typed', path: { nested: 'no' }, long: 'x'.repeat(500) });
+usage.track('Bad Event!', {});
+await usage.flush();
+assert.equal(sent.length, 1);
+const [ev] = sent;
+assert.equal(ev.event, 'command_run');
+assert.equal(ev.properties.tool, 'other');
+assert.equal(ev.properties.source, 'typed');
+assert.equal(ev.properties.app_version, '9.9.9');
+assert.ok(!('path' in ev.properties) && ev.properties.long.length === 60);
+assert.match(ev.distinct_id, /^[0-9a-f-]{36}$/);
+usage.track('tab_opened');
+usage.setOn(false); // turning it off drops anything not yet sent
+usage.track('tab_opened');
+await usage.flush();
+assert.equal(sent.length, 1);
+const again = createAnalytics({ dir: usageDir, props: {}, send: () => {} }); // same install: same ID, still off
+assert.ok(!again.firstLaunch && !again.isOn());
 
 console.log('check ok');

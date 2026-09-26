@@ -33,6 +33,70 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ## Changelog
 
+### 2026-09-26: Fork 0.2.0 released
+Everything below, down to "updates", ships in 0.2.0: the first version that updates itself. People on 0.1.0 reinstall once.
+
+### 2026-09-26 (installer window)
+**Changed**
+- **Opening Fork.dmg looks like Fork.** A warm cream window (the icon's colour) with a hand-drawn arrow from Fork to Applications and one quiet line: "Drag Fork into Applications". The window is titled just "Fork", not "Fork 0.1.0-arm64", and no longer shows a scrollbar.
+
+### 2026-09-26 (shift+enter)
+**Fixed**
+- **Shift+Enter starts a new line in Claude** instead of sending your message. Enter still sends. At the normal prompt, Shift+Enter adds a second line to the command instead of running it.
+
+### 2026-09-26 (onboarding)
+**Added**
+- **A welcome for people new to terminals.** The first time Fork opens, three short cards (with the blob) explain what a terminal is, that Fork does the typing, and that ⌘K and Claude are there when you're stuck. Next / Skip, dots for progress, and → ← Esc work too.
+- **A spotlight tour** once you've picked where to work. It lights up one part at a time (the terminal, suggestions, the folder list, Search, Preview, your terminals) with a "2 of 6" count, Back / Next, and Skip tour. Skipping the cards skips the tour too.
+- Replay it any time from **Settings → Help → Show again** or **Help → Show the Welcome Tour**.
+
+**Changed**
+- The welcome cards, the start screen and the update card sit in the middle of the window, not near the top. ⌘K stays near the top, because its list changes height as you type.
+- **Icons are one size and weight:** 14px (the small ▸, × and stepper arrows stay 12px and 10px), all with a 1.5px line. Every icon now sits exactly in the middle of its button (the + next to Terminals was 2px off).
+- Search and Settings in the sidebar, and the options on the start screen, are #E6E6E6 like the file list. The start-screen icons are gray instead of purple.
+- **Shortcut hints are soft pills** (⌘K, ⌘, in the sidebar and "↵ Enter" in the bottom bar): easier to read than the old faint text, still quieter than the labels, with a little space between ⌘ and the key.
+
+### 2026-09-26 (appearance)
+**Changed**
+- **Appearance: Light, Dark or System**, at the top of Settings → Appearance. Light and Dark show one Theme list with only that kind of theme. System follows your Mac and shows two lists, a Light theme and a Dark theme, then swaps between them when macOS switches (the frosted sidebar follows too).
+- New installs start on System, with Designer for dark and Catppuccin Latte for light. If you'd already picked a theme, it stays: you land on its side (Dark or Light) with that theme selected.
+- **Font smoothing is a switch.** On is macOS's own smoothing (the old "Default"); Off draws sharp, unsmoothed text. "Thin" is gone, and anyone who had it is now On.
+
+**Removed**
+- **"Stay frosted when unfocused."** The sidebar now always stays frosted when another app is in front. "Translucent sidebar" still turns the glass off altogether.
+
+### 2026-09-26 (anonymous usage)
+**Added**
+- **Anonymous usage, to learn how new people use Fork.** Fork sends which features get used (start screen choice, commands by tool name like `git` or `claude`, sidebar, preview, ⌘K, settings) to PostHog under a random per-install ID. It never sends commands, file names, paths or output. It's on by default, with a line on the start screen that says so and a **Turn off** link, plus a switch in **Settings → Privacy**. See DISTRIBUTION.md.
+
+### 2026-09-26 (sidebar blobs)
+**Changed**
+- **Each terminal in the sidebar has its own blob**, in place of the small grey/green dot, so you can tell what every tab is doing at a glance:
+  - **Ready:** a round blob that breathes and blinks now and then.
+  - **Running:** the "thinking" dots.
+  - **Failed:** a red, sad blob when the last command ended in an error. The next command clears it. Stopping something with Ctrl+C doesn't count as failing.
+  - **Finished while you were away:** a command ended in a tab you weren't looking at. The blob shows a little notification dot until you open that tab.
+  - **Dozing:** no typing or commands for 5 minutes. The blob shrinks to a small, softly bobbing dot and wakes when you use the tab.
+- With split panes, the tab shows whichever pane needs you most: running, then failed, then finished, then dozing.
+- Hover a tab to read its state in words. The blobs follow the theme accent, and failed ones follow the theme red. With Reduce Motion on, they hold still.
+- The blobs only react to what the terminal is doing. No sound or microphone input.
+
+### 2026-09-26 (sidebar, Relay style)
+**Changed**
+- **Sidebar follows the Relay design.** The top row has the traffic lights, a sidebar toggle and ← → arrows, lined up with the main top bar. Under it: a "Fork" wordmark (IBM Plex Mono Bold), then **Search ⌘K** and **Settings ⌘,** as icon rows, then a thin divider. The Settings button at the bottom is gone.
+- Section headings are quieter: sentence case, 12px, dimmed, instead of small caps. Rows are 13px, and the selected row is a softer 10% highlight with 6px corners.
+- Hiding the sidebar (⌘B or the toggle) leaves a toggle in the top bar, in the same spot, to bring it back.
+- **Files and folders are one gray.** Icons and names in the sidebar list and the preview header are #E6E6E6 on dark themes (the theme's text colour on light ones, so they stay readable). Icons still change shape by file type; the per-type colours and the accent-coloured folders are gone.
+
+**Added**
+- **Back and forward through folders**, like Finder: ← → in the sidebar, or ⌘[ and ⌘] (new **Go** menu). Each pane keeps its own history. They're greyed out when there's nowhere to go, and wait if something is running.
+
+### 2026-09-26 (updates)
+**Added**
+- **Update pill:** when a newer Fork is on GitHub, a small "Fork X.Y.Z" pill shows in the top bar. Click it to read what's new, then **Update and restart**: Fork closes, installs the new version and reopens. Anything running in your terminals stops, so the card says so.
+- **What's new:** the first time you open a new version, a card shows its release notes once.
+- Works from the next release on. Anyone on 0.1.0 re-runs the install command once to get it.
+
 ### 2026-09-26 (on GitHub)
 **Added**
 - **Fork is public** at https://github.com/harshii0509/Fork, with a README. Anyone on an Apple Silicon Mac can install it with `curl -fsSL https://raw.githubusercontent.com/harshii0509/Fork/main/install.sh | bash`, or download `Fork.dmg` from the latest release.

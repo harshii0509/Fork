@@ -25,4 +25,12 @@ contextBridge.exposeInMainWorld('dt', {
   ask: (request, cwd) => ipcRenderer.invoke('ask', request, cwd),
   appearance: (dark) => ipcRenderer.send('appearance', dark),
   explain: (output, cwd) => ipcRenderer.invoke('explain', output, cwd),
+
+  version: () => ipcRenderer.invoke('version'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateNotes: () => ipcRenderer.invoke('update:notes'), // this version's release notes
+  updateInstall: () => ipcRenderer.send('update:install'),
+
+  track: (event, props) => ipcRenderer.send('track', event, props), // anonymous usage, see analytics.mjs
+  analytics: (on) => ipcRenderer.invoke('analytics', on), // no argument: is it on?
 });

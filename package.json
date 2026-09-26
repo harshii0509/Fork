@@ -1,12 +1,13 @@
 {
   "name": "designer-terminal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "check": "node check.mjs",
+    "dmg:background": "electron build/render-dmg-background.mjs",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper",
     "build:bloub": "esbuild vendor/bloub/src/entry.ts --bundle --format=iife --global-name=Bloub --minify --legal-comments=inline --banner:js=\"/* Bloub (MIT, see vendor/bloub/LICENSE). Built from vendor/bloub/src by npm run build:bloub. */\" --outfile=vendor/bloub/bloub.js",
     "dist": "electron-builder --mac --publish never",
@@ -75,7 +76,13 @@
       "hardenedRuntime": false
     },
     "dmg": {
-      "artifactName": "Fork.dmg"
+      "artifactName": "Fork.dmg",
+      "title": "Fork",
+      "iconSize": 100,
+      "contents": [
+        { "x": 170, "y": 190, "type": "file" },
+        { "x": 430, "y": 190, "type": "link", "path": "/Applications" }
+      ]
     }
   }
 }

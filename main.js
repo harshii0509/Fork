@@ -1,12 +1,14 @@
 import { app, BrowserWindow, ipcMain, dialog, nativeTheme, Menu, shell } from 'electron';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { readFileSync, watch, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pty from 'node-pty';
+import { marked } from 'marked';
 import { suggest, PALETTE } from './suggest.mjs';
 import { list, readPreview, findEditor } from './files.mjs';
+import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // zsh can't read inside app.asar; point at the unpacked copy when packaged (same path when run with npm start).
@@ -45,7 +47,7 @@ function createPty(wc, cwd) {
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200, height: 760, minWidth: 760, minHeight: 480,
-    titleBarStyle: 'hiddenInset',
+    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 15 }, // centred in the 44px top row
     backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'active',
     webPreferences: { preload: join(HERE, 'preload.cjs'), webviewTag: true }, // <webview> = the preview panel's app view
   });
@@ -87,6 +89,10 @@ function buildMenu() {
       { label: 'Close', accelerator: 'Cmd+W', click: toRenderer('close') },
     ] },
     { role: 'editMenu' },
+    { label: 'Go', submenu: [
+      { label: 'Back', accelerator: 'Cmd+[', click: toRenderer('back') },
+      { label: 'Forward', accelerator: 'Cmd+]', click: toRenderer('forward') },
+    ] },
     { label: 'Panes', submenu: [
       { label: 'Split Right', accelerator: 'Cmd+D', click: toRenderer('split-right') },
       { label: 'Split Down', accelerator: 'Cmd+Shift+D', click: toRenderer('split-down') },
@@ -102,6 +108,9 @@ function buildMenu() {
       { role: 'reload' }, { role: 'toggleDevTools' },
     ] },
     { role: 'windowMenu' },
+    { role: 'help', submenu: [
+      { label: 'Show the Welcome Tour', click: toRenderer('tour') },
+    ] },
   ]));
 }
 
@@ -158,8 +167,9 @@ ipcMain.on('reveal', (_, path) => shell.showItemInFolder(path));
 ipcMain.on('open-external', (_, url) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); });
 
 ipcMain.handle('palette', () => PALETTE);
-// The sidebar's frosted glass follows the app appearance; each window reports its theme's.
-ipcMain.on('appearance', (_, dark) => { nativeTheme.themeSource = dark ? 'dark' : 'light'; });
+// Settings → Appearance ('light', 'dark' or 'system'). The sidebar's frosted glass follows it, and with
+// 'system' the page's prefers-color-scheme tracks macOS, which is how System swaps themes.
+ipcMain.on('appearance', (_, mode) => { if (['light', 'dark', 'system'].includes(mode)) nativeTheme.themeSource = mode; });
 
 ipcMain.handle('pick-folder', async (e) => {
   const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { properties: ['openDirectory', 'createDirectory'] });
@@ -198,10 +208,72 @@ ipcMain.handle('explain', async (_, output, cwd) => {
   return { text: lines.filter((l) => l !== fixLine).join(' '), fix: fix && fix !== 'none' ? fix : null };
 });
 
+// --- Updates: a pill when GitHub has a newer release; Update reruns install.sh ------------------
+// ponytail: not electron-updater, because Squirrel.Mac won't update an ad-hoc signed app. Swap once notarized.
+const REPO = 'harshii0509/Fork';
+const newer = (a, b) => {
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+};
+async function release(which) {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/releases/${which}`, { signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return { version: j.tag_name.replace(/^v/, ''), notes: marked.parse(j.body || '') };
+  } catch { return null; } // offline: say nothing
+}
+let latest = { at: 0, p: null }; // one GitHub call an hour, however many windows ask
+ipcMain.handle('update:check', async () => {
+  if (!app.isPackaged) return null; // npm start
+  if (Date.now() - latest.at > 3600_000) latest = { at: Date.now(), p: release('latest') };
+  const r = await latest.p;
+  if (!r) latest.at = 0; // failed: try again next time
+  return r && newer(r.version, app.getVersion()) ? r : null;
+});
+ipcMain.handle('update:notes', () => release(`tags/v${app.getVersion()}`));
+ipcMain.handle('version', () => app.getVersion());
+// Once Fork has quit, install.sh swaps in the latest Fork.app and opens it. If the download fails, reopen this one.
+ipcMain.on('update:install', () => {
+  spawn('/bin/bash', ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done
+    s=$(curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh) && bash -c "$s" || open -b com.forkterminal.app`],
+  { detached: true, stdio: 'ignore' }).unref();
+  app.quit();
+});
+
+// --- Anonymous usage (analytics.mjs): what gets used, never what's in it ------------------------
+// npm start prints each event and never sends (FORK_ANALYTICS=1 to send for real while testing).
+const SEND = (app.isPackaged || process.env.FORK_ANALYTICS === '1') && !!POSTHOG_KEY;
+const usage = createAnalytics({
+  dir: app.getPath('userData'),
+  props: { app_version: app.getVersion(), os_version: process.getSystemVersion(), arch: process.arch, $lib: 'fork' },
+  async send(batch) {
+    if (!app.isPackaged) for (const e of batch) console.log('[usage]', e.event, JSON.stringify(e.properties));
+    if (!SEND) return;
+    const r = await fetch(`${POSTHOG_HOST}/batch/`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: POSTHOG_KEY, batch }), signal: AbortSignal.timeout(10_000) });
+    if (!app.isPackaged) console.log('[usage] sent to PostHog:', r.status);
+  },
+});
+ipcMain.on('track', (_, event, props) => usage.track(event, props));
+ipcMain.handle('analytics', (_, on) => (typeof on === 'boolean' ? usage.setOn(on) : usage.isOn()));
+setInterval(() => usage.flush(), app.isPackaged ? 30_000 : 2_000);
+const openedAt = Date.now();
+let flushed = false;
+app.on('before-quit', (e) => { // send what's left, but never hold up quitting for more than 2s
+  if (flushed) return;
+  flushed = true;
+  e.preventDefault();
+  usage.track('app_closed', { minutes_open: Math.round((Date.now() - openedAt) / 60_000) });
+  Promise.race([usage.flush(), new Promise((r) => setTimeout(r, 2000))]).then(() => app.quit());
+});
+
 app.whenReady().then(() => {
-  nativeTheme.themeSource = 'dark'; // until the window applies its saved theme
+  nativeTheme.themeSource = 'system'; // until the window applies its saved appearance
   buildMenu();
   createWindow();
+  usage.track('app_opened', { first_launch: usage.firstLaunch });
 });
 // Links in the app view that open a new window (target=_blank) go to the real browser.
 app.on('web-contents-created', (_, c) => {

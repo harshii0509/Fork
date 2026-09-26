@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- The Fork.dmg installer window's background, 600×400. The icons sit on top of it at the spots set
+     in package.json → build.dmg.contents (their centres: Fork.app 170,190 and Applications 430,190).
+     Change it here, then: npm run dmg:background (writes background.png + @2x), then npm run dist. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 600px; height: 400px; overflow: hidden; }
+  body { position: relative; background: #eee9de; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  svg { position: absolute; inset: 0; }
+  p { position: absolute; left: 0; right: 0; top: 320px; margin: 0; text-align: center;
+    font-size: 13px; letter-spacing: .01em; color: #8c857a; }
+</style>
+</head>
+<body>
+  <!-- A loose, hand-drawn arrow, like the fork sketch in the icon. -->
+  <svg width="600" height="400" viewBox="0 0 600 400" fill="none" stroke="#2a2622" stroke-width="2.5"
+    stroke-linecap="round" stroke-linejoin="round">
+    <path d="M240 193 C 258 186, 280 197, 300 191 S 338 185, 359 190"/>
+    <path d="M345 178 C 350 182, 355 186, 360 190"/>
+    <path d="M360 190 C 355 194, 350 199, 346 204"/>
+  </svg>
+  <p>Drag Fork into Applications</p>
+</body>
+</html>
