@@ -13,6 +13,20 @@ const tab = () => tabs[tabIx];
 const active = () => panes.get(tab()?.activeId);
 const tabOf = (id) => tabs.find((t) => Panes.leaves(t.root).includes(id));
 
+// Draw a pane's text with the graphics chip (WebGL): smoother on busy output, lighter on battery.
+// Font smoothing Off needs CSS on DOM text, so those panes stay DOM. If WebGL is missing, or the Mac
+// takes the context back (it allows only so many at once), the pane quietly goes back to DOM text.
+function useGpu(p, on) {
+  if (on && !p.gl) {
+    try {
+      const gl = new WebglAddon.WebglAddon();
+      gl.onContextLoss(() => { gl.dispose(); if (p.gl === gl) p.gl = null; });
+      p.term.loadAddon(gl);
+      p.gl = gl;
+    } catch { p.gl = null; }
+  } else if (!on && p.gl) { p.gl.dispose(); p.gl = null; }
+}
+
 // screen/when: output saved from last time (session.mjs), shown above a quiet "Restored" line.
 async function newPane(cwd, { screen, when } = {}) {
   const id = await dt.create(cwd);
@@ -23,14 +37,22 @@ async function newPane(cwd, { screen, when } = {}) {
   el.append(inner);
   $('hidden').append(el);
 
-  const term = new Terminal({ ...xtermOpts(settings), lineHeight: 1.25, cursorBlink: true });
-  const fit = new FitAddon.FitAddon(), serial = new SerializeAddon.SerializeAddon();
+  // 10,000 lines to scroll back through (xterm's default is 1,000, which one Claude session outgrows).
+  const term = new Terminal({ ...xtermOpts(settings), lineHeight: 1.25, cursorBlink: true, scrollback: 10_000, allowProposedApi: true });
+  const fit = new FitAddon.FitAddon(), serial = new SerializeAddon.SerializeAddon(), search = new SearchAddon.SearchAddon();
   term.loadAddon(fit);
   term.loadAddon(serial);
+  term.loadAddon(search);
+  // Web addresses in the output: ⌘-click opens them in the browser (a plain click just focuses the pane).
+  term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => { if (e.metaKey) dt.openExternal(uri); }, {
+    hover: () => { el.title = '⌘-click to open in your browser'; }, leave: () => { el.title = ''; },
+  }));
   term.open(inner);
   if (screen) term.write(`${screen}\x1b[0m\r\n\x1b[2m── Restored · ${restoredAt(when)} ──\x1b[0m\r\n`);
-  const pane = { id, term, fit, serial, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null };
+  const pane = { id, term, fit, serial, search, gl: null, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null };
   panes.set(id, pane);
+  useGpu(pane, settings.smoothing === 'on');
+  search.onDidChangeResults(({ resultIndex, resultCount }) => { if (pane === findPane) showCount(resultIndex, resultCount); });
 
   // Drop a file (from the sidebar or Finder) to type its path at the cursor, e.g. to show Claude a file.
   // Works while something runs, since that something is usually Claude.
@@ -173,6 +195,7 @@ function focusPane(id) {
   t.activeId = id;
   for (const pid of Panes.leaves(t.root)) panes.get(pid).unseen = false;
   render();
+  if (findOpen()) find(); // find follows you to the pane you switched to
   hideOops();
   setHint('');
   syncBusy();
@@ -303,6 +326,9 @@ dt.onCmd((cmd) => ({
   settings: () => (inSettings() ? closeSettings() : openSettings()),
   'toggle-sidebar': toggleSide,
   'toggle-preview': togglePv,
+  find: openFind,
+  'find-next': () => (findOpen() ? find('next') : openFind()),
+  'find-prev': () => (findOpen() ? find('prev') : openFind()),
   back: () => go(-1),
   forward: () => go(1),
   tour: replayTour,
@@ -596,6 +622,57 @@ $('explainBtn').onclick = async () => {
 $('fixBtn').onclick = () => { hideOops(); send(fix, 'Suggested fix. Read it, then press Enter.', false); dt.track('fix_used'); };
 $('oopsClose').onclick = hideOops;
 
+// --- ⌘F: find in the active pane (SearchAddon) -----------------------------------------------
+// Every match is tinted with the theme's accent; the current one is also outlined in the text colour.
+let findPane = null;
+const findOpen = () => $('find').classList.contains('show');
+const hex6 = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#7c6cff');
+const mix = (a, b, t) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex6(a).slice(i, i + 2), 16) * (1 - t)
+  + parseInt(hex6(b).slice(i, i + 2), 16) * t).toString(16).padStart(2, '0')).join('');
+function findLooks() {
+  const t = currentTheme(settings);
+  return { matchBackground: mix(t.background, t.accent, 0.35), activeMatchBackground: mix(t.background, t.accent, 0.35),
+    activeMatchBorder: hex6(t.foreground),
+    matchOverviewRuler: mix(t.background, t.accent, 0.6), activeMatchColorOverviewRuler: hex6(t.accent) };
+}
+function showCount(i, n) {
+  $('find').classList.toggle('none', !n);
+  $('findCount').textContent = !$('findIn').value ? '' : !n ? 'No results' : i < 0 ? `${n} found` : `${i + 1} of ${n}`;
+}
+// how: 'type' keeps the current match while it still fits, 'next' / 'prev' move along.
+function find(how = 'type') {
+  const p = active(), text = $('findIn').value;
+  if (findPane && findPane !== p) findPane.search.clearDecorations();
+  findPane = p;
+  if (!p) return;
+  if (!text) { p.search.clearDecorations(); p.term.clearSelection(); showCount(-1, 0); return; }
+  const opts = { decorations: findLooks(), incremental: how === 'type' };
+  how === 'prev' ? p.search.findPrevious(text, opts) : p.search.findNext(text, opts);
+}
+function openFind() {
+  if (inSettings()) return;
+  $('find').classList.add('show');
+  $('findIn').focus();
+  $('findIn').select();
+  if ($('findIn').value) find();
+  dt.track('find_opened');
+}
+function closeFind() {
+  $('find').classList.remove('show');
+  findPane?.search.clearDecorations();
+  findPane?.term.clearSelection();
+  findPane = null;
+  active()?.term.focus();
+}
+$('findIn').oninput = () => find();
+$('findIn').onkeydown = (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); find(e.shiftKey ? 'prev' : 'next'); }
+  if (e.key === 'Escape') { e.stopPropagation(); closeFind(); }
+};
+$('findNext').onclick = () => find('next');
+$('findPrev').onclick = () => find('prev');
+$('findClose').onclick = closeFind;
+
 // --- Reopen the way you left it (session.mjs, main.js) ----------------------------------------
 // This window's tabs, splits and folders go to main about a second after they change. At quit main
 // asks for everything, including what's on screen. Closing the last tab forgets the window instead.
@@ -846,6 +923,7 @@ async function applySettings(s) {
   if (run !== applying) return; // a newer change (e.g. hovering the next swatch) already won
   for (const p of panes.values()) {
     Object.assign(p.term.options, xtermOpts(s));
+    useGpu(p, s.smoothing === 'on');
     if (p.el.offsetParent) { p.fit.fit(); dt.resize(p.id, p.term.cols, p.term.rows); } // hidden tabs refit when shown
   }
 }

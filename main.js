@@ -108,7 +108,15 @@ function buildMenu() {
       { type: 'separator' },
       { label: 'Close', accelerator: 'Cmd+W', click: toRenderer('close') },
     ] },
-    { role: 'editMenu' },
+    { label: 'Edit', submenu: [
+      { role: 'undo' }, { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+      { type: 'separator' },
+      { label: 'Find…', accelerator: 'Cmd+F', click: toRenderer('find') },
+      { label: 'Find Next', accelerator: 'Cmd+G', click: toRenderer('find-next') },
+      { label: 'Find Previous', accelerator: 'Cmd+Shift+G', click: toRenderer('find-prev') },
+    ] },
     { label: 'Go', submenu: [
       { label: 'Back', accelerator: 'Cmd+[', click: toRenderer('back') },
       { label: 'Forward', accelerator: 'Cmd+]', click: toRenderer('forward') },

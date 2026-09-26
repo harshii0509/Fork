@@ -142,6 +142,15 @@
   /* Dragging a file over a pane: dropping types its path at the cursor. */
   .pane.drop { opacity: 1 !important; box-shadow: inset 0 0 0 2px var(--accent) !important; }
   #hidden { display: none; }
+  /* ⌘F: find in the active pane, floating over the terminal's top-right corner. */
+  .find { grid-area: 2 / 2; justify-self: end; align-self: start; z-index: 5; margin: 10px 14px; display: none; align-items: center;
+    gap: 2px; padding: 3px 3px 3px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgb(0 0 0 / .25); }
+  .find.show { display: flex; }
+  .find input { width: 180px; padding: 4px 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; }
+  .find-count { min-width: 64px; padding-right: 6px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .find.none .find-count { color: var(--bad); }
+  .in-settings .find { display: none; }
   .ibtn { width: 28px; height: 28px; padding: 0; border-radius: 7px; display: grid; place-items: center; color: var(--dim); }
   .ibtn:hover { background: var(--line); color: var(--text); }
 
@@ -390,7 +399,7 @@
   .sample .dots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
   .sample .dots i { width: 14px; height: 14px; border-radius: 4px; }
 
-  /* Font smoothing (xterm v6 draws text as DOM, so plain CSS reaches it). On = macOS's own. */
+  /* Font smoothing Off: panes switch from WebGL back to DOM text (renderer.js useGpu), so plain CSS reaches it. */
   [data-smooth="off"] .xterm, [data-smooth="off"] .sample { -webkit-font-smoothing: none; }
 
   /* Settings → Translucent sidebar: Off. visualEffectState can't change at runtime, so paint over the glass. */
@@ -444,6 +453,13 @@
   <div class="side-grip" id="sideGrip"></div>
 
   <main class="term" id="term"></main>
+  <div class="find" id="find" role="search">
+    <input id="findIn" placeholder="Find" aria-label="Find in this terminal" spellcheck="false" autocomplete="off">
+    <span class="find-count" id="findCount" aria-live="polite"></span>
+    <button class="ibtn" id="findPrev" title="Previous (⇧Enter)" aria-label="Previous match"><i data-icon="chevron-up"></i></button>
+    <button class="ibtn" id="findNext" title="Next (Enter)" aria-label="Next match"><i data-icon="chevron-down"></i></button>
+    <button class="ibtn" id="findClose" title="Close (Esc)" aria-label="Close find"><i data-icon="x"></i></button>
+  </div>
 
   <div class="pv-grip" id="pvGrip"></div>
   <section class="pv" id="pv" data-mode="file">
@@ -523,7 +539,7 @@
       <button class="go" id="readyShow">Show it</button><button class="x" id="readyClose" aria-label="Dismiss"><i data-icon="x"></i></button></div>
     <div class="hint" id="hint"></div>
     <div class="running"><span class="blob" id="runBlob"></span>Something is running. <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button></div>
-    <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next tab</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
+    <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next tab</span><span><b>⌘F</b> find</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
   </footer>
 </div>
 
@@ -574,6 +590,9 @@
 <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
 <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 <script src="node_modules/@xterm/addon-serialize/lib/addon-serialize.js"></script>
+<script src="node_modules/@xterm/addon-search/lib/addon-search.js"></script>
+<script src="node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+<script src="node_modules/@xterm/addon-webgl/lib/addon-webgl.js"></script>
 <script src="node_modules/dompurify/dist/purify.min.js"></script>
 <script src="panes.js"></script>
 <script src="icons.js"></script>

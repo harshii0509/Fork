@@ -38,6 +38,12 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 ### Unreleased
 **New**
 - **Fork reopens the way you left it.** Quit, close the window or update, and next time your tabs, splits and folders are back, with what was on screen above a quiet "Restored" line. If Claude was running, it picks up the conversation where it left off. Closing every tab yourself means you're done, so the next start is fresh. Turn it off in **Settings → Startup**.
+- **Find with ⌘F.** Search what's in a terminal: every match lights up, Enter and ⇧Enter move between them, Esc closes. ⌘G finds the next one.
+- **Links you can click.** ⌘-click any web address in the output to open it in your browser.
+
+**Better**
+- **Scroll back ten times further:** each terminal keeps its last 10,000 lines instead of 1,000, so a long Claude conversation is still there.
+- **Smoother with busy output.** Terminals are drawn by your Mac's graphics chip, so long output and Claude's screens scroll without stutter.
 
 
 ### 0.2.1 — 2026-09-26
