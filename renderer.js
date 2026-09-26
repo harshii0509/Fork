@@ -13,7 +13,8 @@ const tab = () => tabs[tabIx];
 const active = () => panes.get(tab()?.activeId);
 const tabOf = (id) => tabs.find((t) => Panes.leaves(t.root).includes(id));
 
-async function newPane(cwd) {
+// screen/when: output saved from last time (session.mjs), shown above a quiet "Restored" line.
+async function newPane(cwd, { screen, when } = {}) {
   const id = await dt.create(cwd);
   const el = document.createElement('div');
   el.className = 'pane';
@@ -23,10 +24,12 @@ async function newPane(cwd) {
   $('hidden').append(el);
 
   const term = new Terminal({ ...xtermOpts(settings), lineHeight: 1.25, cursorBlink: true });
-  const fit = new FitAddon.FitAddon();
+  const fit = new FitAddon.FitAddon(), serial = new SerializeAddon.SerializeAddon();
   term.loadAddon(fit);
+  term.loadAddon(serial);
   term.open(inner);
-  const pane = { id, term, fit, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null };
+  if (screen) term.write(`${screen}\x1b[0m\r\n\x1b[2m── Restored · ${restoredAt(when)} ──\x1b[0m\r\n`);
+  const pane = { id, term, fit, serial, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null };
   panes.set(id, pane);
 
   // Drop a file (from the sidebar or Finder) to type its path at the cursor, e.g. to show Claude a file.
@@ -135,8 +138,9 @@ function render() {
       const r = d.getBoundingClientRect();
       node.ratio = clamp(node.dir === 'row' ? (x - r.left) / r.width : (y - r.top) / r.height, 0.15, 0.85);
       size(node.ratio);
+      saveSoon();
     });
-    bar.ondblclick = () => { node.ratio = 0.5; size(0.5); };
+    bar.ondblclick = () => { node.ratio = 0.5; size(0.5); saveSoon(); };
     d.append(a, bar, b);
     return d;
   };
@@ -158,7 +162,7 @@ function drag(e, fn) {
   el.onpointerup = () => { el.onpointermove = null; el.classList.remove('dragging'); };
 }
 
-$('sideGrip').onpointerdown = (e) => drag(e, (x) => $('app').style.setProperty('--side', `${clamp(x, 180, 420)}px`));
+$('sideGrip').onpointerdown = (e) => drag(e, (x) => { $('app').style.setProperty('--side', `${clamp(x, 180, 420)}px`); saveSoon(); });
 
 function focusPane(id) {
   $('app').classList.remove('in-settings'); // ⌘T, ⌘1–9, splits: back to the terminal
@@ -204,7 +208,7 @@ function closePane(id, { exited = false, force = false } = {}) {
   if (!t.root) {
     t.blob?.destroy();
     tabs.splice(tabs.indexOf(t), 1);
-    if (!tabs.length) return window.close(); // last tab closes the window
+    if (!tabs.length) return forgetAndClose(); // last tab closes the window, and it won't come back
     tabIx = t === cur ? Math.min(tabIx, tabs.length - 1) : tabs.indexOf(cur);
   } else if (t.activeId === id) {
     t.activeId = Panes.leaves(t.root)[0];
@@ -245,6 +249,7 @@ function renderTabs() {
     slot.replaceWith(t.blob.el);
   });
   syncTabBlobs();
+  saveSoon(); // tabs, splits, folders and busy states all pass through here
 }
 
 // What each tab's blob shows. With split panes, the most pressing pane wins.
@@ -283,7 +288,7 @@ $('tabs').onclick = (e) => {
   if (t) goTab(+t.dataset.i);
 };
 $('newTab').onclick = () => { newTab(active()?.cwd); dt.track('tab_opened'); };
-const toggleSide = () => { $('app').classList.toggle('no-side'); dt.track('sidebar_toggled'); }; // panes refit via their ResizeObserver
+const toggleSide = () => { $('app').classList.toggle('no-side'); dt.track('sidebar_toggled'); saveSoon(); }; // panes refit via their ResizeObserver
 $('sideToggle').onclick = $('sideShow').onclick = toggleSide;
 $('splitR').onclick = () => split('row');
 $('splitD').onclick = () => split('col');
@@ -591,6 +596,66 @@ $('explainBtn').onclick = async () => {
 $('fixBtn').onclick = () => { hideOops(); send(fix, 'Suggested fix. Read it, then press Enter.', false); dt.track('fix_used'); };
 $('oopsClose').onclick = hideOops;
 
+// --- Reopen the way you left it (session.mjs, main.js) ----------------------------------------
+// This window's tabs, splits and folders go to main about a second after they change. At quit main
+// asks for everything, including what's on screen. Closing the last tab forgets the window instead.
+let saveTimer, restoring = false, forgotten = false;
+function snapshot(full) {
+  const node = (n) => {
+    if (n.dir) return { dir: n.dir, ratio: n.ratio ?? 0.5, a: node(n.a), b: node(n.b) };
+    const p = panes.get(n.id), s = { cwd: p?.cwd || '' };
+    if (p?.busy && p.tool === 'claude') s.claude = true;
+    if (full && p) try { s.screen = p.serial.serialize({ scrollback: 1000 }); } catch {}
+    return s;
+  };
+  const width = parseInt($('app').style.getPropertyValue('--side'), 10);
+  return {
+    tabIx,
+    side: { hidden: $('app').classList.contains('no-side'), ...(width ? { width } : {}) },
+    tabs: tabs.map((t) => ({ root: node(t.root), active: Math.max(0, Panes.leaves(t.root).indexOf(t.activeId)) })),
+  };
+}
+function saveSoon() {
+  if (restoring || forgotten || !tabs.length) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => dt.sessionSave(snapshot(false)), 1000);
+}
+dt.onSessionCollect(() => { clearTimeout(saveTimer); return forgotten ? null : snapshot(true); });
+async function forgetAndClose() {
+  forgotten = true;
+  clearTimeout(saveTimer);
+  await dt.sessionForget();
+  window.close();
+}
+const restoredAt = (t) => {
+  const d = new Date(t || Date.now()), time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? time
+    : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+};
+// Rebuild each tab's split tree with fresh shells in the saved folders. Claude picks up where it was.
+async function restore(saved) {
+  restoring = true;
+  for (const t of saved.tabs) {
+    const ids = [];
+    const build = async (n) => {
+      if (n.dir) return { dir: n.dir, ratio: n.ratio, a: await build(n.a), b: await build(n.b) };
+      const p = await newPane(n.cwd, { screen: n.screen, when: saved.savedAt });
+      if (n.claude) { dt.write(p.id, 'claude --continue\r'); p.suggested = true; } // zsh holds it until the prompt is up
+      ids.push(p.id);
+      return { id: p.id };
+    };
+    const root = await build(t.root);
+    tabs.push({ root, activeId: ids[t.active] ?? ids[0] });
+  }
+  if (saved.side.hidden) $('app').classList.add('no-side');
+  if (saved.side.width) $('app').style.setProperty('--side', `${saved.side.width}px`);
+  restoring = false;
+  const t = tabs[saved.tabIx] || tabs[0], id = t.activeId;
+  t.activeId = null; // force a redraw
+  focusPane(id);
+  dt.track('session_restored', { tabs: tabs.length, panes: panes.size });
+}
+
 // --- Start screen: never a blank prompt ------------------------------------------
 async function openStart() {
   const list = await dt.recents();
@@ -697,6 +762,10 @@ function showUpdate(title, notes, isUpdate) {
   $('updNotes').innerHTML = DOMPurify.sanitize(notes);
   for (const id of ['updLater', 'updGo', 'updWarn']) $(id).style.display = isUpdate ? '' : 'none';
   $('updOk').style.display = isUpdate ? 'none' : '';
+  if (isUpdate) dt.sessionEnabled().then((on) => {
+    $('updWarn').textContent = on ? 'Fork will close and reopen with your tabs as they were. Anything running will stop; Claude picks up where it left off.'
+      : 'Fork will close and reopen. Anything running in your terminals will stop.';
+  });
   $('updOv').classList.add('show');
 }
 function closeUpdate() { $('updOv').classList.remove('show'); active()?.term.focus(); }
@@ -833,6 +902,7 @@ function openSettings() {
   renderSettings();
   $('app').classList.add('in-settings');
   dt.analytics().then((on) => { $('setUsage').checked = on; });
+  dt.sessionEnabled().then((on) => { $('setRestore').checked = on; });
 }
 function closeSettings() {
   if (!inSettings()) return;
@@ -852,6 +922,8 @@ $('sizeDown').onclick = () => setSize(settings.size - 1);
 for (const [id, key] of SWITCHES) $(id).onchange = () => save({ [key]: $(id).checked ? 'on' : 'off' });
 // Anonymous usage lives in the main process (analytics.mjs), not in settings: main is what sends it.
 $('setUsage').onchange = () => dt.analytics($('setUsage').checked);
+// So does reopening your tabs: main needs to know before any window exists.
+$('setRestore').onchange = () => { dt.sessionEnabled($('setRestore').checked); dt.track('setting_changed', { setting: 'restore', value: $('setRestore').checked ? 'on' : 'off' }); };
 $('usageOff').onclick = () => { dt.analytics(false); $('usageNote').hidden = true; };
 for (const [id, key] of SEGS) $(id).onclick = (e) => { const b = e.target.closest('button'); if (b) save({ [key]: b.dataset.v }); };
 $('openSettings').onclick = () => (inSettings() ? closeSettings() : openSettings());
@@ -902,4 +974,10 @@ $('updOv').onclick = (e) => { if (e.target.id === 'updOv') closeUpdate(); };
 // A new window starts with one tab in the home folder, and the start screen on top
 // (the very first time, the welcome cards before it).
 // Fonts must be loaded before the first xterm measures its cells.
-applySettings(settings).then(() => newTab()).then(() => (firstRun ? runWelcome() : openStart()));
+// Unless this window is reopening the way you left it: then it's straight back to work.
+applySettings(settings).then(async () => {
+  const saved = await dt.sessionStart();
+  if (saved) return restore(saved);
+  await newTab();
+  firstRun ? runWelcome() : openStart();
+});

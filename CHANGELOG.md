@@ -36,6 +36,9 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 ## Changelog
 
 ### Unreleased
+**New**
+- **Fork reopens the way you left it.** Quit, close the window or update, and next time your tabs, splits and folders are back, with what was on screen above a quiet "Restored" line. If Claude was running, it picks up the conversation where it left off. Closing every tab yourself means you're done, so the next start is fresh. Turn it off in **Settings → Startup**.
+
 
 ### 0.2.1 — 2026-09-26
 

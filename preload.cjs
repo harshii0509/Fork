@@ -31,6 +31,13 @@ contextBridge.exposeInMainWorld('dt', {
   updateNotes: () => ipcRenderer.invoke('update:notes'), // this version's release notes
   updateInstall: () => ipcRenderer.send('update:install'),
 
+  // Reopen the way you left it (session.mjs, main.js)
+  sessionStart: () => ipcRenderer.invoke('session:start'), // this window's saved state, or null
+  sessionSave: (state) => ipcRenderer.send('session:save', state),
+  sessionForget: () => ipcRenderer.invoke('session:forget'), // closed every tab: start fresh next time
+  sessionEnabled: (on) => ipcRenderer.invoke('session:enabled', on), // no argument: is it on?
+  onSessionCollect: (fn) => ipcRenderer.on('session:collect', () => ipcRenderer.send('session:full', fn())),
+
   track: (event, props) => ipcRenderer.send('track', event, props), // anonymous usage, see analytics.mjs
   analytics: (on) => ipcRenderer.invoke('analytics', on), // no argument: is it on?
 });

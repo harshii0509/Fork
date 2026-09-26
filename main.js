@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme, Menu, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, nativeTheme, Menu, screen, shell } from 'electron';
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { readFileSync, watch, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,7 @@ import { suggest, PALETTE } from './suggest.mjs';
 import { list, readPreview, findEditor } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
+import { clean, VERSION as SESSION_VERSION } from './session.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // zsh can't read inside app.asar; point at the unpacked copy when packaged (same path when run with npm start).
@@ -48,9 +49,11 @@ function createPty(wc, cwd) {
   return id;
 }
 
-function createWindow() {
+// restore: a saved window from session.json (see "Reopen the way you left it" below), or nothing for a fresh one.
+function createWindow(restore) {
   const win = new BrowserWindow({
-    width: 1200, height: 760, minWidth: 760, minHeight: 480,
+    width: 1200, height: 760, ...(restore?.bounds && onScreen(restore.bounds) ? restore.bounds : {}),
+    minWidth: 760, minHeight: 480,
     titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 15 }, // centred in the 44px top row
     backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'active',
     webPreferences: { preload: join(HERE, 'preload.cjs'), webviewTag: true }, // <webview> = the preview panel's app view
@@ -64,8 +67,21 @@ function createWindow() {
     Object.assign(prefs, { nodeIntegration: false, contextIsolation: true, sandbox: true });
     if (params.src && !/^(https?|file|about):/.test(params.src)) e.preventDefault();
   });
+  const wcId = wc.id; // wc can't be read once the window is gone
+  if (restore) startWith.set(wcId, restore);
+  // The last window closing is quitting, so it comes back next time: grab its screens first.
+  win.on('close', (e) => {
+    if (quitting || gone.has(wcId) || closingLast.has(wcId) || BrowserWindow.getAllWindows().length > 1) return;
+    e.preventDefault();
+    closingLast.add(wcId);
+    collect([wc]).then(() => win.close());
+  });
   win.on('closed', () => {
     for (const [id, t] of ptys) if (t.wc === wc) { t.pty.kill(); ptys.delete(id); }
+    // One of several windows closed: that one's done. The last one is kept (see 'close' above), even
+    // when it closes some other way, since closing the last window quits Fork.
+    const others = BrowserWindow.getAllWindows().some((w) => w !== win && !w.isDestroyed());
+    if (!quitting && others) { sessions.delete(wcId); saveSoon(); }
   });
   win.loadFile(join(HERE, 'index.html'));
   return win;
@@ -212,6 +228,51 @@ ipcMain.handle('explain', async (_, output, cwd) => {
   return { text: lines.filter((l) => l !== fixLine).join(' '), fix: fix && fix !== 'none' ? fix : null };
 });
 
+// --- Reopen the way you left it (session.mjs) ------------------------------------------------------
+// Each window sends its tabs, splits and folders about a second after they change; main writes
+// session.json (on this Mac only) shortly after, so even a crash loses little. Quitting, or closing the
+// last window, also collects every pane's screen. Closing the last tab is "I'm done": that window is forgotten.
+const SESSION = () => join(app.getPath('userData'), 'session.json');
+const sessions = new Map(); // webContents id -> that window's latest state
+const startWith = new Map(); // webContents id -> saved state it restores, handed over once
+const gone = new Set(), closingLast = new Set();
+let sessionOn = true, quitting = false, writeTimer;
+const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+function readSession() {
+  let raw = null;
+  try { raw = JSON.parse(readFileSync(SESSION(), 'utf8')); } catch {} // none yet, or damaged: start fresh
+  return clean(raw, { exists: isDir, home: homedir() });
+}
+function writeSession() {
+  clearTimeout(writeTimer);
+  const data = { v: SESSION_VERSION, enabled: sessionOn, savedAt: Date.now(), windows: [...sessions.values()] };
+  try { writeFileSync(SESSION(), JSON.stringify(data)); chmodSync(SESSION(), 0o600); } catch {} // it can hold terminal output: yours only
+}
+const saveSoon = () => { clearTimeout(writeTimer); writeTimer = setTimeout(writeSession, 2000); };
+// Saved bounds from a screen that's since been unplugged would open the window out of sight.
+const onScreen = (b) => screen.getAllDisplays().some(({ workArea: a }) =>
+  b.x < a.x + a.width - 100 && b.x + b.width > a.x + 100 && b.y < a.y + a.height - 50 && b.y + b.height > a.y);
+function store(wc, state) {
+  if (gone.has(wc.id) || !state) return;
+  const win = BrowserWindow.fromWebContents(wc);
+  sessions.set(wc.id, { ...state, bounds: win && !win.isDestroyed() ? win.getNormalBounds() : sessions.get(wc.id)?.bounds });
+}
+ipcMain.handle('session:start', (e) => { const s = startWith.get(e.sender.id); startWith.delete(e.sender.id); return s || null; });
+ipcMain.on('session:save', (e, state) => { if (quitting) return; store(e.sender, state); saveSoon(); });
+ipcMain.handle('session:forget', (e) => { gone.add(e.sender.id); sessions.delete(e.sender.id); saveSoon(); });
+ipcMain.handle('session:enabled', (_, on) => {
+  if (typeof on === 'boolean') { sessionOn = on; writeSession(); }
+  return sessionOn;
+});
+// Ask windows for everything, screens included; give each at most a second.
+const waiting = new Map();
+ipcMain.on('session:full', (e, state) => { store(e.sender, state); waiting.get(e.sender.id)?.(); });
+const collect = (wcs) => Promise.all(wcs.filter((wc) => !gone.has(wc.id)).map((wc) => new Promise((done) => {
+  const t = setTimeout(done, 1000);
+  waiting.set(wc.id, () => { clearTimeout(t); waiting.delete(wc.id); done(); });
+  wc.send('session:collect');
+}))).then(writeSession);
+
 // --- Updates: a pill when GitHub has a newer release; Update reruns install.sh ------------------
 // ponytail: not electron-updater, because Squirrel.Mac won't update an ad-hoc signed app. Swap once notarized.
 const REPO = 'harshii0509/Fork';
@@ -260,18 +321,24 @@ ipcMain.handle('analytics', (_, on) => (typeof on === 'boolean' ? usage.setOn(on
 setInterval(() => usage.flush(), app.isPackaged ? 30_000 : 2_000);
 const openedAt = Date.now();
 let flushed = false;
-app.on('before-quit', (e) => { // send what's left, but never hold up quitting for more than 2s
+app.on('before-quit', (e) => { // save the session and send what's left, never holding up quitting for long
   if (flushed) return;
   flushed = true;
+  quitting = true;
   e.preventDefault();
   usage.track('app_closed', { minutes_open: Math.round((Date.now() - openedAt) / 60_000) });
-  Promise.race([usage.flush(), new Promise((r) => setTimeout(r, 2000))]).then(() => app.quit());
+  collect(BrowserWindow.getAllWindows().map((w) => w.webContents))
+    .then(() => Promise.race([usage.flush(), new Promise((r) => setTimeout(r, 2000))]))
+    .then(() => app.quit());
 });
 
 app.whenReady().then(() => {
   nativeTheme.themeSource = 'system'; // until the window applies its saved appearance
   buildMenu();
-  createWindow();
+  const saved = readSession();
+  sessionOn = saved.enabled;
+  if (sessionOn && saved.windows.length) for (const w of saved.windows) createWindow({ ...w, savedAt: saved.savedAt });
+  else createWindow();
   usage.track('app_opened', { first_launch: usage.firstLaunch });
 });
 // Links in the app view that open a new window (target=_blank) go to the real browser.

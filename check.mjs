@@ -214,4 +214,37 @@ assert.equal(bump('0.2.1', 'beta'), '0.3.0-beta.1');
 assert.equal(bump('0.3.0-beta.1', 'beta'), '0.3.0-beta.2');
 assert.equal(bump('0.3.0-beta.2', 'minor'), '0.3.0');
 
+{
+// --- Reopening (session.mjs): a damaged or stale session.json can only ever mean "start fresh" ---
+const { clean, countPanes, MAX_SCREEN } = await import('./session.mjs');
+const here = fresh(), ctx = { exists: (p) => p === here, home: '/Users/me' };
+const good = { v: 1, enabled: true, savedAt: 1, windows: [{
+  bounds: { x: 10, y: 20, width: 1200, height: 760 }, tabIx: 1, side: { hidden: true, width: 999 },
+  tabs: [
+    { active: 0, root: { cwd: here } },
+    { active: 5, root: { dir: 'row', ratio: 7, a: { cwd: '/gone/away', claude: true, screen: 'hi' }, b: { dir: 'col', a: { cwd: here }, b: { nope: 1 } } } },
+  ] }] };
+const c = clean(good, ctx);
+assert.equal(c.windows.length, 1);
+const [w] = c.windows;
+assert.deepEqual(w.side, { hidden: true, width: 420 });            // width clamped to what the grip allows
+assert.equal(w.tabIx, 1);
+const t2 = w.tabs[1].root;
+assert.equal(t2.ratio, 0.85);                                      // ratio clamped like a divider drag
+assert.equal(t2.a.cwd, '/Users/me');                               // missing folder -> home
+assert.ok(t2.a.claude && t2.a.screen === 'hi');
+assert.deepEqual(t2.b, { cwd: here });                             // a broken half: its sibling takes its place
+assert.equal(countPanes(t2), 2);
+assert.equal(w.tabs[1].active, 1);                                 // active pane clamped to what exists
+for (const bad of [null, 'x', { v: 99, windows: good.windows }, { v: 1, windows: 'no' }, { v: 1, windows: [{ tabs: [{ root: {} }] }] }])
+  assert.equal(clean(bad, ctx).windows.length, 0);
+assert.equal(clean({ v: 1, enabled: false, windows: [] }, ctx).enabled, false);
+assert.equal(clean(null, ctx).enabled, true);                      // no file yet: on by default
+const long = 'line\n'.repeat(MAX_SCREEN / 4);
+const trimmed = clean({ v: 1, windows: [{ tabs: [{ root: { cwd: here, screen: long } }] }] }, ctx).windows[0].tabs[0].root.screen;
+assert.ok(trimmed.length <= MAX_SCREEN && trimmed.startsWith('line\n'));   // keeps the end, cut at a line
+assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 50 }, tabs: [{ root: { cwd: here } }] }] }, ctx).windows[0].bounds, undefined);
+
+}
+
 console.log('check ok');

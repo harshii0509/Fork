@@ -493,6 +493,11 @@
     </div>
     <h4>Preview</h4>
     <div class="sample" id="preview"></div>
+    <h4>Startup</h4>
+    <div class="set-list">
+      <label class="set-row"><span>Reopen your tabs when Fork starts<small>Tabs, splits, folders and what was on screen. Claude picks up where it left off</small></span>
+        <input type="checkbox" class="switch" id="setRestore"></label>
+    </div>
     <h4>Privacy</h4>
     <div class="set-list">
       <label class="set-row"><span>Share anonymous usage<small>Which features get used, never your files, commands or names</small></span>
@@ -568,6 +573,7 @@
 
 <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
 <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+<script src="node_modules/@xterm/addon-serialize/lib/addon-serialize.js"></script>
 <script src="node_modules/dompurify/dist/purify.min.js"></script>
 <script src="panes.js"></script>
 <script src="icons.js"></script>
