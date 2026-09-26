@@ -12,7 +12,9 @@
     "dmg:background": "electron build/render-dmg-background.mjs",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper",
     "build:bloub": "esbuild vendor/bloub/src/entry.ts --bundle --format=iife --global-name=Bloub --minify --legal-comments=inline --banner:js=\"/* Bloub (MIT, see vendor/bloub/LICENSE). Built from vendor/bloub/src by npm run build:bloub. */\" --outfile=vendor/bloub/bloub.js",
+    "predist": "node scripts/bundle-keys.mjs",
     "dist": "electron-builder --mac --publish never",
+    "preapp": "node scripts/bundle-keys.mjs",
     "app": "electron-builder --mac dir --arm64 --publish never && rm -rf /Applications/Fork.app && ditto dist/mac-arm64/Fork.app /Applications/Fork.app && rm -rf dist/mac-arm64 && echo Installed /Applications/Fork.app"
   },
   "dependencies": {

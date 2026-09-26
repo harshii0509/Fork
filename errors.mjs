@@ -48,10 +48,10 @@ export const ERRORS = [
     id: 'npm-missing-script',
     match: /Missing script:\s*"?([\w:.-]+)"?|error Command "([\w:.-]+)" not found|Script not found "([\w:.-]+)"/,
     text: (m, ctx) => {
-      const s = first(m);
+      const s = first(m), that = s ? `a "${s}" script` : 'that script';
       return ctx.scripts.length
-        ? `This project doesn't have a "${s}" script. The ones it has: ${ctx.scripts.join(', ')}.`
-        : `This project doesn't have a "${s}" script, or any scripts at all.`;
+        ? `This project doesn't have ${that}. The ones it has: ${ctx.scripts.join(', ')}.`
+        : `This project doesn't have ${that}, or any scripts at all.`;
     },
     fix: (m, ctx) => {
       const pick = ['dev', 'start', 'serve', 'preview'].find((s) => ctx.scripts.includes(s) && s !== first(m));
@@ -78,7 +78,7 @@ export const ERRORS = [
   {
     id: 'deps-not-installed',
     match: /\bsh: (?:\d+: )?([\w.@/-]+): (?:command )?not found/,
-    text: (m) => `"${m[1]}" is one of this project's tools, and the project's packages aren't installed yet.`,
+    text: (m) => `${m[1] ? `"${m[1]}" is` : 'That\'s'} one of this project's tools, and the project's packages aren't installed yet.`,
     fix: (m, ctx) => `${ctx.pm} install`,
     samples: [
       '> my-site@0.1.0 dev\n> next dev\n\nsh: next: command not found',
@@ -90,11 +90,13 @@ export const ERRORS = [
     match: /Cannot find module '([^']+)'|Module not found: (?:Error: )?Can't resolve '([^']+)'|Cannot find package '([^']+)'/,
     text: (m, ctx) => {
       const name = first(m);
+      if (!name) return ctx.hasNodeModules ? 'Part of this project is looking for a package or file that isn\'t there.' : 'This project\'s packages aren\'t installed yet.';
       if (/^[./]/.test(name)) return `Something imports a file that isn't there: "${name}". Check the file's name and where it is.`;
       return ctx.hasNodeModules ? `The package "${pkgRoot(name)}" isn't installed in this project.` : 'This project\'s packages aren\'t installed yet.';
     },
     fix: (m, ctx) => {
       const name = first(m);
+      if (!name) return ctx.hasNodeModules ? null : `${ctx.pm} install`;
       if (/^[./]/.test(name)) return null;
       return ctx.hasNodeModules ? add(ctx, pkgRoot(name)) : `${ctx.pm} install`;
     },
@@ -197,7 +199,7 @@ export const ERRORS = [
     id: 'git-no-upstream',
     match: /The current branch (\S+) has no upstream branch/,
     text: () => 'This branch isn\'t on GitHub yet. The first time, push it like this:',
-    fix: (m) => `git push --set-upstream origin ${m[1]}`,
+    fix: (m) => (m[1] ? `git push --set-upstream origin ${m[1]}` : 'git push --set-upstream origin HEAD'),
     samples: [{ out: 'fatal: The current branch new-hero has no upstream branch.\nTo push the current branch and set the remote as upstream, use\n\n    git push --set-upstream origin new-hero', fix: 'git push --set-upstream origin new-hero' }],
   },
   {
@@ -241,15 +243,16 @@ export const ERRORS = [
   {
     id: 'git-pathspec',
     match: /pathspec '([^']+)' did not match any file/,
-    text: (m) => `Git doesn't know anything called "${m[1]}". Check the name. To see your branches:`,
+    text: (m) => `Git doesn't know ${m[1] ? `anything called "${m[1]}"` : 'that name'}. Check the spelling. To see your branches:`,
     fix: () => 'git branch -a',
     samples: ["error: pathspec 'feature/hero' did not match any file(s) known to git"],
   },
   {
     id: 'git-clone-exists',
     match: /destination path '([^']+)' already exists and is not an empty directory/,
-    text: (m) => `There's already a folder called "${m[1]}" here, probably from an earlier download. Move into it:`,
-    fix: (m) => `cd ${q(m[1])}`,
+    text: (m) => (m[1] ? `There's already a folder called "${m[1]}" here, probably from an earlier download. Move into it:`
+      : 'There\'s already a folder with that name here, probably from an earlier download.'),
+    fix: (m) => (m[1] ? `cd ${q(m[1])}` : 'ls'),
     samples: [{ out: "fatal: destination path 'my site' already exists and is not an empty directory.", fix: "cd 'my site'" }],
   },
 
@@ -257,8 +260,8 @@ export const ERRORS = [
   {
     id: 'python-no-module',
     match: /ModuleNotFoundError: No module named '([\w.-]+)'/,
-    text: (m) => `Python can't find "${m[1].split('.')[0]}", so it isn't installed yet.`,
-    fix: (m) => `pip3 install ${m[1].split('.')[0]}`,
+    text: (m) => (m[1] ? `Python can't find "${m[1].split('.')[0]}", so it isn't installed yet.` : 'Python can\'t find a package this needs, so it isn\'t installed yet.'),
+    fix: (m) => (m[1] ? `pip3 install ${m[1].split('.')[0]}` : null),
     samples: [{ out: "Traceback (most recent call last):\n  File \"app.py\", line 1, in <module>\n    import requests\nModuleNotFoundError: No module named 'requests'", fix: 'pip3 install requests' }],
   },
   {
@@ -271,8 +274,8 @@ export const ERRORS = [
   {
     id: 'brew-no-formula',
     match: /No available formula(?: or cask)? with the name "([^"]+)"/,
-    text: (m) => `Homebrew has nothing called "${m[1]}". Search for the right name:`,
-    fix: (m) => `brew search ${q(m[1])}`,
+    text: (m) => (m[1] ? `Homebrew has nothing called "${m[1]}". Search for the right name:` : 'Homebrew has nothing by that name. Check the spelling with brew search.'),
+    fix: (m) => (m[1] ? `brew search ${q(m[1])}` : null),
     samples: [{ out: 'Warning: No available formula with the name "nodejs". Did you mean node?', fix: 'brew search nodejs' }],
   },
 
@@ -295,8 +298,8 @@ export const ERRORS = [
   {
     id: 'script-not-runnable',
     match: /(?:zsh|bash|sh): permission denied: (\.{0,2}\/[^\s]+)/,
-    text: (m) => `"${m[1]}" isn't allowed to run yet. This marks it as a program you can run:`,
-    fix: (m) => `chmod +x ${q(m[1])}`,
+    text: (m) => (m[1] ? `"${m[1]}" isn't allowed to run yet. This marks it as a program you can run:` : 'That file isn\'t allowed to run yet. chmod +x and its name marks it as a program you can run.'),
+    fix: (m) => (m[1] ? `chmod +x ${q(m[1])}` : null),
     samples: [{ out: 'zsh: permission denied: ./build.sh', fix: 'chmod +x ./build.sh' }],
   },
   {
@@ -349,7 +352,7 @@ export const ERRORS = [
     id: 'command-not-found',
     match: /(?:zsh|bash): command not found: ([\w.+-]+)|^(?:zsh|bash): ([\w.+-]+): command not found/m,
     text: (m, ctx) => MISSING[first(m)]?.(ctx)[0]
-      ?? `Fork can't find a program called "${first(m)}". Check the spelling, or it may not be installed yet.`,
+      ?? `Fork can't find a program called ${first(m) ? `"${first(m)}"` : 'that'}. Check the spelling, or it may not be installed yet.`,
     fix: (m, ctx) => MISSING[first(m)]?.(ctx)[1] ?? null,
     samples: [
       { out: 'zsh: command not found: npm', ctx: { hasBrew: true }, fix: 'brew install node' },
@@ -385,6 +388,14 @@ export const looksLikeCommand = (s) => typeof s === 'string' && s.length < 300 &
 
 const strip = (s) => s.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-Z\\-_]/g, '');
 const CTX = { pm: 'npm', scripts: [], hasNodeModules: false, nvmrc: false, hasBrew: false, hasGh: false };
+
+// An entry's words and fix without a text match (Jev picked it): no names or ports, just the general case.
+export function explainEntry(id, ctx = {}) {
+  const e = ERRORS.find((x) => x.id === id);
+  if (!e) return null;
+  const c = { ...CTX, ...ctx }, m = [''];
+  return { id, text: e.text(m, c), fix: e.fix?.(m, c) ?? null };
+}
 
 // The first entry that matches what the failed command printed, or null ("This one's unusual").
 export function diagnose(output, ctx = {}) {

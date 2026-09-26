@@ -317,6 +317,24 @@ assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 
     assert.ok(!looksLikeCommand(no), String(no));
 }
 
+// --- Jev (jev.mjs): its two questions cover every preset and every known error, and the key is never committed ---
+{
+  const { ERRORS, explainEntry } = await import('./errors.mjs');
+  const { commandQuestion, errorQuestion, judge } = await import('./jev.mjs');
+  const { PALETTE } = await import('./suggest.mjs');
+  for (const ctx of [{}, { scripts: ['build'], hasNodeModules: true, hasBrew: true, hasGh: true }])
+    for (const e of ERRORS) {
+      const r = explainEntry(e.id, ctx); // what's shown when Jev picks this entry: no names or ports to fill in
+      assert.ok(r.text && !/undefined|""/.test(`${r.text} ${r.fix}`), `errors.mjs: "${e.id}" without a match reads "${r.text}" / ${r.fix}`);
+    }
+  const cq = commandQuestion(PALETTE), eq = errorQuestion(ERRORS, (id) => explainEntry(id).text);
+  assert.deepEqual(Object.keys(cq.criteria), [...PALETTE.map((p) => p.label), 'none']);
+  assert.deepEqual(Object.keys(eq.criteria), [...ERRORS.map((e) => e.id), 'none']);
+  assert.equal(await judge(null, {}, cq), null); // no key: no call, no error
+  const { execFileSync } = await import('node:child_process');
+  assert.ok(execFileSync('git', ['check-ignore', 'typesafe.json'], { encoding: 'utf8' }).trim(), 'typesafe.json must be gitignored');
+}
+
 // --- Dashboard (scripts/dashboard-charts.mjs): every event Fork sends is on a chart ---
 {
   const { chartedEvents, NOT_CHARTED } = await import('./scripts/dashboard-charts.mjs');

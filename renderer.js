@@ -678,10 +678,11 @@ function explained({ text, fix: f }, ask) {
 $('explainBtn').onclick = async () => {
   $('explainBtn').style.display = 'none';
   failed = { output: lastLines(), cwd: active()?.cwd };
-  const r = await dt.explain(failed.output, failed.cwd);
+  // Fork's library first; if it doesn't know the error and Smarter matching is on, Jev picks the closest one Fork does know.
+  const r = await dt.explain(failed.output, failed.cwd, settings.smart !== 'off');
   if (r) explained(r, 'maybe');
   else explained({ text: "This one's unusual. Want Claude to take a look?", fix: null }, 'yes');
-  dt.track('error_explained', r ? { source: 'fork', id: r.id } : { source: 'unknown' }); // id is from Fork's list, never the error
+  dt.track('error_explained', r ? { source: r.source, id: r.id } : { source: 'unknown' }); // id is from Fork's list, never the error
 };
 $('askAiBtn').onclick = async () => {
   $('askAiBtn').style.display = 'none'; $('fixBtn').style.display = 'none';
@@ -881,16 +882,37 @@ function renderPal() {
   const text = $('palIn').value.trim().toLowerCase();
   const words = text.split(/\s+/).filter(Boolean);
   shown = palette.filter((p) => words.every((w) => (p.label + ' ' + p.cmd).toLowerCase().includes(w)));
+  const found = shown.length;
   if (text) shown.push({ ask: true, label: `Ask Claude: “${$('palIn').value.trim()}”`, cmd: 'AI' });
   sel = 0;
   $('palStatus').classList.remove('show');
+  drawPal();
+  if (text && (words.length > 1 || !found)) bestMatch(text); // plain words, or nothing matched by name: ask Jev
+}
+function drawPal() {
   $('palList').innerHTML = shown.map((p, i) =>
-    `<li data-i="${i}" class="${i === sel ? 'sel' : ''}"><span>${esc(p.label)}</span><code>${esc(p.cmd === '\x03' ? 'Ctrl+C' : p.cmd)}</code></li>`).join('');
+    `<li data-i="${i}" class="${i === sel ? 'sel' : ''}"><span>${p.best ? '<b class="best">Best match</b>' : ''}${esc(p.label)}</span><code>${esc(p.cmd === '\x03' ? 'Ctrl+C' : p.cmd)}</code></li>`).join('');
+}
+// Jev reads what you typed and picks the built-in command it means, e.g. "take me up one folder" → Go up a folder.
+// It shows at the top as "Best match" about a third of a second after you stop typing. Only with Smarter matching on.
+let matchTimer;
+function bestMatch(text) {
+  clearTimeout(matchTimer);
+  if (settings.smart === 'off') return;
+  matchTimer = setTimeout(async () => {
+    const label = await dt.paletteMatch(text);
+    if (!label || $('palIn').value.trim().toLowerCase() !== text || !$('palOv').classList.contains('show')) return; // typed on meanwhile
+    const p = palette.find((x) => x.label === label);
+    if (!p) return;
+    shown = [{ ...p, best: true }, ...shown.filter((x) => x.label !== label)];
+    sel = 0;
+    drawPal();
+  }, 350);
 }
 async function choose(i) {
   const p = shown[i]; if (!p) return;
   if (p.game !== undefined) { closePal(); openGame(p.game); dt.track('palette_used', { kind: 'game' }); return; }
-  if (!p.ask) { closePal(); send(p.cmd, p.why, p.run); dt.track('palette_used', { kind: 'preset' }); return; }
+  if (!p.ask) { closePal(); send(p.cmd, p.why, p.run); dt.track('palette_used', { kind: p.best ? 'jev' : 'preset' }); return; }
   $('palList').innerHTML = '';
   $('palStatus').textContent = 'Thinking…'; $('palStatus').classList.add('show');
   const r = await dt.ask($('palIn').value.trim(), active()?.cwd);
@@ -962,7 +984,7 @@ function installed(font) {
 }
 // Appearance is Light, Dark or System; each side keeps its own theme, and System swaps them with macOS.
 const DEFAULTS = { mode: 'system', darkTheme: 'Designer', lightTheme: 'Catppuccin Latte',
-  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on' };
+  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
@@ -1022,7 +1044,7 @@ const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
 const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
-const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork']]; // checkboxes -> 'on'/'off'
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;

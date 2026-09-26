@@ -339,6 +339,7 @@
   .pal ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
   .pal li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
   .pal li.sel { background: var(--accent-soft); }
+  .pal .best { margin-right: 8px; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); }
   .pal li code { font: 12px "SF Mono", Menlo, monospace; color: var(--dim); white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
   .pal .status { padding: 12px 18px; color: var(--dim); display: none; }
@@ -587,6 +588,8 @@
     <div class="set-list">
       <label class="set-row"><span>Share anonymous usage<small>Which features get used, never your files, commands or names</small></span>
         <input type="checkbox" class="switch" id="setUsage"></label>
+      <label class="set-row"><span>Smarter matching<small>Sends what you type in ⌘K, and errors Fork doesn't recognise, to TypeSafe to find the right answer. Never in the background</small></span>
+        <input type="checkbox" class="switch" id="setSmart"></label>
     </div>
     <h4>Help</h4>
     <div class="set-list">

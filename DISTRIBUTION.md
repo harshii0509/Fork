@@ -140,6 +140,9 @@ The "latest" URL and the curl command stay the same.
 - **Who:** one random ID per install, stored in `~/Library/Application Support/designer-terminal/analytics.json`. No login, name or email. Turn on **Discard client IP data** in the PostHog project settings.
 - **What:** which features get used: `app_opened` / `app_closed`, `start_choice`, `command_run` / `command_failed` (just the tool, like `git` or `claude`, from an allow-list; anything else becomes `other`), `folder_opened`, `file_previewed` (the file type only), `palette_opened` / `palette_used`, `tab_opened`, `pane_split`, `setting_changed`, `update_clicked`, and a few more (search `dt.track(` in `renderer.js`). Every event is charted on the PostHog dashboard; `scripts/dashboard-charts.mjs` is the full list, and `npm run check` keeps the two in step.
 - **Never:** commands, file or folder names, paths, terminal output, or what's typed in ⌘K.
+
+**Smarter matching (Jev, by TypeSafe):** when someone types plain words in ⌘K, or clicks "What went wrong?" on an error Fork's library doesn't recognise, Fork sends that text (the request, or the failed command's output) to TypeSafe to pick the matching built-in command or known error (`jev.mjs`). Never in the background. On by default; **Settings → Privacy → Smarter matching** turns it off.
+- **Key:** Fork's TypeSafe key lives in `~/.config/fork/typesafe-key` on the release Mac. `scripts/bundle-keys.mjs` (run before `npm run dist` and `npm run app`) copies it into `typesafe.json`, which ships inside Fork.app and is **gitignored**. It can be pulled out of the app, so keep a spending limit on it in TypeSafe. No key: Fork works without Jev.
 - **Key:** `POSTHOG_KEY` / `POSTHOG_HOST` at the top of `analytics.mjs`. An empty key sends nothing. `npm start` never sends: it prints each event to the terminal it was started from. `FORK_ANALYTICS=1 npm start` sends for real, for testing.
 
 ## 7. README snippet for users
