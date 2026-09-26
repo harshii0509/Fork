@@ -11,6 +11,15 @@ const panes = new Map(); // id -> { id, term, fit, el, cwd, busy, failed, unseen
 let tabs = [], tabIx = 0, home = '', chips = [];
 const tab = () => tabs[tabIx];
 const active = () => panes.get(tab()?.activeId);
+// A pane is a terminal, or the game (games.js), which sits in the split tree like one.
+const isGame = (p) => p?.kind === 'game';
+// The terminal you're working in: the active pane, or with the game active, the tab's last terminal.
+const activeTerm = () => {
+  const p = active();
+  if (!isGame(p)) return p;
+  return panes.get(tab().lastTerm) || Panes.leaves(tab().root).map((id) => panes.get(id)).find((q) => q && !isGame(q));
+};
+const focusActive = () => { const p = active(); if (p) isGame(p) ? Games.focus() : p.term.focus(); };
 const tabOf = (id) => tabs.find((t) => Panes.leaves(t.root).includes(id));
 
 // Draw a pane's text with the graphics chip (WebGL): smoother on busy output, lighter on battery.
@@ -200,12 +209,12 @@ $('sideGrip').onpointerdown = (e) => drag(e, (x) => { $('app').style.setProperty
 
 function focusPane(id) {
   $('app').classList.remove('in-settings'); // ⌘T, ⌘1–9, splits: back to the terminal
-  if (Games.isOpen()) Games.close(); // and away from a game
   const t = tabOf(id);
   if (!t) return;
   if (t === tab() && t.activeId === id) return;
   tabIx = tabs.indexOf(t);
   t.activeId = id;
+  if (!isGame(panes.get(id))) t.lastTerm = id;
   for (const pid of Panes.leaves(t.root)) panes.get(pid).unseen = false;
   render();
   if (findOpen()) find(); // find follows you to the pane you switched to
@@ -213,7 +222,7 @@ function focusPane(id) {
   setHint('');
   syncBusy();
   refresh();
-  panes.get(id).term.focus();
+  focusActive();
 }
 
 async function newTab(cwd) {
@@ -236,8 +245,8 @@ function closePane(id, { exited = false, force = false } = {}) {
   if (!p) return;
   if (!exited && !force && p.busy && !confirm('Something is still running here. Close it anyway?')) return;
   const t = tabOf(id), cur = tab();
-  if (!exited) dt.kill(id);
-  p.term.dispose();
+  if (isGame(p)) Games.close();
+  else { if (!exited) dt.kill(id); p.term.dispose(); }
   p.el.remove();
   panes.delete(id);
   t.root = Panes.remove(t.root, id);
@@ -269,7 +278,7 @@ function renderTabs() {
   $('tabs').innerHTML = tabs.map((t, i) => {
     const ps = Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
     const p = panes.get(t.activeId) || ps[0];
-    const name = !p?.cwd ? 'New tab' : p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/';
+    const name = isGame(p) && ps.length === 1 ? 'Games' : !p?.cwd ? 'New tab' : p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/';
     const where = p?.cwd ? ` · ${p.cwd}` : '';
     return `<div class="tab ${i === tabIx ? 'active' : ''}" data-i="${i}" ${i < 9 ? `data-key="⌘${i + 1}"` : ''} title="${esc(tabState(t).label + where)}">
       <span class="tblob"></span>
@@ -349,38 +358,55 @@ dt.onCmd((cmd) => ({
 
 const runBlob = Blobs.mount($('runBlob'), { size: 34 });
 function syncBusy() {
-  const busy = !!active()?.busy;
+  const busy = !!activeTerm()?.busy;
   $('app').classList.toggle('busy', busy);
   busy ? runBlob.start() : runBlob.stop();
 }
 
-// --- Games (games.js): Snake, Stack and Space Run, on a card over the terminals ------------------
-// Opened while something runs, the game keeps an eye on that terminal and pauses when it's done.
-let gameWatch = null; // the pane that was busy when the game opened
+// --- Games (games.js): Snake, Stack and Space Run, in a pane of their own -----------------------
+// The game splits the terminal you're in (right if it's wide, down if it's tall) and fills that half.
+// No room left? It gets a tab of its own. One game pane at a time. While you're playing, it keeps an
+// eye on the terminal you came from (and the one beside it): when Claude or a command there is done,
+// the game pauses and says so.
+let gameFrom = null, doneIn = null, gameSeq = 0; // the terminal the game came from; the one that just finished
 function openGame(id) {
-  const p = active();
-  gameWatch = p?.busy ? p.id : null;
   $('app').classList.remove('in-settings');
+  if ($('startOv').classList.contains('show')) closeStart(); // it would sit on top of the game
+  const src = activeTerm();
+  gameFrom = src?.id ?? null;
+  let g = [...panes.values()].find(isGame);
+  if (!g) {
+    g = { id: -++gameSeq, kind: 'game', el: document.createElement('div'), cwd: src?.cwd || '', hist: [], at: -1,
+      busy: false, failed: false, unseen: false, lastUsed: Date.now() };
+    g.el.className = 'pane game-pane';
+    g.el.append(Games.el);
+    panes.set(g.id, g);
+    const r = src?.el.getBoundingClientRect(), t = src && tabOf(src.id);
+    const dir = !r ? null : r.width >= 640 && r.width >= r.height ? 'row' : r.height >= 400 ? 'col' : null;
+    if (dir) t.root = Panes.split(t.root, src.id, g.id, dir); // the game half is at least 320 × 200
+    else tabs.push({ root: { id: g.id }, activeId: null });
+  }
+  focusPane(g.id);
   Games.open(id);
 }
 function workDone(pane) {
-  if (!Games.isOpen() || pane.id !== gameWatch) return;
+  if (!Games.isOpen() || !isGame(active())) return; // looking at the terminal? Then you saw it finish
+  if (pane.id !== gameFrom && pane.id !== tab().lastTerm) return;
+  doneIn = pane.id;
   Games.workDone(pane.tool === 'claude' ? 'Claude’s done' : 'Your command finished');
-  if (!pane.busy) gameWatch = null; // a command that finished has nothing more to say; Claude takes turns
 }
+const backToTerminal = (id) => { const p = panes.get(id) || activeTerm(); if (p) focusPane(p.id); };
 Games.setup({
   track: dt.track,
-  onClose: () => active()?.term.focus(),
-  onBack: () => { const id = gameWatch; Games.close(); if (id && panes.has(id)) focusPane(id); },
+  onEsc: () => backToTerminal(gameFrom),
+  onBack: () => backToTerminal(doneIn ?? gameFrom),
 });
 $('playGame').onclick = () => openGame();
-// Closing ⌘K or Settings goes back to whatever you were in: the game, if one is open, or the terminal.
-const backToWork = () => (Games.isOpen() ? Games.focus() : active()?.term.focus());
 
 // The core mechanic: put the real command in the prompt. Moving around runs instantly;
 // anything that changes things waits for Enter so the person stays in control and learns it.
 function send(cmd, why, run) {
-  const p = active();
+  const p = activeTerm();
   if (!p) return;
   if (cmd === '\x03') { dt.write(p.id, cmd); p.term.focus(); return; }
   if (p.busy) { setHint('Something is running. Stop it first (Ctrl+C), then try again.', true); return; }
@@ -392,7 +418,7 @@ function send(cmd, why, run) {
 
 // ← → in the sidebar (and ⌘[ ⌘]): back and forward through the folders this pane has been in.
 function go(step) {
-  const p = active(), path = p?.hist[p.at + step];
+  const p = activeTerm(), path = p?.hist[p.at + step];
   if (!path) return;
   if (p.busy) return setHint('Something is running. Stop it first (Ctrl+C), then try again.', true);
   p.at += step;
@@ -522,7 +548,7 @@ function showPv(mode) {
   $('app').classList.add('has-pv');
   markShown();
 }
-function hidePv() { $('app').classList.remove('has-pv'); markShown(); active()?.term.focus(); }
+function hidePv() { $('app').classList.remove('has-pv'); markShown(); focusActive(); }
 function togglePv() { pvOpen() ? hidePv() : showPv(); dt.track('preview_toggled'); }
 function markShown() { for (const r of $('entries').querySelectorAll('.entry')) r.classList.toggle('on', r.dataset.path === shownFile()); }
 function syncWatch() { dt.watch([...new Set([...treeDirs, ...(pv.file ? [dirOf(pv.file)] : [])])]); }
@@ -660,7 +686,7 @@ function reading(on) { $('oopsBlob').hidden = !on; on ? oopsBlob.start() : oopsB
 function hideOops() { $('oops').classList.remove('show'); reading(false); }
 // The failed command and what it printed: from its prompt line (at most 80 lines), or the last 40 lines.
 function lastLines() {
-  const p = active(), b = p.term.buffer.active, end = b.baseY + b.cursorY, out = [];
+  const p = activeTerm(), b = p.term.buffer.active, end = b.baseY + b.cursorY, out = [];
   const from = p.cmdMark && !p.cmdMark.isDisposed && p.cmdMark.line > 0 ? Math.max(p.cmdMark.line - 1, end - 80) : end - 40;
   for (let i = Math.max(0, from); i <= end; i++) out.push(b.getLine(i)?.translateToString(true) ?? '');
   return out.join('\n').trim();
@@ -716,7 +742,7 @@ function showCount(i, n) {
 }
 // how: 'type' keeps the current match while it still fits, 'next' / 'prev' move along.
 function find(how = 'type') {
-  const p = active(), text = $('findIn').value;
+  const p = activeTerm(), text = $('findIn').value;
   if (findPane && findPane !== p) findPane.search.clearDecorations();
   findPane = p;
   if (!p) return;
@@ -737,7 +763,7 @@ function closeFind() {
   findPane?.search.clearDecorations();
   findPane?.term.clearSelection();
   findPane = null;
-  active()?.term.focus();
+  focusActive();
 }
 $('findIn').oninput = () => find();
 $('findIn').onkeydown = (e) => {
@@ -761,10 +787,13 @@ function snapshot(full) {
     return s;
   };
   const width = parseInt($('app').style.getPropertyValue('--side'), 10);
+  // The game pane isn't saved: next time it's just your terminals (a tab that only held the game is left out).
+  const kept = tabs.map((t) => ({ t, root: Panes.leaves(t.root).filter((id) => isGame(panes.get(id))).reduce((r, id) => r && Panes.remove(r, id), t.root) }))
+    .filter(({ root }) => root);
   return {
-    tabIx,
+    tabIx: Math.max(0, kept.findIndex(({ t }) => t === tab())),
     side: { hidden: $('app').classList.contains('no-side'), ...(width ? { width } : {}) },
-    tabs: tabs.map((t) => ({ root: node(t.root), active: Math.max(0, Panes.leaves(t.root).indexOf(t.activeId)) })),
+    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)) })),
   };
 }
 function saveSoon() {
@@ -819,7 +848,7 @@ async function openStart() {
 }
 function closeStart() {
   $('startOv').classList.remove('show');
-  active()?.term.focus();
+  focusActive();
   if (tourNext) { tourNext = false; setTimeout(runTour, 400); } // after the folder list and suggestions load
 }
 async function workIn(path) { await dt.recents(path); send(`cd ${q(path)}`, '', true); closeStart(); }
@@ -857,7 +886,7 @@ async function runTour() {
   closeSettings(); closePal();
   const r = await Onboarding.tour();
   dt.track(r.done ? 'tour_done' : 'tour_skipped', { step: r.step, of: r.of });
-  active()?.term.focus();
+  focusActive();
 }
 function replayTour() {
   if ($('welcomeOv').classList.contains('show') || document.querySelector('.tour')) return; // already running
@@ -884,7 +913,7 @@ let ver = 0, vals = [], opened = false; // ver: which typing an answer belongs t
 const palText = () => $('palIn').value.trim();
 function palSay(text) { $('palStatus').textContent = text; $('palStatus').classList.toggle('show', !!text); }
 function openPal() { $('palIn').value = ''; renderPal(); $('palOv').classList.add('show'); $('palIn').focus(); dt.aiWarm(); dt.track('palette_opened'); }
-function closePal() { ver++; $('palOv').classList.remove('show'); backToWork(); }
+function closePal() { ver++; $('palOv').classList.remove('show'); focusActive(); }
 function renderPal() {
   ver++; opened = false;
   const text = palText().toLowerCase(), words = text.split(/\s+/).filter(Boolean);
@@ -1005,7 +1034,7 @@ function showUpdate(title, notes, isUpdate) {
   });
   $('updOv').classList.add('show');
 }
-function closeUpdate() { $('updOv').classList.remove('show'); active()?.term.focus(); }
+function closeUpdate() { $('updOv').classList.remove('show'); focusActive(); }
 async function checkUpdate() {
   update = await dt.updateCheck();
   $('updPill').hidden = !update;
@@ -1074,7 +1103,7 @@ async function applySettings(s) {
     blue: t.blue, magenta: t.magenta, cyan: t.cyan, mono: fontStack(s.font), 'mono-size': `${s.size}px` }; // the last five: code previews
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(`--${k}`, v);
   Blobs.setColor(t.accent, t.red);
-  Games.setColors({ bg: t.background, ink: t.foreground, accent: t.accent });
+  Games.setColors({ bg: t.background, ink: t.foreground, accent: t.accent, fontSize: s.size }); // its pixels follow the font
   root.style.colorScheme = t.dark ? 'dark' : 'light'; // native bits (dropdowns, spinners) match the theme
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
@@ -1083,6 +1112,7 @@ async function applySettings(s) {
   await document.fonts.load(`${s.size}px "${s.font}"`).catch(() => {}); // else xterm measures the fallback font
   if (run !== applying) return; // a newer change (e.g. hovering the next swatch) already won
   for (const p of panes.values()) {
+    if (isGame(p)) continue;
     Object.assign(p.term.options, xtermOpts(s));
     useGpu(p, s.smoothing === 'on');
     if (p.el.offsetParent) { p.fit.fit(); dt.resize(p.id, p.term.cols, p.term.rows); } // hidden tabs refit when shown
@@ -1146,7 +1176,7 @@ function openSettings() {
 function closeSettings() {
   if (!inSettings()) return;
   $('app').classList.remove('in-settings');
-  backToWork();
+  focusActive();
 }
 
 const SIZE = [8, 32];

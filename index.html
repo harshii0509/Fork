@@ -372,44 +372,43 @@
   .upd-actions .skip { margin: 0; }
   .upd-warn { margin: 10px 0 0; text-align: right; font-size: 12px; color: var(--dim); }
 
-  /* Games (games.js): a card over the terminals. The sidebar stays in view, so each tab's blob still says how it's doing. */
-  .game { grid-area: 2 / 2; z-index: 6; display: none; place-items: center; min-width: 0; min-height: 0; overflow: hidden;
-    background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(3px); }
-  .game.open { display: grid; }
-  .in-settings .game { display: none; }
-  .game-card { --lcd: var(--panel); padding: 12px 16px 12px; border-radius: 14px; background: var(--panel);
-    border: 1px solid var(--line); box-shadow: 0 24px 60px #0006; }
-  .game-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
-  .game-head > b { font-size: 14px; }
-  .game-stats { display: flex; gap: 14px; margin-right: auto; color: var(--dim); font-variant-numeric: tabular-nums; }
+  /* Games (games.js): a pane like any terminal, filled edge to edge in the terminal's own colours,
+     with a status line along the bottom. */
+  .game-pane { background: var(--bg); }
+  .game-in { position: absolute; inset: 0; display: flex; flex-direction: column; font: 12px/1.4 var(--mono, Menlo, monospace); }
+  .game-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+  .game-stage canvas { display: block; image-rendering: pixelated; outline: none; }
+  .game-status { flex: none; display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 10px 0 12px;
+    border-top: 1px solid var(--line); color: var(--dim); white-space: nowrap; overflow: hidden; }
+  .game-status > b { color: var(--text); text-transform: uppercase; letter-spacing: .08em; }
+  .game-stats { font-variant-numeric: tabular-nums; }
   .game-stats[hidden] { display: none; }
-  .game-stats b { color: var(--text); font-weight: 600; }
-  .game-head:has(.game-stats[hidden]) > b { margin-right: auto; }
+  .game-stats b { color: var(--accent); font-weight: 700; margin-right: 10px; }
+  .game-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .game-sound { display: grid; place-items: center; padding: 3px; border-radius: 5px; color: var(--dim); }
+  .game-sound:hover { background: var(--hover); color: var(--text); }
   .game-sound .ic:last-child, .game-sound.on .ic:first-child { display: none; }
   .game-sound.on .ic:last-child { display: block; color: var(--accent); }
-  /* The screen: its own pixels, scaled by whole numbers (games.js fit), with a little bezel. */
-  .game-screen { position: relative; padding: 10px; border-radius: 10px; background: var(--lcd); border: 1px solid var(--line); }
-  .game-screen canvas { display: block; image-rendering: pixelated; outline: none; }
-  .game-msg, .game-pick { position: absolute; inset: 0; border-radius: 10px; }
+  .game-msg, .game-pick { position: absolute; inset: 0 0 26px; }
   .game-msg[hidden], .game-pick[hidden] { display: none; }
-  .game-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px; text-align: center;
-    background: color-mix(in srgb, var(--panel) 88%, transparent); }
-  .game-msg h2 { margin: 6px 0 0; font-size: 17px; }
+  .game-msg { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 16px; text-align: center;
+    background: color-mix(in srgb, var(--bg) 80%, transparent); }
+  .game-msg h2 { margin: 8px 0 0; font-size: 14px; color: var(--text); text-transform: uppercase; letter-spacing: .08em; }
   .game-msg p { margin: 0 0 10px; color: var(--dim); }
   .game-blob { display: grid; place-items: center; }
-  .game-btns { display: flex; gap: 8px; }
-  .game-btns kbd { margin-left: 4px; background: color-mix(in srgb, var(--on-accent) 18%, transparent); color: inherit; }
-  .game-b2 { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); }
-  .game-b2:hover { background: var(--hover); }
-  .game-b2 kbd { background: var(--hover); }
-  .game-pick { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px; background: var(--panel); }
-  .game-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px; border-radius: 10px;
-    border: 1px solid var(--line); flex: 1; max-width: 200px; min-width: 0; transition: border-color .15s, background .15s; }
-  .game-tile canvas { width: 100%; max-width: 168px; aspect-ratio: 84 / 48; image-rendering: pixelated; border-radius: 4px; margin-bottom: 4px; }
+  .game-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; }
+  .game-btns button { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; color: var(--text); }
+  .game-btns button:hover { background: var(--hover); }
+  .game-btns button:first-child kbd { background: var(--accent); color: var(--on-accent); }
+  .game-btns kbd { font-family: inherit; }
+  .game-pick { display: flex; flex-wrap: wrap; align-content: center; justify-content: center; gap: 10px; padding: 16px; background: var(--bg); overflow-y: auto; }
+  .game-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 150px; padding: 10px 10px 8px; border-radius: 8px;
+    border: 1px solid transparent; transition: border-color .15s, background .15s; }
+  .game-tile canvas { width: 126px; height: 72px; image-rendering: pixelated; margin-bottom: 6px; }
+  .game-tile b { color: var(--text); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
   .game-tile small { color: var(--dim); font-variant-numeric: tabular-nums; }
   .game-tile:hover { background: var(--hover); }
   .game-tile.on { border-color: var(--accent); background: var(--accent-soft); }
-  .game-hint { margin-top: 10px; color: var(--dim); font-size: 12px; text-align: center; min-height: 1.4em; }
   .play { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 3px 10px; border-radius: 6px; color: var(--dim); }
   .play:hover { background: var(--hover); color: var(--text); }
 
@@ -509,27 +508,6 @@
   <div class="side-grip" id="sideGrip"></div>
 
   <main class="term" id="term"></main>
-  <section class="game" id="game" aria-label="Games">
-    <div class="game-card" id="gameCard">
-      <header class="game-head">
-        <b id="gameName">Games</b>
-        <span class="game-stats" id="gameStats">Score <b id="gameScore">0</b><span>Best <b id="gameBest">0</b></span></span>
-        <button class="ibtn game-sound" id="gameSound" aria-label="Sound"><i data-icon="volume-x"></i><i data-icon="volume-2"></i></button>
-        <button class="ibtn" id="gameClose" title="Close (Esc)" aria-label="Close game"><i data-icon="x"></i></button>
-      </header>
-      <div class="game-screen">
-        <canvas id="gameCanvas" width="84" height="48" tabindex="0" aria-label="Game screen"></canvas>
-        <div class="game-pick" id="gamePick" hidden></div>
-        <div class="game-msg" id="gameMsg" hidden>
-          <span id="gameBlob"></span>
-          <h2 id="gameMsgTitle"></h2>
-          <p id="gameMsgText"></p>
-          <div class="game-btns" id="gameMsgBtns"></div>
-        </div>
-      </div>
-      <footer class="game-hint" id="gameHint"></footer>
-    </div>
-  </section>
   <div class="find" id="find" role="search">
     <input id="findIn" placeholder="Find" aria-label="Find in this terminal" spellcheck="false" autocomplete="off">
     <span class="find-count" id="findCount" aria-live="polite"></span>

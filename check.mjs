@@ -193,6 +193,19 @@ const { snake, stack, space, screen, seeded, W: GW, H: GH } = gm.window.Games.lo
   for (let i = 0; i < 400 && !h.over; i++) { h.shots.push({ x: h.ship.x + 3, y: h.ship.y + 2 }); space.step(h, new Set(), r); }
   assert.ok(h.over); // out of lives
   for (const g of [snake, stack, space]) { const sc = screen(); g.draw(sc, g.init(seeded(4))); assert.ok(sc.b.some(Boolean) && sc.b.length === GW * GH); }
+  // A bigger pane, a bigger world: same small pixels, more room.
+  const big = snake.init(seeded(5), 300, 200);
+  assert.equal(big.p, 6); assert.equal(big.cols, 49); assert.equal(big.rows, 32); assert.ok(big.body.every((p) => p.y === 16)); // bigger cells, about 30+ across
+  const sky = space.init(seeded(6), 300, 200);
+  assert.equal(sky.w, 300); assert.equal(sky.ship.y, 100);
+  space.wave(sky, seeded(6)); assert.ok(sky.foes.every((f) => f.y >= 6 && f.y < 200 && f.x >= 300)); // they come in from the right edge
+  for (const g of [snake, stack, space]) { const sc = screen(300, 200), st = g.init(seeded(7), 300, 200); g.draw(sc, st); assert.ok(sc.b.some(Boolean)); }
+}
+// The game sits in a tab's split tree as a pane with a negative id, like any terminal.
+{
+  const t = split({ id: 3 }, 3, -1, 'row');
+  assert.equal(JSON.stringify(leaves(t)), '[3,-1]');
+  assert.equal(JSON.stringify(remove(t, -1)), '{"id":3}');
 }
 
 // --- Onboarding (onboarding.js, browser script): three cards, and every tour step points at something real ---

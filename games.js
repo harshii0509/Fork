@@ -1,9 +1,11 @@
 // Little Nokia-style games for while Claude works (or whenever): Snake, Stack and Space Run.
-// Each one is drawn on an 84 × 48 pixel screen, the Nokia 3310's, in the theme's colours.
-// The rules are plain functions of a game's state (check.mjs tests them). The card, keys, beeps and
-// best scores are wired up by setup(), which renderer.js calls. Needs blob.js first (the mascot).
+// A game lives in its own pane, like a terminal, and fills it: small square pixels (sized from the
+// terminal font) in the theme's colours, as many as fit, the way text fills a terminal.
+// The rules are plain functions of a game's state (check.mjs tests them). setup() builds the pane's
+// contents (Games.el) and wires keys, beeps and best scores; renderer.js puts it in a pane.
+// Needs blob.js first (the mascot).
 window.Games = (() => {
-  const W = 84, H = 48;
+  const W = 84, H = 48; // the smallest world, and the picker's little previews: a Nokia 3310's screen
 
   // --- The screen: 0 = off, 1 = ink (theme text), 2 = accent -------------------------------------
   // A 3 × 5 pixel font for the few words and numbers drawn on the screen itself.
@@ -12,31 +14,31 @@ window.Games = (() => {
     5: '111100111001111', 6: '111100111101111', 7: '111001001010010', 8: '111101111101111', 9: '111101111001111',
     A: '010101111101101', B: '110101110101110', C: '011100100100011', D: '110101101101110', E: '111100110100111',
     F: '111100110100100', G: '011100101101011', H: '101101111101101', I: '111010010010111', J: '001001001101010',
-    K: '101101110101101', L: '100100100100111', M: '101111111101101', N: '110101101101101', O: '010101101101010',
+    K: '101101110101101', L: '100100100100111', M: '101111101101101', N: '101111111111101', O: '010101101101010',
     P: '110101110100100', Q: '010101101110011', R: '110101110101101', S: '011100010001110', T: '111010010010010',
-    U: '101101101101111', V: '101101101101010', W: '101101111111101', X: '101101010101101', Y: '101101010010010',
+    U: '101101101101111', V: '101101101101010', W: '101101101111111', X: '101101010101101', Y: '101101010010010',
     Z: '111001010100111', '!': '010010010000010', ' ': '000000000000000',
   };
-  const screen = () => {
-    const b = new Uint8Array(W * H);
-    const set = (x, y, c = 1) => { x = Math.floor(x); y = Math.floor(y); if (x >= 0 && y >= 0 && x < W && y < H) b[y * W + x] = c; };
+  const screen = (w = W, h = H) => {
+    const b = new Uint8Array(w * h);
+    const set = (x, y, c = 1) => { x = Math.floor(x); y = Math.floor(y); if (x >= 0 && y >= 0 && x < w && y < h) b[y * w + x] = c; };
     const rect = (x, y, w, h, c = 1) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) set(x + i, y + j, c); };
     return {
-      b, set, rect,
+      w, h, b, set, rect,
       clear: () => b.fill(0),
       frame: (x, y, w, h, c = 1) => { rect(x, y, w, 1, c); rect(x, y + h - 1, w, 1, c); rect(x, y, 1, h, c); rect(x + w - 1, y, 1, h, c); },
       // Sprites are rows of '#' (on) and '.' (off).
       sprite: (rows, x, y, c = 1) => rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === '#') set(x + i, y + j, c); }),
-      text: (str, x, y, c = 1) => {
+      text: (str, x, y, c = 1, k = 1) => { // k: each font pixel as a k × k block, for bigger panes
         for (const ch of String(str).toUpperCase()) {
           const g = FONT[ch] || FONT[' '];
-          for (let k = 0; k < 15; k++) if (g[k] === '1') set(x + (k % 3), y + ((k / 3) | 0), c);
-          x += 4;
+          for (let i = 0; i < 15; i++) if (g[i] === '1') rect(x + (i % 3) * k, y + ((i / 3) | 0) * k, k, k, c);
+          x += 4 * k;
         }
       },
     };
   };
-  const textWidth = (s) => String(s).length * 4 - 1;
+  const textWidth = (s, k = 1) => (String(s).length * 4 - 1) * k;
 
   // A seeded random, so check.mjs (and the picker's little previews) get the same game every time.
   const seeded = (seed) => () => {
@@ -48,21 +50,23 @@ window.Games = (() => {
   const pick = (rand, n) => Math.floor(rand() * n);
 
   // --- Snake: eat, grow, don't hit the wall or yourself ------------------------------------------
-  // A 20 × 11 grid of 4-pixel cells inside a border. Each part of the snake is a 3 × 3 square, joined
-  // to the next, so it reads as one body like on the phone.
+  // A grid of cells inside a border (20 × 11 on the smallest screen). Cells are 4 pixels, growing to 6 in a
+  // big pane so the field stays about 30 across. Each part of the snake fills its cell but for a
+  // 1-pixel gap, joined to the next, so it reads as one body like on the phone.
   const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
   const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
   const snake = {
-    id: 'snake', name: 'Snake', hint: 'Arrows to turn · P pause · Esc close',
-    COLS: 20, ROWS: 11,
-    init(rand) {
-      const s = { body: [{ x: 7, y: 5 }, { x: 6, y: 5 }, { x: 5, y: 5 }, { x: 4, y: 5 }], dir: 'right', queue: [], score: 0, eaten: 0, over: false, sfx: [] };
+    id: 'snake', name: 'Snake', hint: '↑ ↓ ← → turn · P pause',
+    init(rand, w = W, h = H) {
+      const p = Math.max(4, Math.min(6, Math.floor(Math.min((w - 3) / 30, (h - 3) / 18))));
+      const cols = Math.floor((w - 3) / p), rows = Math.floor((h - 3) / p), y = rows >> 1;
+      const s = { p, cols, rows, body: [7, 6, 5, 4].map((x) => ({ x, y })), dir: 'right', queue: [], score: 0, eaten: 0, over: false, sfx: [] };
       s.food = snake.food(s, rand);
       return s;
     },
     food(s, rand) {
       const free = [];
-      for (let y = 0; y < snake.ROWS; y++) for (let x = 0; x < snake.COLS; x++) if (!s.body.some((p) => p.x === x && p.y === y)) free.push({ x, y });
+      for (let y = 0; y < s.rows; y++) for (let x = 0; x < s.cols; x++) if (!s.body.some((p) => p.x === x && p.y === y)) free.push({ x, y });
       return free[pick(rand, free.length)];
     },
     // Turns queue up (two at most), so a quick up-then-left between steps works and never reverses you.
@@ -78,27 +82,34 @@ window.Games = (() => {
       const [dx, dy] = DIRS[s.dir], h = s.body[0], n = { x: h.x + dx, y: h.y + dy };
       const eat = s.food && n.x === s.food.x && n.y === s.food.y;
       const rest = eat ? s.body : s.body.slice(0, -1); // the tail moves out of the way unless you grow
-      if (n.x < 0 || n.y < 0 || n.x >= snake.COLS || n.y >= snake.ROWS || rest.some((p) => p.x === n.x && p.y === n.y)) {
+      if (n.x < 0 || n.y < 0 || n.x >= s.cols || n.y >= s.rows || rest.some((p) => p.x === n.x && p.y === n.y)) {
         s.over = true; s.sfx.push('die'); return;
       }
       s.body = [n, ...rest];
       if (eat) { s.score += 1; s.eaten += 1; s.food = snake.food(s, rand); s.sfx.push('eat'); }
     },
     draw(scr, s) {
-      scr.frame(0, 0, W, H);
-      const at = (p) => [2 + p.x * 4, 2 + p.y * 4];
+      scr.frame(0, 0, scr.w, scr.h);
+      const P = s.p, n = P - 1; // cell pitch, and the size of a part
+      const ox = (scr.w - (s.cols * P - 1)) >> 1, oy = (scr.h - (s.rows * P - 1)) >> 1; // the grid sits in the middle
+      const at = (p) => [ox + p.x * P, oy + p.y * P];
       s.body.forEach((p, i) => {
         const [x, y] = at(p);
-        scr.rect(x, y, 3, 3);
+        scr.rect(x, y, n, n);
         const q = s.body[i + 1]; // fill the gap to the next part
-        if (q) { const [qx, qy] = at(q); scr.rect(Math.min(x, qx) + (qx !== x ? 3 : 0), Math.min(y, qy) + (qy !== y ? 3 : 0), qx !== x ? 1 : 3, qy !== y ? 1 : 3); }
+        if (q) { const [qx, qy] = at(q); scr.rect(Math.min(x, qx) + (qx !== x ? n : 0), Math.min(y, qy) + (qy !== y ? n : 0), qx !== x ? 1 : n, qy !== y ? 1 : n); }
       });
-      if (s.food) { const [x, y] = at(s.food); scr.sprite(['.#.', '#.#', '.#.'], x, y, 2); }
+      if (s.food) { // a small diamond
+        const [x, y] = at(s.food), m = n >> 1;
+        for (let j = 0; j < n; j++) { const r = m - Math.abs(j - m); scr.rect(x + m - r, y + j, 2 * r + 1, 1, 2); }
+        if (n === 3) scr.set(x + 1, y + 1, 0); // on the smallest grid, the Nokia's hollow diamond
+      }
     },
   };
 
   // --- Stack: falling blocks, clear full lines ----------------------------------------------------
-  // A 10 × 20 well of 2-pixel blocks in the middle, lines and level on the left, the next piece on the right.
+  // A 10 × 20 well in the middle, its blocks as big as the height allows; lines and level on the left,
+  // the next piece on the right.
   const PIECES = {
     I: [[0, 1], [1, 1], [2, 1], [3, 1]], O: [[1, 0], [2, 0], [1, 1], [2, 1]], T: [[1, 0], [0, 1], [1, 1], [2, 1]],
     S: [[1, 0], [2, 0], [0, 1], [1, 1]], Z: [[0, 0], [1, 0], [1, 1], [2, 1]], J: [[0, 0], [0, 1], [1, 1], [2, 1]],
@@ -158,14 +169,18 @@ window.Games = (() => {
       else stack.lock(s, rand);
     },
     draw(scr, s) {
-      const X = 32, Y = 4;
-      scr.frame(X - 1, Y - 1, stack.COLS * 2 + 2, stack.ROWS * 2 + 2);
-      s.board.forEach((row, y) => row.forEach((c, x) => c && scr.rect(X + x * 2, Y + y * 2, 2, 2)));
-      if (!s.over) for (const [cx, cy] of s.piece.cells) if (s.piece.y + cy >= 0) scr.rect(X + (s.piece.x + cx) * 2, Y + (s.piece.y + cy) * 2, 2, 2, 2);
-      scr.text('LINES', 5, 6); scr.text(s.lines, 5, 13, 2);
-      scr.text('LEVEL', 5, 25); scr.text(s.level, 5, 32, 2);
-      scr.text('NEXT', 59, 6);
-      for (const [cx, cy] of PIECES[s.next]) scr.rect(59 + cx * 3, 14 + cy * 3, 3, 3);
+      const c = Math.max(2, Math.min(5, Math.floor((scr.h - 6) / stack.ROWS))), k = 1; // blocks grow a little with the pane, not a lot
+      const X = (scr.w - stack.COLS * c) >> 1, Y = (scr.h - stack.ROWS * c) >> 1;
+      scr.frame(X - 2, Y - 2, stack.COLS * c + 4, stack.ROWS * c + 4);
+      const block = (x, y, col) => scr.rect(X + x * c, Y + y * c, c - (c > 3 ? 1 : 0), c - (c > 3 ? 1 : 0), col); // a hairline gap once blocks are big
+      s.board.forEach((row, y) => row.forEach((on, x) => on && block(x, y, 1)));
+      if (!s.over) for (const [cx, cy] of s.piece.cells) if (s.piece.y + cy >= 0) block(s.piece.x + cx, s.piece.y + cy, 2);
+      const L = X - 6 * k; // labels end just left of the well
+      scr.text('LINES', L - textWidth('LINES', k), Y, 1, k); scr.text(s.lines, L - textWidth(s.lines, k), Y + 7 * k, 2, k);
+      scr.text('LEVEL', L - textWidth('LEVEL', k), Y + 19 * k, 1, k); scr.text(s.level, L - textWidth(s.level, k), Y + 26 * k, 2, k);
+      const R = X + stack.COLS * c + 6 * k, n = Math.max(2, Math.round(c * 0.75));
+      scr.text('NEXT', R, Y, 1, k);
+      for (const [cx, cy] of PIECES[s.next]) scr.rect(R + cx * n, Y + 8 * k + cy * n, n, n);
     },
   };
 
@@ -182,11 +197,11 @@ window.Games = (() => {
   const TOP = 6; // the play area starts below the lives and the boss's health bar
   const hit = (a, aw, ah, b, bw, bh) => a.x < b.x + bw && b.x < a.x + aw && a.y < b.y + bh && b.y < a.y + ah;
   const space = {
-    id: 'space', name: 'Space Run', hint: '↑ ↓ fly · Space shoot (hold it) · P pause · Esc close',
-    init(rand) {
+    id: 'space', name: 'Space Run', hint: '↑ ↓ fly · Space shoot (hold it) · P pause',
+    init(rand, w = W, h = H) {
       return {
-        ship: { x: 2, y: 24 }, bullets: [], foes: [], shots: [], fx: [], boss: null,
-        stars: Array.from({ length: 12 }, () => ({ x: pick(rand, W), y: TOP + pick(rand, H - TOP) })),
+        w, h, ship: { x: 2, y: h >> 1 }, bullets: [], foes: [], shots: [], fx: [], boss: null,
+        stars: Array.from({ length: Math.round((w * h) / 330) }, () => ({ x: pick(rand, w), y: TOP + pick(rand, h - TOP) })),
         lives: 3, score: 0, wave: 0, t: 0, inv: 0, cool: 0, fire: false, over: false, sfx: [],
       };
     },
@@ -194,12 +209,12 @@ window.Games = (() => {
     tick: () => 33,
     wave(s, rand) {
       s.wave++;
-      if (s.wave % 5 === 0) { s.boss = { x: W + 2, y: 20, dy: 1, hp: 16 + s.wave * 2, max: 16 + s.wave * 2 }; return; }
-      const n = 3 + Math.min(s.wave, 6);
+      if (s.wave % 5 === 0) { s.boss = { x: s.w + 2, y: s.h >> 1, dy: 1, hp: 16 + s.wave * 2, max: 16 + s.wave * 2 }; return; }
+      const n = 3 + Math.min(s.wave, 6) + Math.floor((s.h - H) / 24); // a taller sky, a few more of them
       for (let i = 0; i < n; i++) {
         const type = Math.min(pick(rand, 1 + Math.min(s.wave, 3)), 2);
-        const y = TOP + 2 + pick(rand, H - TOP - 9);
-        s.foes.push({ x: W + i * 13, y, base: y, type, ph: rand() * 6.28, speed: 0.5 + Math.min(s.wave, 8) * 0.06 });
+        const y = TOP + 2 + pick(rand, s.h - TOP - 9);
+        s.foes.push({ x: s.w + i * 13, y, base: y, type, ph: rand() * 6.28, speed: 0.5 + Math.min(s.wave, 8) * 0.06 });
       }
     },
     hurt(s) {
@@ -211,9 +226,9 @@ window.Games = (() => {
     step(s, held, rand) {
       if (s.over) return;
       s.t++;
-      for (const st of s.stars) if (s.t % 2 === 0 && --st.x < 0) { st.x = W - 1; st.y = TOP + pick(rand, H - TOP); }
+      for (const st of s.stars) if (s.t % 2 === 0 && --st.x < 0) { st.x = s.w - 1; st.y = TOP + pick(rand, s.h - TOP); }
       const sh = s.ship;
-      sh.y = Math.max(TOP, Math.min(H - 5, sh.y + (held.has('down') ? 1 : 0) - (held.has('up') ? 1 : 0)));
+      sh.y = Math.max(TOP, Math.min(s.h - 5, sh.y + (held.has('down') ? 1 : 0) - (held.has('up') ? 1 : 0)));
       if (s.cool > 0) s.cool--;
       if ((s.fire || held.has('fire')) && !s.cool) { s.bullets.push({ x: sh.x + 7, y: sh.y + 2 }); s.cool = 6; s.sfx.push('shoot'); }
       s.fire = false;
@@ -223,13 +238,13 @@ window.Games = (() => {
       for (const f of s.foes) {
         f.x -= f.speed;
         if (f.type === 1) f.y = Math.round(f.base + 4 * Math.sin(s.t / 9 + f.ph));
-        if (f.type === 2 && f.x < W - 8 && pick(rand, 90) === 0) s.shots.push({ x: f.x - 1, y: f.y + 2 });
+        if (f.type === 2 && f.x < s.w - 8 && pick(rand, 90) === 0) s.shots.push({ x: f.x - 1, y: f.y + 2 });
       }
       const bo = s.boss;
       if (bo) {
-        if (bo.x > W - 14) bo.x -= 0.5;
+        if (bo.x > s.w - 14) bo.x -= 0.5;
         bo.y += bo.dy * 0.5;
-        if (bo.y < TOP + 1 || bo.y > H - 13) bo.dy *= -1;
+        if (bo.y < TOP + 1 || bo.y > s.h - 13) bo.dy *= -1;
         if (s.t % 40 === 0) for (const dy of [2, 6, 10]) s.shots.push({ x: bo.x - 1, y: Math.round(bo.y) + dy });
       }
       for (const sht of s.shots) sht.x -= 1.5;
@@ -249,7 +264,7 @@ window.Games = (() => {
       for (const sht of s.shots) if (hit(sh, 7, 5, sht, 2, 1)) { sht.dead = true; space.hurt(s); }
       if (s.boss && hit(sh, 7, 5, { x: s.boss.x, y: s.boss.y }, 12, 12)) space.hurt(s);
 
-      s.bullets = s.bullets.filter((b) => !b.dead && b.x < W);
+      s.bullets = s.bullets.filter((b) => !b.dead && b.x < s.w);
       s.foes = s.foes.filter((f) => !f.dead && f.x > -8);
       s.shots = s.shots.filter((x) => !x.dead && x.x > -2);
       s.fx = s.fx.filter((e) => ++e.t < 8);
@@ -257,9 +272,9 @@ window.Games = (() => {
     },
     draw(scr, s) {
       for (let i = 0; i < s.lives; i++) scr.sprite(HEART, 1 + i * 4, 1, 2);
-      if (s.boss) { scr.frame(W - 32, 1, 31, 3); scr.rect(W - 31, 2, Math.ceil((29 * s.boss.hp) / s.boss.max), 1, 2); }
-      else if (s.wave) scr.text(`WAVE ${s.wave}`, W - textWidth(`WAVE ${s.wave}`) - 1, 0);
-      for (let x = 0; x < W; x += 2) scr.set(x, TOP - 1);
+      if (s.boss) { scr.frame(s.w - 32, 1, 31, 3); scr.rect(s.w - 31, 2, Math.ceil((29 * s.boss.hp) / s.boss.max), 1, 2); }
+      else if (s.wave) scr.text(`WAVE ${s.wave}`, s.w - textWidth(`WAVE ${s.wave}`) - 1, 0);
+      for (let x = 0; x < s.w; x += 2) scr.set(x, TOP - 1);
       for (const st of s.stars) scr.set(st.x, st.y);
       if (!s.inv || (s.inv >> 2) % 2 === 0) scr.sprite(SHIP, s.ship.x, s.ship.y);
       for (const b of s.bullets) scr.rect(b.x, b.y, 2, 1, 2);
@@ -278,9 +293,10 @@ window.Games = (() => {
 
   // --- Everything below touches the page, and runs only once setup() is called -------------------
   let els, ctx, img, scr, blob, opts = {};
-  let colors = { bg: '#141416', ink: '#ececf1', accent: '#7c6cff' }, rgb = [];
+  let colors = { bg: '#141416', ink: '#ececf1', accent: '#7c6cff', fontSize: 13 }, rgb = [];
   let game = null, state = null, mode = 'closed', before = null, pickIx = 0, doneText = '';
   let raf = 0, last = 0, acc = 0, newBest = false;
+  let px = 3, world = { w: W, h: H }, dims = null; // pixel size, what fits the pane now, what the current game was started at
   const held = new Set();
 
   const STORE = 'dt-games'; // best scores and the sound switch, on this Mac only
@@ -312,28 +328,32 @@ window.Games = (() => {
   };
 
   const hex = (c) => { const m = /^#?([\da-f]{6})/i.exec(c || ''); const n = m ? parseInt(m[1], 16) : 0; return [n >> 16, (n >> 8) & 255, n & 255]; };
-  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
-  const css = (c) => `rgb(${c.join(',')})`;
-  function palette() {
-    const bg = hex(colors.bg), ink = hex(colors.ink), acc = hex(colors.accent);
-    rgb = [mix(bg, ink, 0.07), ink, acc]; // the screen is a touch lighter (or darker) than the page
-    if (els) els.card.style.setProperty('--lcd', css(rgb[0]));
-  }
+  const palette = () => { rgb = [hex(colors.bg), hex(colors.ink), hex(colors.accent)]; }; // off = the terminal's own background
 
-  const paint = (canvas, g, s) => {
-    const c = canvas.getContext('2d'), im = c.createImageData(W, H), sc = screen();
-    g.draw(sc, s);
-    for (let i = 0; i < W * H; i++) { const [r, gg, b] = rgb[sc.b[i]]; im.data.set([r, gg, b, 255], i * 4); }
+  const blit = (c, im, sc) => {
+    const d = im.data;
+    for (let i = 0; i < sc.w * sc.h; i++) { const p = rgb[sc.b[i]]; d[i * 4] = p[0]; d[i * 4 + 1] = p[1]; d[i * 4 + 2] = p[2]; d[i * 4 + 3] = 255; }
     c.putImageData(im, 0, 0);
   };
+  const paint = (canvas, g, s) => { const c = canvas.getContext('2d'), sc = screen(); g.draw(sc, s); blit(c, c.createImageData(W, H), sc); };
 
+  // The canvas is the game's world, one canvas pixel per game pixel, shown px times bigger.
+  function sizeCanvas() {
+    const { w, h } = dims || world;
+    if (els.canvas.width !== w || els.canvas.height !== h) {
+      els.canvas.width = w; els.canvas.height = h;
+      img = ctx.createImageData(w, h);
+      scr = screen(w, h);
+    }
+    els.canvas.style.width = `${w * px}px`;
+    els.canvas.style.height = `${h * px}px`;
+  }
   function draw() {
-    if (!game || !state) { ctx.fillStyle = css(rgb[0]); ctx.fillRect(0, 0, W, H); return; }
+    if (!els) return;
+    sizeCanvas();
     scr.clear();
-    game.draw(scr, state);
-    const d = img.data;
-    for (let i = 0; i < W * H; i++) { const c = rgb[scr.b[i]]; d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = 255; }
-    ctx.putImageData(img, 0, 0);
+    if (game && state) game.draw(scr, state);
+    blit(ctx, img, scr);
   }
 
   function loop(now) {
@@ -350,48 +370,49 @@ window.Games = (() => {
       ms = game.tick(state);
       if (state.over) over();
     }
-    score();
+    status();
     draw();
   }
 
-  const score = () => {
+  // The status line along the bottom, like a terminal's: the game, the score, and what the keys do.
+  const status = () => {
+    const pickOn = mode === 'pick';
+    els.name.textContent = pickOn ? 'Games' : game?.name ?? 'Games';
+    els.stats.hidden = pickOn || !game;
     els.score.textContent = state ? state.score : 0;
     els.best.textContent = Math.max(store.best[game?.id] || 0, state?.score || 0);
+    els.hint.textContent = (pickOn ? '← → choose · Enter play' : game?.hint ?? '') + ' · Esc back to the terminal · ⌘W close';
   };
 
-  // What the card shows on top of the screen: the picker, or a message with the blob.
+  // What shows over the game: the picker, or a message with the blob.
   function show(m) {
     if (m === 'play') acc = 0; // no catching up on the time spent paused
     mode = m;
     const pickOn = m === 'pick';
     els.pick.hidden = !pickOn;
     els.msg.hidden = pickOn || m === 'play';
-    els.name.textContent = pickOn ? 'Games' : game.name;
-    els.hint.textContent = pickOn ? '← → choose · Enter play · Esc close' : game.hint;
-    els.stats.hidden = pickOn;
     if (pickOn) renderPick();
     const say = {
-      start: [game?.name, 'Ready when you are.', ['go', 'Start', 'Space'], ['all', 'All games']],
-      paused: ['Paused', 'Take your time.', ['go', 'Keep going', 'Space'], ['all', 'All games']],
-      over: [newBest ? 'New best!' : 'Game over', `You scored ${state?.score ?? 0}.`, ['go', 'Play again', 'Space'], ['all', 'All games']],
+      start: [game?.name, 'Ready when you are.', ['go', 'Start', 'Space'], ['all', 'All games', 'G']],
+      paused: ['Paused', 'Take your time.', ['go', 'Keep going', 'Space'], ['all', 'All games', 'G']],
+      over: [newBest ? 'New best!' : 'Game over', `You scored ${state?.score ?? 0}.`, ['go', 'Play again', 'Space'], ['all', 'All games', 'G']],
       done: [doneText, 'Back to it, or finish your game first?', ['back', 'Back to it', 'Enter'], ['keep', 'Keep playing', 'Space']],
     }[m];
     if (say) {
       els.msgTitle.textContent = say[0];
       els.msgText.textContent = say[1];
-      els.msgBtns.innerHTML = say.slice(2).map(([act, label, key], i) =>
-        `<button class="${i ? 'game-b2' : 'go'}" data-act="${act}">${label}${key ? ` <kbd>${key}</kbd>` : ''}</button>`).join('');
+      els.msgBtns.innerHTML = say.slice(2).map(([act, label, key]) => `<button data-act="${act}"><kbd>${key}</kbd>${label}</button>`).join('');
       const look = { start: ['idle', 'happy'], paused: ['sleep'], over: newBest ? ['idle', 'excited'] : ['idle', 'sad'], done: ['notify'] }[m];
       blob?.set(look[0], look[1] || null);
     }
-    score();
+    status();
     draw();
   }
 
   function renderPick() {
     els.pick.innerHTML = LIST.map((g, i) =>
       `<button class="game-tile${i === pickIx ? ' on' : ''}" data-i="${i}"><canvas width="${W}" height="${H}"></canvas>
-        <b>${g.name}</b><small>Best ${store.best[g.id] || 0}</small></button>`).join('');
+        <b>${g.name}</b><small>best ${store.best[g.id] || 0}</small></button>`).join('');
     // Each tile shows its game mid-play: the same seeded game every time.
     [...els.pick.querySelectorAll('canvas')].forEach((c, i) => {
       const g = LIST[i], r = seeded(7 + i), s = g.init(r);
@@ -405,11 +426,12 @@ window.Games = (() => {
   function choose(id) {
     game = byId[id] || game || snake;
     pickIx = LIST.indexOf(game);
-    state = null;
+    state = null; dims = null;
     show('start');
   }
   function start() {
-    state = game.init(Math.random);
+    dims = { ...world }; // the field keeps this size for the whole game, even if the pane changes
+    state = game.init(Math.random, dims.w, dims.h);
     newBest = false;
     held.clear(); acc = 0;
     show('play');
@@ -425,16 +447,16 @@ window.Games = (() => {
 
   function act(a) {
     if (a === 'go') return mode === 'paused' ? show('play') : start();
-    if (a === 'all') return show('pick');
-    if (a === 'back') return opts.onBack ? opts.onBack() : close();
+    if (a === 'all') { state = null; dims = null; return show('pick'); }
+    if (a === 'back') { show(before === 'play' ? 'paused' : before || 'pick'); return opts.onBack?.(); }
     if (a === 'keep') return show(before || 'pick');
   }
 
-  // Keys belong to the game while it has focus; ⌘ shortcuts still reach the app.
+  // Keys belong to the game while it has focus; ⌘ shortcuts (⌘W, ⌘⌥ arrows…) still reach the app.
   const KEYS = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
     w: 'up', s: 'down', a: 'left', d: 'right', 8: 'up', 2: 'down', 4: 'left', 6: 'right', // 2 4 6 8: the phone's keypad
-    ' ': 'fire', 5: 'fire', Enter: 'enter', p: 'pause', Escape: 'esc',
+    ' ': 'fire', 5: 'fire', Enter: 'enter', p: 'pause', g: 'games', Escape: 'esc',
   };
   function onKey(e) {
     if (mode === 'closed' || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -444,14 +466,18 @@ window.Games = (() => {
     e.preventDefault(); e.stopPropagation();
     if (e.type === 'keyup') { held.delete(a); return; }
     if (document.activeElement !== els.canvas) focus(); // a button that's about to hide mustn't take focus with it
-    if (a === 'esc') return close();
+    if (a === 'esc') { pause(); return opts.onEsc?.(); }
     if (mode === 'pick') {
       if (a === 'left' || a === 'right' || a === 'up' || a === 'down') { pickIx = (pickIx + (a === 'left' || a === 'up' ? -1 : 1) + LIST.length) % LIST.length; renderPick(); }
       if (a === 'enter' || a === 'fire') { choose(LIST[pickIx].id); start(); }
       return;
     }
     if (mode === 'done') { if (a === 'enter') act('back'); if (a === 'fire') act('keep'); return; }
-    if (mode !== 'play') { if (a === 'enter' || a === 'fire' || (a === 'pause' && mode === 'paused')) act('go'); return; }
+    if (mode !== 'play') {
+      if (a === 'enter' || a === 'fire' || (a === 'pause' && mode === 'paused')) act('go');
+      if (a === 'games') act('all');
+      return;
+    }
     if (a === 'pause') return pause();
     if (e.repeat && game === snake) return;
     held.add(a);
@@ -461,40 +487,50 @@ window.Games = (() => {
     draw();
   }
 
-  // The screen: 84 × 48, scaled by the biggest whole number that fits, so every pixel stays square.
+  // Pixels follow the terminal font (3px at 13px); the world is as many of them as fit the pane.
   function fit() {
-    const w = els.root.clientWidth - 96, h = els.root.clientHeight - 170;
-    const k = Math.max(2, Math.min(8, Math.floor(Math.min(w / W, h / H))));
-    els.canvas.style.width = `${W * k}px`;
-    els.canvas.style.height = `${H * k}px`;
+    px = Math.max(2, Math.round(colors.fontSize / 4.5));
+    const r = els.stage.getBoundingClientRect();
+    if (!r.width) return; // not on screen
+    world = { w: Math.max(W, Math.floor((r.width - 16) / px)), h: Math.max(H, Math.floor((r.height - 16) / px)) };
+    draw();
   }
 
   function setup(o) {
     opts = o;
     store = load();
-    const $ = (id) => document.getElementById(id);
+    const root = document.createElement('div');
+    root.className = 'game-in';
+    root.innerHTML = `
+      <div class="game-stage"><canvas width="${W}" height="${H}" tabindex="0" aria-label="Game"></canvas></div>
+      <div class="game-pick" hidden></div>
+      <div class="game-msg" hidden><span class="game-blob"></span><h2></h2><p></p><div class="game-btns"></div></div>
+      <div class="game-status"><b></b><span class="game-stats">score <b>0</b>  best <b>0</b></span><span class="game-hint"></span>
+        <button class="game-sound" aria-label="Sound">${window.icon?.('volume-x') ?? ''}${window.icon?.('volume-2') ?? ''}</button></div>`;
+    const q = (sel) => root.querySelector(sel);
     els = {
-      root: $('game'), card: $('gameCard'), canvas: $('gameCanvas'), name: $('gameName'), score: $('gameScore'), best: $('gameBest'),
-      stats: $('gameStats'), sound: $('gameSound'), pick: $('gamePick'), msg: $('gameMsg'), msgTitle: $('gameMsgTitle'),
-      msgText: $('gameMsgText'), msgBtns: $('gameMsgBtns'), hint: $('gameHint'),
+      root, stage: q('.game-stage'), canvas: q('canvas'), pick: q('.game-pick'), msg: q('.game-msg'),
+      msgTitle: q('.game-msg h2'), msgText: q('.game-msg p'), msgBtns: q('.game-btns'),
+      name: q('.game-status > b'), stats: q('.game-stats'), score: q('.game-stats b'), best: q('.game-stats b:last-child'),
+      hint: q('.game-hint'), sound: q('.game-sound'),
     };
     ctx = els.canvas.getContext('2d');
     img = ctx.createImageData(W, H);
     scr = screen();
     blob = window.Blobs?.status(44);
-    if (blob) { blob.el.className = 'game-blob'; $('gameBlob').replaceWith(blob.el); }
+    if (blob) { blob.el.className = 'game-blob'; q('.game-blob').replaceWith(blob.el); }
     palette();
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('keyup', onKey, true);
     window.addEventListener('blur', () => { held.clear(); pause(); });
-    els.root.addEventListener('focusout', (e) => { if (!els.root.contains(e.relatedTarget)) { held.clear(); pause(); } });
-    els.root.addEventListener('pointerdown', (e) => { if (!e.target.closest('button')) setTimeout(focus); });
+    root.addEventListener('focusout', (e) => { if (!root.contains(e.relatedTarget)) { held.clear(); pause(); } });
+    root.addEventListener('pointerdown', (e) => { if (!e.target.closest('button')) setTimeout(focus); });
     els.msgBtns.onclick = (e) => { const b = e.target.closest('button'); if (b) { focus(); act(b.dataset.act); } };
     els.pick.onclick = (e) => { const t = e.target.closest('.game-tile'); if (t) { focus(); choose(LIST[+t.dataset.i].id); start(); } };
-    $('gameClose').onclick = () => close();
     els.sound.onclick = () => { store.sound = !store.sound; keep(); syncSound(); focus(); };
     syncSound();
-    new ResizeObserver(fit).observe(els.root);
+    new ResizeObserver(fit).observe(els.stage);
+    api.el = root;
   }
   const syncSound = () => {
     els.sound.classList.toggle('on', store.sound);
@@ -503,23 +539,22 @@ window.Games = (() => {
   };
 
   const focus = () => els?.canvas.focus({ preventScroll: true });
+  // Show the game (in its pane): a chosen game waits at its start line; otherwise carry on, or pick one.
   function open(id) {
     if (!els) return;
-    els.root.classList.add('open');
     if (id) choose(id);
-    else if (state && !state.over) show('paused'); // carry on where you left off
-    else show('pick');
+    else if (!isOpen()) state && !state.over ? show('paused') : show('pick');
     if (!raf) { last = 0; raf = requestAnimationFrame(loop); }
     fit();
     focus();
   }
+  // The pane closed: stop, and start fresh next time.
   function close() {
     if (mode === 'closed') return;
     mode = 'closed';
     cancelAnimationFrame(raf); raf = 0;
     held.clear();
-    els.root.classList.remove('open');
-    opts.onClose?.();
+    state = null; dims = null;
   }
   const isOpen = () => mode !== 'closed';
 
@@ -535,8 +570,9 @@ window.Games = (() => {
   function setColors(c) {
     colors = { ...colors, ...c };
     palette();
-    if (els && isOpen()) { if (mode === 'pick') renderPick(); draw(); }
+    if (els && isOpen()) { fit(); if (mode === 'pick') renderPick(); }
   }
 
-  return { setup, open, close, isOpen, focus, workDone, setColors, logic: { snake, stack, space, screen, seeded, W, H } };
+  const api = { el: null, setup, open, close, isOpen, focus, workDone, setColors, logic: { snake, stack, space, screen, seeded, W, H } };
+  return api;
 })();
