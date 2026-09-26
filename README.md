@@ -2,6 +2,8 @@
 
 A terminal for designers, with Claude built in. Split panes, a file sidebar that follows `cd`, file previews, and ⌘K to ask Claude for a command in plain English.
 
+https://github.com/user-attachments/assets/c06bb1b9-58f7-4fd4-94d4-fc6b548e3b44
+
 ## Install
 
 **Easiest:** paste this into Terminal and press Enter:
