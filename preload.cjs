@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('dt', {
   openIn: (path) => ipcRenderer.send('open-in', path),
   reveal: (path) => ipcRenderer.send('reveal', path),
   openExternal: (url) => ipcRenderer.send('open-external', url),
+  openDefault: (path) => ipcRenderer.send('open-default', path), // in whatever app the Mac uses for that file
   pathOf: (file) => webUtils.getPathForFile(file), // a file dropped from Finder
 
   palette: () => ipcRenderer.invoke('palette'),

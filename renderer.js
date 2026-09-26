@@ -43,9 +43,10 @@ async function newPane(cwd, { screen, when } = {}) {
   term.loadAddon(fit);
   term.loadAddon(serial);
   term.loadAddon(search);
-  // Web addresses in the output: ⌘-click opens them in the browser (a plain click just focuses the pane).
-  term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => { if (e.metaKey) dt.openExternal(uri); }, {
-    hover: () => { el.title = '⌘-click to open in your browser'; }, leave: () => { el.title = ''; },
+  // Web addresses in the output: ⌘-click opens them (openLink); a plain click just focuses the pane.
+  term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => { if (e.metaKey) openLink(uri); }, {
+    hover: (_, uri) => { el.title = Preview.findLocalUrl(uri) && inFork() ? '⌘-click to show it next to the terminal' : '⌘-click to open in your browser'; },
+    leave: () => { el.title = ''; },
   }));
   term.open(inner);
   if (screen) term.write(`${screen}\x1b[0m\r\n\x1b[2m── Restored · ${restoredAt(when)} ──\x1b[0m\r\n`);
@@ -438,11 +439,16 @@ $('crumbs').onclick = (e) => {
   const b = e.target.closest('.crumb');
   if (b) { send(`cd ${q(b.dataset.path)}`, '', true); dt.track('folder_opened', { via: 'crumb' }); }
 };
-// ▸ opens a folder in place; its name moves there; a file opens in the preview panel.
+// ▸ opens a folder in place; its name moves there; a file opens in the preview panel
+// (or, with Settings → Links & files off, in whatever app the Mac uses for it).
 $('entries').onclick = (e) => {
   const row = e.target.closest('.entry'); if (!row) return;
   const { path } = row.dataset;
-  if (row.dataset.folder !== 'true') return openFile(path);
+  if (row.dataset.folder !== 'true') {
+    if (inFork()) return openFile(path);
+    dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon, where: 'app' }); // the type, never the name
+    return dt.openDefault(path);
+  }
   if (e.target.closest('.twisty')) { expanded.has(path) ? expanded.delete(path) : expanded.add(path); return refresh(); }
   const cwd = active()?.cwd || '';
   send(`cd ${q(path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path)}`, '', true); // relative reads better
@@ -493,7 +499,7 @@ const codeView = (r) => `<div class="pv-code"><pre class="gutter">${Array.from({
 async function openFile(path, changed) {
   const view = $('pvFile'), top = changed ? view.scrollTop : 0; // a file Claude just edited keeps its scroll
   const firstTime = pv.file !== path;
-  if (firstTime) dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon }); // the type, never the name
+  if (firstTime) dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon, where: 'fork' }); // the type, never the name
   pv.file = path;
   showPv('file');
   if (firstTime) syncWatch();
@@ -585,12 +591,26 @@ let readyUrl = null;
 function appFound(url) {
   if (offered.has(url) || url === pv.url) return;
   offered.add(url);
-  if (pvOpen() && pv.mode === 'app') return loadApp(url);
+  if (inFork() && pvOpen() && pv.mode === 'app') return loadApp(url);
   readyUrl = url;
   $('readyUrl').textContent = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  $('readyShow').textContent = inFork() ? 'Show it' : 'Open in browser';
   $('ready').classList.add('show');
 }
-$('readyShow').onclick = () => { loadApp(readyUrl); dt.track('app_preview_shown'); };
+$('readyShow').onclick = () => {
+  inFork() ? loadApp(readyUrl) : dt.openExternal(readyUrl);
+  $('ready').classList.remove('show');
+  dt.track('app_preview_shown', { where: inFork() ? 'fork' : 'browser' });
+};
+// Settings → Links & files. On: your app, localhost links and files open in Fork's side panel.
+// Off: they open in the browser and in the Mac's own apps. Outside websites always go to the browser.
+function inFork() { return settings.inFork !== 'off'; }
+// Where a link from the terminal goes: your own app to the side panel (when that's on), the web to the browser.
+function openLink(uri) {
+  const local = Preview.findLocalUrl(uri);
+  if (local && inFork()) return loadApp(local);
+  dt.openExternal(uri);
+}
 $('readyClose').onclick = () => $('ready').classList.remove('show');
 
 // --- When something fails ------------------------------------------------------
@@ -882,7 +902,7 @@ function installed(font) {
 }
 // Appearance is Light, Dark or System; each side keeps its own theme, and System swaps them with macOS.
 const DEFAULTS = { mode: 'system', darkTheme: 'Designer', lightTheme: 'Catppuccin Latte',
-  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on' };
+  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
@@ -941,7 +961,7 @@ const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
 const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
-const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent']]; // checkboxes -> 'on'/'off'
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;

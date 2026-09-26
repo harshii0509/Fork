@@ -39,7 +39,8 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 **New**
 - **Fork reopens the way you left it.** Quit, close the window or update, and next time your tabs, splits and folders are back, with what was on screen above a quiet "Restored" line. If Claude was running, it picks up the conversation where it left off. Closing every tab yourself means you're done, so the next start is fresh. Turn it off in **Settings → Startup**.
 - **Find with ⌘F.** Search what's in a terminal: every match lights up, Enter and ⇧Enter move between them, Esc closes. ⌘G finds the next one.
-- **Links you can click.** ⌘-click any web address in the output to open it in your browser.
+- **Links you can click.** ⌘-click any web address in the output to open it in your browser. Your own app (localhost) shows up next to the terminal, like **Show it**.
+- **Open things in their own apps.** Prefer your browser and your usual apps? Turn off **Settings → Links & files → Open links and files inside Fork**: your app opens in your browser, and files you click open in Preview, Figma or whatever your Mac uses for them.
 
 **Better**
 - **Scroll back ten times further:** each terminal keeps its last 10,000 lines instead of 1,000, so a long Claude conversation is still there.

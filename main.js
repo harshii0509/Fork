@@ -192,7 +192,11 @@ let editor; // looked up once
 ipcMain.handle('editor', () => (editor ??= findEditor()));
 ipcMain.on('open-in', (_, path) => { const ed = editor ?? findEditor(); execFile('open', ed ? ['-a', ed.app, path] : [path]); });
 ipcMain.on('reveal', (_, path) => shell.showItemInFolder(path));
-ipcMain.on('open-external', (_, url) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); });
+// FORK_NO_OPEN=1 npm start: print what would open instead of opening it (for testing without a browser popping up).
+const opens = (fn) => (process.env.FORK_NO_OPEN ? (x) => console.log('[open]', x) : fn);
+const openUrl = opens((url) => shell.openExternal(url)), openPath = opens((path) => shell.openPath(path));
+ipcMain.on('open-external', (_, url) => { if (/^https?:\/\//.test(url)) openUrl(url); });
+ipcMain.on('open-default', (_, path) => openPath(path)); // the Mac's own app for that kind of file
 
 ipcMain.handle('palette', () => PALETTE);
 // Settings → Appearance ('light', 'dark' or 'system'). The sidebar's frosted glass follows it, and with
