@@ -918,6 +918,8 @@ function renderPal() {
   ver++; opened = false;
   const text = palText().toLowerCase(), words = text.split(/\s+/).filter(Boolean);
   shown = palette.filter((p) => words.every((w) => (p.label + ' ' + p.cmd).toLowerCase().includes(w)));
+  const byName = (p) => words.every((w) => p.label.toLowerCase().includes(w)); // "play snake": Play Snake before Play a game
+  shown.sort((a, b) => byName(b) - byName(a));
   sel = 0; vals = [];
   palSay('');
   const smart = settings.smart !== 'off';
@@ -939,8 +941,9 @@ function drawPal() {
       return `<li data-i="${i}" class="${i === sel ? 'sel' : ''}"><span>${esc(p.label)}</span><code>${esc(shownCmd(p))}</code></li>`;
     const fields = (p.fill || []).map((f, j) =>
       `<label class="field"><span>${esc(f)}</span><input data-f="${j}" value="${esc(vals[j] || '')}" autocomplete="off" spellcheck="false"></label>`).join('');
-    return `<li data-i="${i}" class="answer sel"><b>${esc(p.label)}</b><p>${esc(p.why || '')}</p>${fields}
-      <div class="run"><code id="palCmd">${esc(shownCmd(p))}</code><button class="go" id="palRun" ${ready(p) ? '' : 'disabled'}>${p.game !== undefined ? 'Play' : 'Run'} ⏎</button></div>
+    const game = p.game !== undefined; // a game says what it is, and has no command to show
+    return `<li data-i="${i}" class="answer sel"><b>${esc(p.label)}</b><p>${esc(game ? p.cmd : p.why || '')}</p>${fields}
+      <div class="run"><code id="palCmd">${game ? '' : esc(shownCmd(p))}</code><button class="go" id="palRun" ${ready(p) ? '' : 'disabled'}>${p.game !== undefined ? 'Play' : 'Run'} ⏎</button></div>
       ${p.ai ? '<small>Suggested by AI. Check it before running.</small>' : ''}</li>`;
   }).join('');
   $('palList').querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
