@@ -117,7 +117,7 @@ First release:
    - Open the `.app` **from Finder**:
      - the start screen appears;
      - typing `cd` in a pane moves the sidebar;
-     - ⌘K → Ask Claude returns a command (this confirms the PATH fix).
+     - ⌘K → Ask AI returns a command (this confirms the PATH fix).
 5. Push, then publish:
 
    ```bash
@@ -142,6 +142,7 @@ The "latest" URL and the curl command stay the same.
 - **Never:** commands, file or folder names, paths, terminal output, or what's typed in ⌘K.
 
 **Smarter matching (Jev, by TypeSafe):** when someone types plain words in ⌘K, or clicks "What went wrong?" on an error Fork's library doesn't recognise, Fork sends that text (the request, or the failed command's output) to TypeSafe to pick the matching built-in command or known error (`jev.mjs`). Never in the background. On by default; **Settings → Privacy → Smarter matching** turns it off.
+**Ask AI (Claude Code, `claude.mjs`):** uses the person's own Claude Code login. Opening ⌘K or pressing "What went wrong?" starts Claude Code (Haiku) in the background so an answer comes a few seconds sooner; it sends nothing until Ask AI is pressed, closes after 5 minutes unused, and quits with Fork. While running it uses about 250 MB of memory. Without Claude Code (or logged out) it fails quietly and Ask AI says so.
 - **Key:** Fork's TypeSafe key lives in `~/.config/fork/typesafe-key` on the release Mac. `scripts/bundle-keys.mjs` (run before `npm run dist` and `npm run app`) copies it into `typesafe.json`, which ships inside Fork.app and is **gitignored**. It can be pulled out of the app, so keep a spending limit on it in TypeSafe. No key: Fork works without Jev.
 - **Key:** `POSTHOG_KEY` / `POSTHOG_HOST` at the top of `analytics.mjs`. An empty key sends nothing. `npm start` never sends: it prints each event to the terminal it was started from. `FORK_ANALYTICS=1 npm start` sends for real, for testing.
 

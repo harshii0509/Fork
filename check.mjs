@@ -340,6 +340,12 @@ assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 
   assert.ok(execFileSync('git', ['check-ignore', 'typesafe.json'], { encoding: 'utf8' }).trim(), 'typesafe.json must be gitignored');
 }
 
+// --- Ask AI (claude.mjs): Claude's reply becomes plain lines, code fences and blank lines dropped ---
+{
+  const { toLines } = await import('./claude.mjs');
+  assert.deepEqual(toLines('```zsh\ndu -sh .\n```\n\nShows the size of this folder.'), ['du -sh .', 'Shows the size of this folder.']);
+}
+
 // --- Dashboard (scripts/dashboard-charts.mjs): every event Fork sends is on a chart ---
 {
   const { chartedEvents, NOT_CHARTED } = await import('./scripts/dashboard-charts.mjs');

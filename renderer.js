@@ -677,6 +677,7 @@ function explained({ text, fix: f }, ask) {
 }
 $('explainBtn').onclick = async () => {
   $('explainBtn').style.display = 'none';
+  dt.aiWarm(); // in case it comes to Ask AI
   failed = { output: lastLines(), cwd: active()?.cwd };
   // Fork's library first; if it doesn't know the error and Smarter matching is on, Jev picks the closest one Fork does know.
   const r = await dt.explain(failed.output, failed.cwd, settings.smart !== 'off');
@@ -882,7 +883,7 @@ dt.palette().then((p) => { palette = [...p, ...GAMES]; });
 let ver = 0, vals = [], opened = false; // ver: which typing an answer belongs to; opened: a row was clicked with nothing typed
 const palText = () => $('palIn').value.trim();
 function palSay(text) { $('palStatus').textContent = text; $('palStatus').classList.toggle('show', !!text); }
-function openPal() { $('palIn').value = ''; renderPal(); $('palOv').classList.add('show'); $('palIn').focus(); dt.track('palette_opened'); }
+function openPal() { $('palIn').value = ''; renderPal(); $('palOv').classList.add('show'); $('palIn').focus(); dt.aiWarm(); dt.track('palette_opened'); }
 function closePal() { ver++; $('palOv').classList.remove('show'); backToWork(); }
 function renderPal() {
   ver++; opened = false;

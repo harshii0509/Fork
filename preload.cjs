@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('dt', {
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
   recents: (add) => ipcRenderer.invoke('recents', add),
   ask: (request, cwd) => ipcRenderer.invoke('ask', request, cwd),
+  aiWarm: () => ipcRenderer.send('ai:warm'), // get Claude ready for Ask AI (nothing is sent)
   appearance: (dark) => ipcRenderer.send('appearance', dark),
   explain: (output, cwd, smart) => ipcRenderer.invoke('explain', output, cwd, smart), // Fork's library (errors.mjs), then Jev if smart; or null
   paletteMatch: (text) => ipcRenderer.invoke('palette:match', text), // Jev: the ⌘K preset this request means, or null

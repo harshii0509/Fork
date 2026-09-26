@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, nativeTheme, Menu, screen, shell } from 'electron';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pty from 'node-pty';
@@ -12,6 +12,7 @@ import { loadKey, judge, commandQuestion, errorQuestion } from './jev.mjs';
 import { list, readPreview, findEditor } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
+import * as ai from './claude.mjs';
 import { clean, VERSION as SESSION_VERSION } from './session.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -144,16 +145,9 @@ function buildMenu() {
   ]));
 }
 
-// ponytail: shells out to Claude Code so designers reuse their existing login (~6s).
-// Swap for a direct Haiku API call (~1s) if the wait hurts in testing.
-function askClaude(system, prompt) {
-  return new Promise((resolve) => {
-    execFile('claude', ['-p', '--model', 'haiku', '--tools', '', '--no-session-persistence',
-      '--setting-sources', '', '--system-prompt', system, prompt],
-    { cwd: tmpdir(), timeout: 60_000 }, (err, out) =>
-      resolve(err ? null : out.replace(/```\w*/g, '').trim().split('\n').map((l) => l.trim()).filter(Boolean)));
-  });
-}
+// Ask AI goes through the person's own Claude Code login, kept warm while it's likely to be used (claude.mjs).
+const askClaude = ai.ask;
+ipcMain.on('ai:warm', () => ai.warm());
 
 ipcMain.handle('pty:create', (e, cwd) => createPty(e.sender, cwd));
 ipcMain.on('pty:write', (_, id, d) => ptys.get(id)?.pty.write(d));
@@ -371,6 +365,8 @@ app.on('before-quit', (e) => { // save the session and send what's left, never h
     .then(() => Promise.race([usage.flush(), new Promise((r) => setTimeout(r, 2000))]))
     .then(() => app.quit());
 });
+
+app.on('will-quit', ai.stop); // never leave a Claude running after Fork quits
 
 app.whenReady().then(() => {
   nativeTheme.themeSource = 'system'; // until the window applies its saved appearance
