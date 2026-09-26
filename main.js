@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pty from 'node-pty';
 import { marked } from 'marked';
-import { suggest, PALETTE, pm, scripts } from './suggest.mjs';
+import { suggest, PALETTE, shape, pm, scripts } from './suggest.mjs';
 import { diagnose, explainEntry, looksLikeCommand, ERRORS } from './errors.mjs';
 import { loadKey, judge, commandQuestion, errorQuestion } from './jev.mjs';
 import { list, readPreview, findEditor } from './files.mjs';
@@ -241,7 +241,7 @@ function errorContext(cwd) {
 // Jev (jev.mjs) only when the person acts and Smarter matching is on (smart, from the page's settings).
 const JEV_KEY = loadKey();
 const jevLog = app.isPackaged ? () => {} : console.log;
-const COMMAND_Q = commandQuestion(PALETTE), ERROR_Q = errorQuestion(ERRORS, (id) => explainEntry(id).text);
+const COMMAND_Q = commandQuestion(PALETTE.map((p) => ({ ...p, cmd: shape(p) }))), ERROR_Q = errorQuestion(ERRORS, (id) => explainEntry(id).text);
 // 1. Fork's library (instant). 2. Jev picks the closest known error, shown in Fork's own words. 3. null: "unusual".
 ipcMain.handle('explain', async (_, output, cwd, smart) => {
   const ctx = errorContext(cwd), hit = diagnose(output, ctx);

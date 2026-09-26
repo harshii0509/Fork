@@ -202,7 +202,7 @@
   .oops p { margin: 0; flex: 1; }
   .oops button { padding: 4px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; }
   .oops button:hover { border-color: var(--text); }
-  .oops button.quiet { background: none; border-color: transparent; color: var(--dim); } /* "Not it? Ask Claude" */
+  .oops button.quiet { background: none; border-color: transparent; color: var(--dim); } /* "Not it? Ask AI" */
   .oops button.quiet:hover { color: var(--text); }
   #oopsClose { display: grid; place-items: center; padding: 4px 6px; }
   /* A dev server printed its address: offer to show the app. */
@@ -339,7 +339,19 @@
   .pal ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow-y: auto; }
   .pal li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
   .pal li.sel { background: var(--accent-soft); }
-  .pal .best { margin-right: 8px; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); }
+  /* The answer card: the selected result, opened up. What it does, any name it needs, the command, Run. */
+  .pal li.answer { display: block; padding: 12px 14px; cursor: default; }
+  .pal .answer b { font-weight: 600; }
+  .pal .answer p { margin: 2px 0 0; color: var(--dim); }
+  .pal .answer small { display: block; margin-top: 8px; color: var(--dim); font-size: 11px; }
+  .pal .field { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .pal .field span { width: 130px; flex: none; color: var(--dim); }
+  .pal .field input { flex: 1; width: auto; min-width: 0; font-size: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  .pal .field input:focus { outline: none; border-color: var(--accent); }
+  .pal .answer .run { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+  .pal .answer .run code { max-width: none; white-space: normal; overflow-wrap: anywhere; color: var(--text); }
+  .pal .answer .go { padding: 5px 12px; border-radius: 6px; white-space: nowrap; }
+  .pal .answer .go:disabled { opacity: .4; cursor: default; }
   .pal li code { font: 12px "SF Mono", Menlo, monospace; color: var(--dim); white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
   .pal .status { padding: 12px 18px; color: var(--dim); display: none; }
@@ -605,7 +617,7 @@
       <p id="oopsText">That didn't work.</p>
       <button id="explainBtn">What went wrong?</button>
       <button id="fixBtn" style="display:none">Type the fix</button>
-      <button id="askAiBtn" style="display:none">Ask Claude</button>
+      <button id="askAiBtn" style="display:none">Ask AI</button>
       <button id="oopsClose" aria-label="Dismiss"><i data-icon="x"></i></button>
     </div>
     <div class="ready" id="ready"><span class="dot"></span><p>Your app is running at <b id="readyUrl"></b></p>

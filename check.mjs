@@ -321,14 +321,19 @@ assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 
 {
   const { ERRORS, explainEntry } = await import('./errors.mjs');
   const { commandQuestion, errorQuestion, judge } = await import('./jev.mjs');
-  const { PALETTE } = await import('./suggest.mjs');
+  const { PALETTE, shape } = await import('./suggest.mjs');
+  for (const p of PALETTE) { // ⌘K: every blank ({1}, {2}) has a field to type it in, and every field is used
+    const blanks = [...p.cmd.matchAll(/\{(\d)\}/g)].map((m) => +m[1]);
+    assert.deepEqual(blanks, (p.fill || []).map((_, i) => i + 1), `⌘K "${p.label}": blanks and fields don't line up`);
+  }
   for (const ctx of [{}, { scripts: ['build'], hasNodeModules: true, hasBrew: true, hasGh: true }])
     for (const e of ERRORS) {
       const r = explainEntry(e.id, ctx); // what's shown when Jev picks this entry: no names or ports to fill in
       assert.ok(r.text && !/undefined|""/.test(`${r.text} ${r.fix}`), `errors.mjs: "${e.id}" without a match reads "${r.text}" / ${r.fix}`);
     }
-  const cq = commandQuestion(PALETTE), eq = errorQuestion(ERRORS, (id) => explainEntry(id).text);
+  const cq = commandQuestion(PALETTE.map((p) => ({ ...p, cmd: shape(p) }))), eq = errorQuestion(ERRORS, (id) => explainEntry(id).text);
   assert.deepEqual(Object.keys(cq.criteria), [...PALETTE.map((p) => p.label), 'none']);
+  assert.ok(!/\{\d\}/.test(JSON.stringify(cq)), 'Jev sees named blanks (mkdir <Folder name>), not {1}');
   assert.deepEqual(Object.keys(eq.criteria), [...ERRORS.map((e) => e.id), 'none']);
   assert.equal(await judge(null, {}, cq), null); // no key: no call, no error
   const { execFileSync } = await import('node:child_process');

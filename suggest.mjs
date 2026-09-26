@@ -39,36 +39,40 @@ const RULES = [
 export const suggest = (dir) =>
   RULES.filter((r) => r.when(dir)).map((r) => ({ label: r.label, cmd: r.cmd(dir), why: r.why, run: !!r.run }));
 
-// Cmd+K palette: searchable by plain-English name. Trailing space = "fill in the rest".
+// Cmd+K palette: searchable by plain-English name. Enter runs the command. {1} and {2} are names the
+// person types into fields in the palette first (fill), shell-quoted by the page. wrap: '*' for part of a name.
 export const PALETTE = [
-  ['Go up a folder', 'cd ..', 'Moves to the folder that contains this one.', true],
-  ['Go to my home folder', 'cd ~', 'Your personal folder, where Desktop and Documents live.', true],
-  ['Go to Desktop', 'cd ~/Desktop', 'Moves into your Desktop folder.', true],
-  ['Where am I?', 'pwd', 'Prints the full path of the current folder.', true],
-  ['List files here', 'ls', 'Shows what is in this folder.', true],
-  ['List files, including hidden ones', 'ls -a', 'Also shows files starting with a dot, like .env.', true],
-  ['Clear the screen', 'clear', 'Wipes the screen. Nothing is deleted.', true],
-  ['Show in Finder', 'open .', 'Opens this folder in Finder.', true],
-  ['Open a file', 'open ', 'Opens a file in its usual app. Type the file name after the command.'],
-  ['Make a new folder', 'mkdir ', 'Creates a folder. Type its name after the command.'],
-  ['Make an empty file', 'touch ', 'Creates an empty file. Type its name after the command.'],
-  ['Delete (moves to Trash)', 'rm ', 'Moves a file or folder to the Trash. You can get it back.'],
-  ['Copy a file', 'cp ', 'Copy: type the file, then where the copy should go.'],
-  ['Move or rename a file', 'mv ', 'Type the file, then its new name or folder.'],
-  ['Find a file by name', 'find . -name "*name*"', 'Searches this folder and everything inside it. Replace name.'],
-  ['Search for text inside files', 'grep -rn "text" . --exclude-dir=node_modules', 'Finds every line containing the text. Replace text.'],
-  ['Stop what is running', '\x03', 'Same as pressing Ctrl+C. Stops the current command.', true],
+  ['Go up a folder', 'cd ..', 'Moves to the folder that contains this one.'],
+  ['Go to my home folder', 'cd ~', 'Your personal folder, where Desktop and Documents live.'],
+  ['Go to Desktop', 'cd ~/Desktop', 'Moves into your Desktop folder.'],
+  ['Where am I?', 'pwd', 'Prints the full path of the current folder.'],
+  ['List files here', 'ls', 'Shows what is in this folder.'],
+  ['List files, including hidden ones', 'ls -a', 'Also shows files starting with a dot, like .env.'],
+  ['Clear the screen', 'clear', 'Wipes the screen. Nothing is deleted.'],
+  ['Show in Finder', 'open .', 'Opens this folder in Finder.'],
+  ['Open a file', 'open {1}', 'Opens a file in its usual app.', ['File name']],
+  ['Make a new folder', 'mkdir {1}', 'Creates a folder here.', ['Folder name']],
+  ['Make an empty file', 'touch {1}', 'Creates an empty file here.', ['File name']],
+  ['Delete (moves to Trash)', 'rm {1}', 'Moves a file or folder to the Trash. You can get it back.', ['File or folder']],
+  ['Copy a file', 'cp {1} {2}', 'Makes a copy of a file somewhere else.', ['File', 'Copy to']],
+  ['Move or rename a file', 'mv {1} {2}', 'Moves a file, or gives it a new name.', ['File', 'New name or folder']],
+  ['Find a file by name', 'find . -name {1}', 'Searches this folder and everything inside it.', ['Part of the name'], '*'],
+  ['Search for text inside files', 'grep -rn {1} . --exclude-dir=node_modules', 'Finds every line containing the text.', ['Text']],
+  ['Stop what is running', '\x03', 'Same as pressing Ctrl+C. Stops the current command.'],
   ['Install what it needs', 'npm install', 'Downloads the code this project depends on.'],
   ['Start the app', 'npm run dev', 'Runs the app on your computer. Press Ctrl+C to stop it.'],
-  ['See what changed', 'git status', 'Lists the files changed since the last save point (commit).', true],
-  ['See changes line by line', 'git diff', 'Shows exactly which lines changed. Press q to exit.', true],
+  ['See what changed', 'git status', 'Lists the files changed since the last save point (commit).'],
+  ['See changes line by line', 'git diff', 'Shows exactly which lines changed. Press q to exit.'],
   ['Get latest from the team', 'git pull', "Downloads your team's newest changes."],
-  ['Save a checkpoint (commit)', 'git add -A && git commit -m "describe your change"', 'Saves all changes as a checkpoint you can go back to. Edit the message first.'],
+  ['Save a checkpoint (commit)', 'git add -A && git commit -m {1}', 'Saves all changes as a checkpoint you can go back to.', ['What changed']],
   ['Upload my changes', 'git push', 'Sends your checkpoints to GitHub so the team can see them.'],
-  ['Undo my changes to a file', 'git restore ', 'Puts a file back to its last checkpoint. Type the file name.'],
-  ['Start a new branch', 'git switch -c ', 'A separate copy of the project to try things safely. Type a name.'],
-  ['Switch branch', 'git switch ', 'Moves to another branch. Type its name.'],
-  ['Get a project from GitHub', 'git clone ', 'Downloads a project. Paste its GitHub link after the command.'],
-  ['Ask Claude', 'claude', 'Opens Claude Code to build or change things with you.'],
-  ['Which Node version do I have?', 'node -v', 'Prints the installed Node.js version.', true],
-].map(([label, cmd, why, run]) => ({ label, cmd, why, run: !!run }));
+  ['Undo my changes to a file', 'git restore {1}', 'Puts a file back to its last checkpoint.', ['File name']],
+  ['Start a new branch', 'git switch -c {1}', 'A separate copy of the project to try things safely.', ['Branch name']],
+  ['Switch branch', 'git switch {1}', 'Moves to another branch.', ['Branch name']],
+  ['Get a project from GitHub', 'git clone {1}', 'Downloads a project from GitHub into this folder.', ['GitHub link']],
+  ['Open Claude Code', 'claude', 'Opens Claude Code to build or change things with you.'],
+  ['Which Node version do I have?', 'node -v', 'Prints the installed Node.js version.'],
+].map(([label, cmd, why, fill, wrap]) => ({ label, cmd, why, ...(fill && { fill }), ...(wrap && { wrap }) }));
+
+// How a command reads with its blanks named, e.g. "mkdir <Folder name>" (for Jev, and anywhere a person reads it).
+export const shape = (p) => p.cmd.replace(/\{(\d)\}/g, (_, n) => `<${p.fill[n - 1]}>`);

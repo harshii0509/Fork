@@ -671,7 +671,7 @@ function explained({ text, fix: f }, ask) {
   $('oopsText').textContent = text;
   fix = f;
   $('fixBtn').style.display = fix ? '' : 'none';
-  $('askAiBtn').textContent = ask === 'maybe' ? 'Not it? Ask Claude' : 'Ask Claude';
+  $('askAiBtn').textContent = ask === 'maybe' ? 'Not it? Ask AI' : 'Ask AI';
   $('askAiBtn').classList.toggle('quiet', ask === 'maybe');
   $('askAiBtn').style.display = ask ? '' : 'none';
 }
@@ -681,7 +681,7 @@ $('explainBtn').onclick = async () => {
   // Fork's library first; if it doesn't know the error and Smarter matching is on, Jev picks the closest one Fork does know.
   const r = await dt.explain(failed.output, failed.cwd, settings.smart !== 'off');
   if (r) explained(r, 'maybe');
-  else explained({ text: "This one's unusual. Want Claude to take a look?", fix: null }, 'yes');
+  else explained({ text: "This one's unusual. Want AI to take a look?", fix: null }, 'yes');
   dt.track('error_explained', r ? { source: r.source, id: r.id } : { source: 'unknown' }); // id is from Fork's list, never the error
 };
 $('askAiBtn').onclick = async () => {
@@ -876,62 +876,119 @@ const GAMES = [
 ];
 dt.palette().then((p) => { palette = [...p, ...GAMES]; });
 
+// The answer shows in ⌘K itself: what it does, the command, and Run. Commands that need a name get a field
+// in the card first. Enter runs it for real (the card is the "are you sure?"), so nothing is left
+// half-typed in the terminal. Fork's own list answers first; only when it has nothing does Ask AI appear.
+let ver = 0, vals = [], opened = false; // ver: which typing an answer belongs to; opened: a row was clicked with nothing typed
+const palText = () => $('palIn').value.trim();
+function palSay(text) { $('palStatus').textContent = text; $('palStatus').classList.toggle('show', !!text); }
 function openPal() { $('palIn').value = ''; renderPal(); $('palOv').classList.add('show'); $('palIn').focus(); dt.track('palette_opened'); }
-function closePal() { $('palOv').classList.remove('show'); backToWork(); }
+function closePal() { ver++; $('palOv').classList.remove('show'); backToWork(); }
 function renderPal() {
-  const text = $('palIn').value.trim().toLowerCase();
-  const words = text.split(/\s+/).filter(Boolean);
+  ver++; opened = false;
+  const text = palText().toLowerCase(), words = text.split(/\s+/).filter(Boolean);
   shown = palette.filter((p) => words.every((w) => (p.label + ' ' + p.cmd).toLowerCase().includes(w)));
-  const found = shown.length;
-  if (text) shown.push({ ask: true, label: `Ask Claude: “${$('palIn').value.trim()}”`, cmd: 'AI' });
-  sel = 0;
-  $('palStatus').classList.remove('show');
+  sel = 0; vals = [];
+  palSay('');
+  const smart = settings.smart !== 'off';
+  if (text && !shown.length) smart ? palSay('Looking…') : (shown = [askRow()]);
   drawPal();
-  if (text && (words.length > 1 || !found)) bestMatch(text); // plain words, or nothing matched by name: ask Jev
+  if (text && smart && (words.length > 1 || !shown.length)) bestMatch(text, ver); // plain words, or nothing by name: ask Jev
 }
+const askRow = () => ({ ask: true, label: `Ask AI: “${palText()}”`, cmd: 'AI' });
+const needs = (p) => p.fill?.length > 0;
+// A typed name, shell-quoted. ~/ stays unquoted so it still means the home folder.
+const arg = (v, wrap = '') => (v = wrap + v.trim() + wrap, v.startsWith('~/') ? '~/' + q(v.slice(2)) : q(v));
+const filled = (p) => p.cmd.replace(/\{(\d)\}/g, (_, n) => (vals[n - 1]?.trim() ? arg(vals[n - 1], p.wrap) : `<${p.fill[n - 1]}>`));
+const ready = (p) => !needs(p) || p.fill.every((_, i) => vals[i]?.trim());
+const shownCmd = (p) => (p.cmd === '\x03' ? 'Ctrl+C' : p.game !== undefined || p.ask ? p.cmd : filled(p));
 function drawPal() {
-  $('palList').innerHTML = shown.map((p, i) =>
-    `<li data-i="${i}" class="${i === sel ? 'sel' : ''}"><span>${p.best ? '<b class="best">Best match</b>' : ''}${esc(p.label)}</span><code>${esc(p.cmd === '\x03' ? 'Ctrl+C' : p.cmd)}</code></li>`).join('');
+  const card = palText() || opened;
+  $('palList').innerHTML = shown.map((p, i) => {
+    if (!(card && i === sel) || p.ask) // a plain row
+      return `<li data-i="${i}" class="${i === sel ? 'sel' : ''}"><span>${esc(p.label)}</span><code>${esc(shownCmd(p))}</code></li>`;
+    const fields = (p.fill || []).map((f, j) =>
+      `<label class="field"><span>${esc(f)}</span><input data-f="${j}" value="${esc(vals[j] || '')}" autocomplete="off" spellcheck="false"></label>`).join('');
+    return `<li data-i="${i}" class="answer sel"><b>${esc(p.label)}</b><p>${esc(p.why || '')}</p>${fields}
+      <div class="run"><code id="palCmd">${esc(shownCmd(p))}</code><button class="go" id="palRun" ${ready(p) ? '' : 'disabled'}>${p.game !== undefined ? 'Play' : 'Run'} ⏎</button></div>
+      ${p.ai ? '<small>Suggested by AI. Check it before running.</small>' : ''}</li>`;
+  }).join('');
+  $('palList').querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
 }
-// Jev reads what you typed and picks the built-in command it means, e.g. "take me up one folder" → Go up a folder.
-// It shows at the top as "Best match" about a third of a second after you stop typing. Only with Smarter matching on.
+// Jev reads what you typed and picks the built-in command it means, e.g. "how to run a dev server" → Start the app.
+// Its pick becomes the answer. Nothing fits (or no answer): Ask AI. Only with Smarter matching on.
 let matchTimer;
-function bestMatch(text) {
+function bestMatch(text, v) {
   clearTimeout(matchTimer);
-  if (settings.smart === 'off') return;
   matchTimer = setTimeout(async () => {
     const label = await dt.paletteMatch(text);
-    if (!label || $('palIn').value.trim().toLowerCase() !== text || !$('palOv').classList.contains('show')) return; // typed on meanwhile
-    const p = palette.find((x) => x.label === label);
-    if (!p) return;
-    shown = [{ ...p, best: true }, ...shown.filter((x) => x.label !== label)];
-    sel = 0;
+    if (v !== ver || document.activeElement !== $('palIn')) return; // typed on, closed, or filling in a name meanwhile
+    const p = label && palette.find((x) => x.label === label);
+    if (p) shown = [{ ...p, jev: true }, ...shown.filter((x) => x.label !== label)];
+    else if (!shown.length) shown = [askRow()];
+    sel = 0; vals = [];
+    palSay('');
     drawPal();
   }, 350);
 }
+function run(p) {
+  if (p.game !== undefined) { closePal(); openGame(p.game); dt.track('palette_used', { kind: 'game' }); return; }
+  if (!ready(p)) { // needs a name first: show the card (if it isn't yet) and go to the first empty field
+    if (!$('palList').querySelector('.answer')) { opened = true; drawPal(); }
+    return $('palList').querySelector(`[data-f="${p.fill.findIndex((_, i) => !vals[i]?.trim())}"]`)?.focus();
+  }
+  if (p.cmd !== '\x03' && activeTerm()?.busy) return palSay('Something is running. Stop it first (Ctrl+C), then try again.');
+  const cmd = p.cmd === '\x03' ? p.cmd : filled(p);
+  closePal();
+  send(cmd, '', true);
+  if (!p.ai) dt.track('palette_used', { kind: p.jev ? 'jev' : 'preset' });
+}
 async function choose(i) {
   const p = shown[i]; if (!p) return;
-  if (p.game !== undefined) { closePal(); openGame(p.game); dt.track('palette_used', { kind: 'game' }); return; }
-  if (!p.ask) { closePal(); send(p.cmd, p.why, p.run); dt.track('palette_used', { kind: p.best ? 'jev' : 'preset' }); return; }
-  $('palList').innerHTML = '';
-  $('palStatus').textContent = 'Thinking…'; $('palStatus').classList.add('show');
-  const r = await dt.ask($('palIn').value.trim(), active()?.cwd);
+  if (!p.ask) return run(p);
+  const v = ++ver;
+  shown = []; drawPal(); palSay('Thinking…');
+  const r = await dt.ask(palText(), active()?.cwd);
+  if (v !== ver) return; // typed on or closed meanwhile
   dt.track('palette_used', { kind: 'ask_claude', ok: !!r });
-  if (!r) { $('palStatus').textContent = "Claude couldn't turn that into a command. Try saying it differently."; return; }
-  closePal();
-  send(r.cmd, r.why, false); // AI suggestions are never run automatically
+  if (!r) return palSay("AI couldn't turn that into a command. Try saying it differently.");
+  palSay('');
+  shown = [{ ai: true, label: r.why || 'Here’s a command for that', cmd: r.cmd }]; sel = 0; vals = [];
+  drawPal();
+}
+function move(step) {
+  if (!shown.length) return;
+  sel = (sel + step + shown.length) % shown.length; vals = [];
+  drawPal();
 }
 $('palIn').oninput = renderPal;
 $('palIn').onkeydown = (e) => {
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length;
-    [...$('palList').children].forEach((li, i) => li.classList.toggle('sel', i === sel));
-    $('palList').children[sel]?.scrollIntoView({ block: 'nearest' });
-  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); move(e.key === 'ArrowDown' ? 1 : -1); }
   if (e.key === 'Enter') choose(sel);
 };
-$('palList').onclick = (e) => { const li = e.target.closest('li'); if (li) choose(+li.dataset.i); };
+// The name fields in the card: the command below updates as you type; Enter goes to the next one, then runs.
+$('palList').oninput = (e) => {
+  if (!e.target.dataset.f) return;
+  vals[+e.target.dataset.f] = e.target.value;
+  const p = shown[sel];
+  $('palCmd').textContent = shownCmd(p);
+  $('palRun').disabled = !ready(p);
+};
+$('palList').onkeydown = (e) => {
+  if (e.target.dataset.f === undefined) return;
+  if (e.key === 'Enter') { e.preventDefault(); run(shown[sel]); }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); $('palIn').focus(); move(e.key === 'ArrowDown' ? 1 : -1); }
+};
+$('palList').onclick = (e) => {
+  if (e.target.closest('#palRun')) return run(shown[sel]);
+  const li = e.target.closest('li');
+  if (!li || li.classList.contains('answer')) return;
+  const i = +li.dataset.i;
+  if (shown[i].ask) return choose(i);
+  sel = i; vals = []; opened = true; // show its answer card
+  drawPal();
+  $('palList').querySelector('[data-f]')?.focus();
+};
 $('openPal').onclick = openPal;
 
 // --- Updates: a quiet pill when a newer Fork is out, and What's new once after updating ----------
