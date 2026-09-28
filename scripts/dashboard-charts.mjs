@@ -3,15 +3,17 @@
 // so a new event can't be forgotten. Events deliberately left off go in NOT_CHARTED, with a reason.
 
 export const NAME = 'Fork — how it\'s going';
+export const DESCRIPTION = 'Is Fork growing, do new people get through the first run, and what do they use? Kept in sync by '
+  + 'scripts/posthog-dashboard.mjs (every release). Installs, not people: each install has one random ID.';
 export const NOT_CHARTED = { // event: why it isn't on the dashboard
   game_played: 'new; chart it once we know whether people play',
 };
 
-// --- Building blocks -------------------------------------------------------------------------------
-const ev = (event, name, extra = {}) => ({ kind: 'EventsNode', event, name: event, custom_name: name, ...extra });
-const where = (key, value) => ({ properties: [{ key, value: [value], operator: 'exact', type: 'event' }] });
-const users = { math: 'dau' }; // unique installs (each install has its own random ID)
-const trend = (series, { interval = 'week', from = '-90d', display = 'ActionsLineGraph', breakdown, formula } = {}) => ({
+// --- Building blocks (website-dashboard-charts.mjs uses them too) -------------------------------
+export const ev = (event, name, extra = {}) => ({ kind: 'EventsNode', event, name: event, custom_name: name, ...extra });
+export const where = (key, value) => ({ properties: [{ key, value: [value], operator: 'exact', type: 'event' }] });
+export const users = { math: 'dau' }; // unique installs (each install has its own random ID)
+export const trend = (series, { interval = 'week', from = '-90d', display = 'ActionsLineGraph', breakdown, formula } = {}) => ({
   kind: 'InsightVizNode',
   source: {
     kind: 'TrendsQuery', series, interval, dateRange: { date_from: from },
@@ -19,7 +21,7 @@ const trend = (series, { interval = 'week', from = '-90d', display = 'ActionsLin
     trendsFilter: { display, ...(formula ? { formula } : {}) },
   },
 });
-const funnel = (series, { from = '-90d', within = 1, unit = 'day' } = {}) => ({
+export const funnel = (series, { from = '-90d', within = 1, unit = 'day' } = {}) => ({
   kind: 'InsightVizNode',
   source: { kind: 'FunnelsQuery', series, dateRange: { date_from: from },
     funnelsFilter: { funnelWindowInterval: within, funnelWindowIntervalUnit: unit, funnelVizType: 'steps' } },
@@ -87,7 +89,7 @@ export const INSIGHTS = [
       ev('file_previewed', 'Previewed a file', users), ev('app_preview_shown', 'Showed their app', users),
       ev('folder_opened', 'Moved folders', users), ev('tab_opened', 'Opened a tab', users), ev('pane_split', 'Split a pane', users),
       ev('find_opened', 'Used ⌘F', users), ev('session_restored', 'Came back to restored tabs', users),
-      ev('tour_replayed', 'Replayed the tour', users), ev('update_clicked', 'Updated from the pill', users),
+      ev('book_opened', 'Read a book', users), ev('tour_replayed', 'Replayed the tour', users), ev('update_clicked', 'Updated from the pill', users),
       ev('preview_toggled', 'Opened or closed the preview (⌘P)', users), ev('sidebar_toggled', 'Hid or showed the sidebar (⌘B)', users),
     ], { from: '-30d', display: 'ActionsBarValue' })],
   ['Settings people change', 'Which settings get changed, last 30 days (theme, font, restore, links & files…).',

@@ -1,7 +1,8 @@
 // npm run dashboard [-- --dry-run | --quiet]
-// Brings the "Fork — how it's going" PostHog dashboard in line with scripts/dashboard-charts.mjs:
-// charts are matched by name, so existing ones are updated, new ones added and dropped ones removed.
-// The dashboard (and its link) stays the same. npm run release runs this after every release.
+// Brings the PostHog dashboards in line with their chart files: "Fork — how it's going" (the app,
+// scripts/dashboard-charts.mjs) and "Fork website — who visits" (scripts/website-dashboard-charts.mjs).
+// Charts are matched by name, so existing ones are updated, new ones added and dropped ones removed.
+// The dashboards (and their links) stay the same. npm run release runs this after every release.
 //
 // Needs a PostHog *personal* API key (the key in analytics.mjs can only send events):
 // PostHog → Settings → Personal API keys, scopes Project read, Dashboard write, Insight write, Query read.
@@ -10,7 +11,10 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { POSTHOG_KEY, POSTHOG_HOST } from '../analytics.mjs';
-import { NAME, INSIGHTS } from './dashboard-charts.mjs';
+import * as app from './dashboard-charts.mjs';
+import * as website from './website-dashboard-charts.mjs';
+
+const DASHBOARDS = [app, website];
 
 const API = POSTHOG_HOST.replace('.i.posthog.com', '.posthog.com'); // us.i.posthog.com sends; us.posthog.com is the app
 const dry = process.argv.includes('--dry-run');
@@ -19,8 +23,12 @@ const say = (s) => { if (!quiet) console.log(s); };
 const stop = (why) => { console.error(`✗ Dashboard: ${why}`); process.exit(1); };
 
 if (dry) {
-  for (const [name, , q] of INSIGHTS) console.log(`• ${name}  (${q.source.kind})`);
-  console.log(`\nDry run: ${INSIGHTS.length} charts, nothing sent.`);
+  for (const { NAME, INSIGHTS } of DASHBOARDS) {
+    console.log(`${NAME}`);
+    for (const [name, , q] of INSIGHTS) console.log(`  • ${name}  (${q.source.kind})`);
+    console.log(`  ${INSIGHTS.length} charts\n`);
+  }
+  console.log('Dry run: nothing sent.');
   process.exit(0);
 }
 
@@ -44,32 +52,32 @@ const project = projects.find((p) => p.api_token === POSTHOG_KEY);
 if (!project) stop(`none of this key's projects (${projects.map((p) => p.name).join(', ') || 'none'}) is the one Fork sends to.`);
 const P = `/api/projects/${project.id}`;
 
-const DESCRIPTION = 'Is Fork growing, do new people get through the first run, and what do they use? Kept in sync by '
-  + 'scripts/posthog-dashboard.mjs (every release). Installs, not people: each install has one random ID.';
-let dash = (await api('GET', `${P}/dashboards/?limit=200`)).results.find((d) => d.name === NAME && !d.deleted);
-if (!dash) dash = await api('POST', `${P}/dashboards/`, { name: NAME, description: DESCRIPTION, pinned: true });
-else dash = await api('GET', `${P}/dashboards/${dash.id}/`);
+for (const { NAME, DESCRIPTION, INSIGHTS } of DASHBOARDS) {
+  let dash = (await api('GET', `${P}/dashboards/?limit=200`)).results.find((d) => d.name === NAME && !d.deleted);
+  if (!dash) dash = await api('POST', `${P}/dashboards/`, { name: NAME, description: DESCRIPTION, pinned: true });
+  else dash = await api('GET', `${P}/dashboards/${dash.id}/`);
 
-const onBoard = new Map((dash.tiles || []).filter((t) => t.insight && !t.insight.deleted).map((t) => [t.insight.name, t.insight]));
-const counts = { updated: 0, added: 0, removed: 0 };
-for (const [name, description, query] of INSIGHTS) {
-  const have = onBoard.get(name);
-  if (have) {
-    await api('PATCH', `${P}/insights/${have.id}/`, { description, query });
-    onBoard.delete(name);
-    counts.updated++;
-  } else {
-    await api('POST', `${P}/insights/`, { name, description, query, dashboards: [dash.id] });
-    counts.added++;
-    say(`  + ${name}`);
+  const onBoard = new Map((dash.tiles || []).filter((t) => t.insight && !t.insight.deleted).map((t) => [t.insight.name, t.insight]));
+  const counts = { updated: 0, added: 0, removed: 0 };
+  for (const [name, description, query] of INSIGHTS) {
+    const have = onBoard.get(name);
+    if (have) {
+      await api('PATCH', `${P}/insights/${have.id}/`, { description, query });
+      onBoard.delete(name);
+      counts.updated++;
+    } else {
+      await api('POST', `${P}/insights/`, { name, description, query, dashboards: [dash.id] });
+      counts.added++;
+      say(`  + ${name}`);
+    }
   }
-}
-for (const [name, insight] of onBoard) { // on the dashboard, but no longer in dashboard-charts.mjs
-  await api('PATCH', `${P}/insights/${insight.id}/`, { deleted: true });
-  counts.removed++;
-  say(`  − ${name}`);
-}
-if (dash.description !== DESCRIPTION) await api('PATCH', `${P}/dashboards/${dash.id}/`, { description: DESCRIPTION });
+  for (const [name, insight] of onBoard) { // on the dashboard, but no longer in its chart file
+    await api('PATCH', `${P}/insights/${insight.id}/`, { deleted: true });
+    counts.removed++;
+    say(`  − ${name}`);
+  }
+  if (dash.description !== DESCRIPTION) await api('PATCH', `${P}/dashboards/${dash.id}/`, { description: DESCRIPTION });
 
-console.log(`✓ Dashboard: ${INSIGHTS.length} charts (${counts.updated} updated, ${counts.added} added, ${counts.removed} removed)`
-  + ` · ${API}/project/${project.id}/dashboard/${dash.id}`);
+  console.log(`✓ ${NAME}: ${INSIGHTS.length} charts (${counts.updated} updated, ${counts.added} added, ${counts.removed} removed)`
+    + ` · ${API}/project/${project.id}/dashboard/${dash.id}`);
+}

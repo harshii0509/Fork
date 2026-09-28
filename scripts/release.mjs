@@ -125,7 +125,7 @@ if (beta) {
   console.log(`  latest = ${tag} · download link ok`);
   console.log(`\n✓ Fork ${version} is out: ${url}`);
   console.log('  Everyone with Fork sees the update pill within the hour, or the next time they open it.');
-  // Bring the PostHog dashboard in line with the charts in scripts/dashboard-charts.mjs. Never fails the release.
+  // Bring the PostHog dashboards in line with their chart files (app and website). Never fails the release.
   step('Updating the PostHog dashboard');
   const d = spawnSync('node', ['scripts/posthog-dashboard.mjs', '--quiet'], { cwd: ROOT, encoding: 'utf8' });
   console.log(`  ${(d.stdout + d.stderr).trim() || 'no output'}${d.status ? '\n  (The release is fine; run npm run dashboard once that\'s sorted.)' : ''}`);
