@@ -99,9 +99,19 @@ async function newPane(cwd, { screen, when } = {}) {
   term.textarea.addEventListener('focus', () => focusPane(id)); // clicking a pane makes it active
   // Claude Code starts the title with a spinner (◐ ◓ ◑ ◒) while it works and ✳ while it waits for you.
   term.onTitleChange((title) => {
-    const was = pane.thinking;
-    pane.thinking = pane.busy && pane.tool === 'claude' && /^\S /.test(title) && !title.startsWith('✳');
-    if (was && !pane.thinking) workDone(pane);
+    const was = pane.thinking, saw = pane.sawTitle;
+    if (pane.busy && title.startsWith('✳ ')) pane.claudeSeen = true; // Claude, however it was started (`cd x && claude`)
+    const claude = isClaude(pane);
+    if (claude && /^\S /.test(title)) pane.sawTitle = true;
+    pane.thinking = claude && /^\S /.test(title) && !title.startsWith('✳');
+    if (was === pane.thinking && saw === pane.sawTitle) return;
+    if (!pane.thinking) {
+      if (tabOf(pane.id) !== tab()) pane.unseen = true; // Claude finished while you were elsewhere
+      pane.lastUsed = Date.now();
+      workDone(pane);
+    }
+    syncBusy();
+    renderTabs();
   });
   new ResizeObserver(() => {
     if (!el.offsetParent) return; // hidden tab
@@ -144,7 +154,7 @@ async function newPane(cwd, { screen, when } = {}) {
       if (tabOf(pane.id) !== tab()) pane.unseen = true; // finished while you were elsewhere
       pane.lastUsed = Date.now();
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
-      pane.thinking = false;
+      pane.thinking = false; pane.sawTitle = false; pane.claudeSeen = false;
       workDone(pane);
     }
     syncBusy();
@@ -308,7 +318,7 @@ const LOOKS = {
 };
 function tabState(t) {
   const ps = Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
-  const key = ps.some((p) => p.busy) ? 'running'
+  const key = ps.some(working) ? 'running'
     : ps.some((p) => p.failed) ? 'failed'
     : ps.some((p) => p.unseen) ? 'done'
     : ps.length && ps.every((p) => Date.now() - p.lastUsed > DOZE_AFTER) ? 'dozing'
@@ -356,11 +366,21 @@ dt.onCmd((cmd) => ({
   tour: replayTour,
 }[cmd]?.()));
 
+// A program being open (busy) isn't the same as it working: Claude sits open at its prompt between
+// requests. Its title says which (spinner = working, ✳ = waiting for you). No title seen? Assume working.
+const isClaude = (p) => !!p?.busy && (p.tool === 'claude' || !!p.claudeSeen);
+const working = (p) => !!p?.busy && (!isClaude(p) || p.thinking || !p.sawTitle);
+const busyMsg = (p) => (isClaude(p) ? 'Claude is open here. Type /exit to leave it first.' : 'Something is running. Stop it first (Ctrl+C), then try again.');
+
 const runBlob = Blobs.mount($('runBlob'), { size: 34 });
 function syncBusy() {
-  const busy = !!activeTerm()?.busy;
-  $('app').classList.toggle('busy', busy);
-  busy ? runBlob.start() : runBlob.stop();
+  const p = activeTerm(), on = working(p);
+  $('app').classList.toggle('busy', !!p?.busy); // chips and folders wait while anything is open
+  $('app').classList.toggle('working', on); // the "running" bar only while it's really working
+  $('runText').textContent = isClaude(p) ? 'Claude is working.' : 'Something is running.';
+  $('stop').textContent = isClaude(p) ? 'Stop it (Esc)' : 'Stop it (Ctrl+C)'; // Esc interrupts Claude; Ctrl+C would quit it
+  $('stop').dataset.key = isClaude(p) ? 'esc' : '⌃C';
+  on ? runBlob.start() : runBlob.stop();
 }
 
 // --- Games (games.js): Snake, Stack and Space Run, in a pane of their own -----------------------
@@ -390,12 +410,16 @@ function openGame(id) {
   Games.open(id);
 }
 function workDone(pane) {
+  if (readingBook() && tabOf(pane.id) === tab()) {
+    doneIn = pane.id;
+    return Reader.workDone(isClaude(pane) ? 'Claude’s done' : 'Your command finished');
+  }
   if (!Games.isOpen() || !isGame(active())) return; // looking at the terminal? Then you saw it finish
   if (pane.id !== gameFrom && pane.id !== tab().lastTerm) return;
   doneIn = pane.id;
-  Games.workDone(pane.tool === 'claude' ? 'Claude’s done' : 'Your command finished');
+  Games.workDone(isClaude(pane) ? 'Claude’s done' : 'Your command finished');
 }
-const backToTerminal = (id) => { const p = panes.get(id) || activeTerm(); if (p) focusPane(p.id); };
+const backToTerminal = (id) => { const p = panes.get(id) || activeTerm(); if (p) { focusPane(p.id); p.term.focus(); } }; // already active? still type there
 Games.setup({
   track: dt.track,
   onEsc: () => backToTerminal(gameFrom),
@@ -409,7 +433,7 @@ function send(cmd, why, run) {
   const p = activeTerm();
   if (!p) return;
   if (cmd === '\x03') { dt.write(p.id, cmd); p.term.focus(); return; }
-  if (p.busy) { setHint('Something is running. Stop it first (Ctrl+C), then try again.', true); return; }
+  if (p.busy) { setHint(busyMsg(p), true); return; }
   dt.write(p.id, '\x15' + cmd + (run ? '\r' : '')); // Ctrl+U clears anything half-typed first
   p.suggested = true;
   setHint(run ? '' : why);
@@ -420,7 +444,7 @@ function send(cmd, why, run) {
 function go(step) {
   const p = activeTerm(), path = p?.hist[p.at + step];
   if (!path) return;
-  if (p.busy) return setHint('Something is running. Stop it first (Ctrl+C), then try again.', true);
+  if (p.busy) return setHint(busyMsg(p), true);
   p.at += step;
   p.nav = path;
   dt.track('folder_opened', { via: step < 0 ? 'back' : 'forward' });
@@ -529,7 +553,7 @@ dt.onFsChanged((paths) => {
 document.addEventListener('dragover', (e) => { if (!e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; } });
 document.addEventListener('drop', (e) => e.preventDefault());
 $('chips').onclick = (e) => { const b = e.target.closest('.chip'); if (b) { const s = chips[b.dataset.i]; send(s.cmd, s.why, s.run); } };
-$('stop').onclick = () => send('\x03');
+$('stop').onclick = () => { const p = activeTerm(); if (isClaude(p)) { dt.write(p.id, '\x1b'); p.term.focus(); } else send('\x03'); };
 
 // --- Preview panel: a file or the running app, next to the terminal ---------------------
 // Read-only on purpose: this isn't a code editor. Real edits go to the person's editor.
@@ -558,6 +582,7 @@ const codeView = (r) => `<div class="pv-code"><pre class="gutter">${Array.from({
   `<pre class="src"><code>${r.html}</code></pre></div>`;
 
 async function openFile(path, changed) {
+  if (Reader.kindOf(path)) return openBook(path, 'tree'); // a PDF or EPUB opens in Read
   const view = $('pvFile'), top = changed ? view.scrollTop : 0; // a file Claude just edited keeps its scroll
   const firstTime = pv.file !== path;
   if (firstTime) dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon, where: 'fork' }); // the type, never the name
@@ -604,7 +629,11 @@ $('pvReveal').onclick = () => pv.file && dt.reveal(pv.file);
 $('pvPage').onclick = () => pv.file && loadApp(fileUrl(pv.file));
 $('pvClose').onclick = hidePv;
 $('pvToggle').onclick = togglePv;
-$('pvSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) showPv(b.dataset.v); };
+$('pvSeg').onclick = (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  showPv(b.dataset.v);
+  if (b.dataset.v === 'read' && !Reader.current() && books.recent[0]) openBook(books.recent[0].path, 'recent', true); // back where you left off
+};
 $('pvGrip').onpointerdown = (e) => drag(e, (x) => $('app').style.setProperty('--pv', `${innerWidth - x}px`));
 
 // The running app. A <webview> is plain DOM, so ⌘K and the start screen still sit above it.
@@ -673,6 +702,93 @@ function openLink(uri) {
   dt.openExternal(uri);
 }
 $('readyClose').onclick = () => $('ready').classList.remove('show');
+
+// --- Read: a book next to the terminal, for while Claude works (reader.js) -----------------
+// Your place in every book, and Pages or Scroll. Saved in localStorage like the settings.
+const books = (() => {
+  let b; try { b = JSON.parse(localStorage.getItem('dt-books')); } catch {}
+  return { mode: b?.mode === 'scroll' ? 'scroll' : 'pages', recent: Array.isArray(b?.recent) ? b.recent.filter((x) => typeof x?.path === 'string') : [] };
+})();
+let booksTimer;
+const saveBooks = () => { clearTimeout(booksTimer); booksTimer = setTimeout(() => { try { localStorage.setItem('dt-books', JSON.stringify(books)); } catch {} }, 300); };
+const bookName = (path) => path.split('/').pop().replace(/\.(pdf|epub)$/i, '');
+
+function readHead(title, label) {
+  $('rdName').innerHTML = title ? `<span>${esc(title)}</span><small>${esc(label || '')}</small>` : ''; // the title shortens, never the page
+  $('rdName').title = Reader.current()?.path || '';
+}
+function shelf(note = '') {
+  $('rdNote').textContent = note;
+  $('rdList').innerHTML = books.recent.length ? '<small>Recent</small>' + books.recent.slice(0, 5).map((b, i) =>
+    `<button data-i="${i}" title="${esc(b.path)}">${icon(b.kind === 'epub' ? 'book-open' : 'file-text')}<span>${esc(b.title || bookName(b.path))}</span>` +
+    `<em>${Reader.logic.percent(b.progress)}</em></button>`).join('') : '';
+  readHead('', '');
+}
+function syncReadMode() { for (const b of $('rdMode').children) b.classList.toggle('on', b.dataset.v === books.mode); }
+
+// via: tree | picker | recent | drop. quiet: reopening the last book by itself, so a missing one just shows the shelf.
+async function openBook(path, via, quiet) {
+  showPv('read');
+  $('pvRead').focus();
+  if (Reader.current()?.path === path) return;
+  const saved = books.recent.find((b) => b.path === path);
+  const r = await dt.readBook(path);
+  if (r.error) {
+    Reader.close();
+    return shelf(quiet ? '' : { missing: `Couldn't find “${bookName(path)}”. It was moved or deleted.`, big: 'That book is too big to open here.' }[r.error] || '');
+  }
+  const kind = Reader.kindOf(path);
+  readHead(saved?.title || bookName(path), 'Opening…');
+  try {
+    const shown = await Reader.open({ path, kind, bytes: r.bytes, where: saved?.where, progress: saved?.progress });
+    if (!shown) return; // another book was opened meanwhile
+    const title = shown.title || bookName(path);
+    const now = books.recent.find((b) => b.path === path); // its place, as the first page showed it
+    books.recent = Reader.logic.remember(books.recent, { path, kind, title, where: now?.where ?? saved?.where, progress: now?.progress ?? saved?.progress, at: Date.now() });
+    saveBooks();
+    readHead(title, $('rdName').querySelector('small')?.textContent.replace('Opening…', ''));
+    dt.track('book_opened', { kind, via, mode: books.mode });
+  } catch {
+    shelf(`Couldn't open “${bookName(path)}”. It may be damaged, or locked to another app (DRM).`);
+  }
+}
+
+Reader.setup({
+  openExternal: dt.openExternal,
+  onBack: () => backToTerminal(doneIn),
+  onMove: (book, at) => { // a page turned: remember it
+    const b = books.recent.find((x) => x.path === book.path);
+    if (b) { b.where = at.where; b.progress = at.progress; saveBooks(); }
+    readHead(b?.title || bookName(book.path), at.label);
+  },
+});
+Reader.setMode(books.mode);
+syncReadMode();
+shelf();
+$('rdMode').onclick = (e) => {
+  const b = e.target.closest('button'); if (!b || b.dataset.v === books.mode) return;
+  books.mode = b.dataset.v; saveBooks(); syncReadMode();
+  Reader.setMode(books.mode);
+  $('pvRead').focus();
+};
+$('rdPick').onclick = async () => { const path = await dt.pickBook(); if (path) openBook(path, 'picker'); };
+$('rdShelf').onclick = () => { Reader.close(); shelf(); };
+$('rdList').onclick = (e) => { const b = e.target.closest('button[data-i]'); if (b) openBook(books.recent[b.dataset.i].path, 'recent'); };
+// Drop a book from Finder (or the sidebar) onto the panel.
+const droppedBook = (e) => {
+  const tree = e.dataTransfer.getData('text/x-dt-path');
+  if (tree) return Reader.kindOf(tree) ? tree : null;
+  const f = [...e.dataTransfer.files].find((x) => Reader.kindOf(x.name));
+  return f ? dt.pathOf(f) : null;
+};
+$('pv').addEventListener('dragover', (e) => {
+  const t = e.dataTransfer.types;
+  if (t.includes('Files') || t.includes('text/x-dt-path')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+});
+$('pv').addEventListener('drop', (e) => { const path = droppedBook(e); if (path) { e.preventDefault(); openBook(path, 'drop'); } });
+// Reading when Claude finishes? Say so above the book. Back in the terminal, the note goes.
+const readingBook = () => pvOpen() && pv.mode === 'read' && !!Reader.current() && $('pv').contains(document.activeElement);
+document.addEventListener('focusin', (e) => { if (!$('pv').contains(e.target)) Reader.clearDone(); });
 
 // --- When something fails ------------------------------------------------------
 let fix = null;
@@ -782,7 +898,7 @@ function snapshot(full) {
   const node = (n) => {
     if (n.dir) return { dir: n.dir, ratio: n.ratio ?? 0.5, a: node(n.a), b: node(n.b) };
     const p = panes.get(n.id), s = { cwd: p?.cwd || '' };
-    if (p?.busy && p.tool === 'claude') s.claude = true;
+    if (isClaude(p)) s.claude = true;
     if (full && p) try { s.screen = p.serial.serialize({ scrollback: 1000 }); } catch {}
     return s;
   };
@@ -970,7 +1086,7 @@ function run(p) {
     if (!$('palList').querySelector('.answer')) { opened = true; drawPal(); }
     return $('palList').querySelector(`[data-f="${p.fill.findIndex((_, i) => !vals[i]?.trim())}"]`)?.focus();
   }
-  if (p.cmd !== '\x03' && activeTerm()?.busy) return palSay('Something is running. Stop it first (Ctrl+C), then try again.');
+  if (p.cmd !== '\x03' && activeTerm()?.busy) return palSay(busyMsg(activeTerm()));
   const cmd = p.cmd === '\x03' ? p.cmd : filled(p);
   closePal();
   send(cmd, '', true);

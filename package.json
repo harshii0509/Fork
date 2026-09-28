@@ -27,8 +27,11 @@
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "dompurify": "^3.4.16",
+    "epubjs": "^0.3.93",
+    "jszip": "^3.10.2",
     "marked": "^18.0.14",
     "node-pty": "^1.1.0",
+    "pdfjs-dist": "^6.3.289",
     "shiki": "^4.4.3"
   },
   "allowScripts": {

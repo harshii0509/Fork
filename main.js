@@ -9,7 +9,7 @@ import { marked } from 'marked';
 import { suggest, PALETTE, shape, pm, scripts } from './suggest.mjs';
 import { diagnose, explainEntry, looksLikeCommand, ERRORS } from './errors.mjs';
 import { judge, commandQuestion, errorQuestion } from './jev.mjs';
-import { list, readPreview, findEditor } from './files.mjs';
+import { list, readPreview, readBook, findEditor } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
 import * as ai from './claude.mjs';
@@ -199,6 +199,12 @@ ipcMain.handle('palette', () => PALETTE);
 // 'system' the page's prefers-color-scheme tracks macOS, which is how System swaps themes.
 ipcMain.on('appearance', (_, mode) => { if (['light', 'dark', 'system'].includes(mode)) nativeTheme.themeSource = mode; });
 
+ipcMain.handle('book:read', (_, path) => readBook(path));
+ipcMain.handle('book:pick', async (e) => {
+  const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
+    title: 'Open a book', buttonLabel: 'Read', properties: ['openFile'], filters: [{ name: 'Books', extensions: ['pdf', 'epub'] }] });
+  return r.canceled ? null : r.filePaths[0];
+});
 ipcMain.handle('pick-folder', async (e) => {
   const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { properties: ['openDirectory', 'createDirectory'] });
   return r.canceled ? null : r.filePaths[0];

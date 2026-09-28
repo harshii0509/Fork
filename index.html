@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:; media-src 'self' file:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' file: data: https: blob:; media-src 'self' file:; font-src 'self' data: blob:; frame-src 'self' blob:; worker-src 'self' blob:">
 <title>Fork</title>
 <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
 <link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/400.css">
@@ -175,7 +175,7 @@
   .dock { grid-area: 3 / 2; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 14px 12px; gap: 8px; }
   /* Only takes space when it has something to say, so the terminal gets the full height otherwise. */
   .dock { display: none; }
-  .dock:has(.show), .busy .dock, .show-keys .dock { display: grid; }
+  .dock:has(.show), .working .dock, .show-keys .dock { display: grid; }
   .hint { display: none; align-items: center; gap: 8px; color: var(--dim); }
   .hint.show { display: flex; }
   .hint.warn { color: var(--warn); }
@@ -189,7 +189,7 @@
   /* Files stay usable while something runs (that's when Claude is working); moving folders waits. */
   .busy .chips .chip, .busy .crumb { opacity: .35; pointer-events: none; }
   .running { display: none; align-items: center; gap: 10px; color: var(--dim); }
-  .busy .running { display: flex; }
+  .working .running { display: flex; }
   /* The Bloub mascot (blob.js) marks work in progress; its SVG sizes the box. */
   .blob { display: inline-grid; place-items: center; flex: none; margin: -10px -6px; } /* dots sit mid-SVG: don't grow the row */
   .blob[hidden] { display: none; }
@@ -230,7 +230,7 @@
   .pv-head .seg { width: auto; flex: none; margin-right: 6px; }
   .pv-head .seg button { padding: 3px 10px; font-size: 12px; }
   .pv-bar { display: none; flex: 1; align-items: center; gap: 4px; min-width: 0; }
-  .pv[data-mode="file"] .pv-bar.file, .pv[data-mode="app"] .pv-bar.app { display: flex; }
+  .pv[data-mode="file"] .pv-bar.file, .pv[data-mode="app"] .pv-bar.app, .pv[data-mode="read"] .pv-bar.read { display: flex; }
   .pv-name { flex: 1; min-width: 0; color: var(--tree); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pv-name small { color: var(--dim); margin-left: 6px; }
   .pv-act { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 6px; color: var(--dim); white-space: nowrap; font-size: 12px; }
@@ -241,12 +241,55 @@
   .pv-body { flex: 1; position: relative; min-height: 0; }
   .pv-view { position: absolute; inset: 0; overflow: auto; }
   /* The hidden view keeps its size, so the app keeps its state and hot reload while a file is shown. */
-  .pv[data-mode="file"] #pvApp, .pv[data-mode="file"] .pv-appmsg, .pv[data-mode="app"] #pvFile { visibility: hidden; pointer-events: none; }
+  .pv:not([data-mode="app"]) #pvApp, .pv:not([data-mode="app"]) .pv-appmsg, .pv:not([data-mode="file"]) #pvFile,
+  .pv:not([data-mode="read"]) #pvRead { visibility: hidden; pointer-events: none; }
   #pvApp { position: absolute; inset: 0; background: #fff; }
   #pvApp.blank { visibility: hidden; }
   .pv-appmsg { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 12px; padding: 24px;
     color: var(--dim); background: var(--bg); }
   .pv-appmsg.show { display: grid; }
+  /* Read: a book in its own style (white pages, its own fonts). reader.js; ‹ › and the "done" pill float above it. */
+  .pv-bar.read .seg { margin: 0 0 0 4px; }
+  #rdName { display: flex; align-items: baseline; }
+  #rdName span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #rdName small { flex: none; font-variant-numeric: tabular-nums; }
+  #pvRead { overflow: hidden; outline: none; }
+  .rd-stage { position: absolute; inset: 0; }
+  .rd:not(.has-book) .rd-stage, .rd.has-book .rd-empty { display: none; }
+  .rd-epub { position: absolute; inset: 0; background: #fff; padding: 28px 44px 32px; }
+  .rd.scroll .rd-epub { padding: 0 0 0 28px; }
+  .rd-pdf { position: absolute; inset: 0; overflow: auto; outline: none; padding: 16px 0; }
+  .rd-page { margin: 0 auto 16px; background: #fff; box-shadow: 0 1px 8px #0004; }
+  .rd-page canvas { display: block; width: 100%; height: 100%; }
+  .rd.pages .rd-pdf { overflow: hidden; display: grid; place-items: center; padding: 0; }
+  .rd.pages .rd-page:not(.on) { display: none; }
+  .rd.pages .rd-page { margin: 0; }
+  .rd-turn { position: absolute; top: 50%; margin-top: -16px; width: 32px; height: 32px; border-radius: 50%; display: none;
+    place-items: center; background: var(--panel); color: var(--text); border: 1px solid var(--line); opacity: 0;
+    box-shadow: 0 1px 4px #0003; transition: opacity .15s; }
+  .rd-turn.prev { left: 6px; } .rd-turn.next { right: 6px; }
+  .rd.pages.has-book .rd-turn { display: grid; }
+  .rd:hover .rd-turn { opacity: .75; } .rd .rd-turn:hover { opacity: 1; }
+  .rd-done { position: absolute; top: 10px; left: 50%; z-index: 1; transform: translate(-50%, -6px); opacity: 0; pointer-events: none;
+    padding: 6px 13px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; white-space: nowrap;
+    box-shadow: 0 2px 10px #0005; transition: opacity .2s, transform .2s; }
+  .rd-done.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .rd-done u { text-underline-offset: 2px; }
+  .rd.loading .rd-stage { opacity: 0; }
+  .rd-empty { height: 100%; overflow: auto; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; padding: 32px 24px; text-align: center; color: var(--dim); }
+  .rd-empty > .ic { width: 28px; height: 28px; color: var(--faint); margin-bottom: 4px; }
+  .rd-empty b { color: var(--text); font-weight: 600; }
+  .rd-empty .go { margin-top: 10px; }
+  .rd-note:empty { display: none; }
+  .rd-note { color: var(--warn); }
+  .rd-shelf { width: 100%; max-width: 320px; margin-top: 18px; display: flex; flex-direction: column; gap: 2px; text-align: left; }
+  .rd-shelf:empty { display: none; }
+  .rd-shelf small { padding: 0 8px 4px; color: var(--faint); }
+  .rd-shelf button { display: flex; align-items: center; gap: 8px; padding: 6px 8px; text-align: left; border-radius: 6px; color: var(--text); min-width: 0; }
+  .rd-shelf button:hover { background: var(--hover); }
+  .rd-shelf button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rd-shelf button em { font-style: normal; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
   .pv-msg { padding: 40px 24px; text-align: center; color: var(--dim); }
   .pv-msg b { display: block; color: var(--text); margin-bottom: 6px; font-weight: 600; }
   .pv-media { min-height: 100%; display: grid; place-items: center; padding: 24px;
@@ -519,7 +562,7 @@
   <div class="pv-grip" id="pvGrip"></div>
   <section class="pv" id="pv" data-mode="file">
     <header class="pv-head">
-      <span class="seg" id="pvSeg"><button data-v="file">File</button><button data-v="app">App</button></span>
+      <span class="seg" id="pvSeg"><button data-v="file">File</button><button data-v="app">App</button><button data-v="read">Read</button></span>
       <div class="pv-bar file">
         <span class="pv-name" id="pvName"></span>
         <button class="pv-act" id="pvPage" style="display:none">View as page</button>
@@ -533,12 +576,31 @@
         <input id="pvUrl" placeholder="localhost:3000" spellcheck="false" autocomplete="off">
         <button class="pv-act" id="pvBrowser" title="Open in your browser" aria-label="Open in your browser"><i data-icon="external-link"></i></button>
       </div>
+      <div class="pv-bar read">
+        <span class="pv-name" id="rdName"></span>
+        <span class="seg" id="rdMode"><button data-v="pages" title="One page at a time">Pages</button><button data-v="scroll" title="One long scroll">Scroll</button></span>
+        <button class="pv-act" id="rdShelf" title="Your books" aria-label="Your books"><i data-icon="library"></i></button>
+      </div>
       <button class="pv-act" id="pvClose" title="Close preview (⌘P)" aria-label="Close preview"><i data-icon="x"></i></button>
     </header>
     <div class="pv-body">
       <div class="pv-view" id="pvFile"><div class="pv-msg"><b>Nothing to preview yet</b>Click a file in the sidebar to see it here.</div></div>
       <webview id="pvApp" class="blank" partition="persist:preview" allowpopups></webview>
       <div class="pv-appmsg show" id="pvAppMsg"></div>
+      <div class="pv-view rd pages" id="pvRead" tabindex="-1">
+        <div class="rd-empty">
+          <i data-icon="book-open"></i>
+          <b>Read something while Claude works</b>
+          <span>A PDF or EPUB opens here, next to the terminal.<br>Fork keeps your place.</span>
+          <span class="rd-note" id="rdNote"></span>
+          <button class="go" id="rdPick">Open a book…</button>
+          <div class="rd-shelf" id="rdList"></div>
+        </div>
+        <div class="rd-stage" id="rdStage"></div>
+        <button class="rd-turn prev" id="rdPrev" title="Previous page (←)" aria-label="Previous page"><i data-icon="chevron-left"></i></button>
+        <button class="rd-turn next" id="rdNext" title="Next page (→)" aria-label="Next page"><i data-icon="chevron-right"></i></button>
+        <button class="rd-done" id="rdDone"></button>
+      </div>
     </div>
   </section>
 
@@ -601,7 +663,7 @@
     <div class="ready" id="ready"><span class="dot"></span><p>Your app is running at <b id="readyUrl"></b></p>
       <button class="go" id="readyShow">Show it</button><button class="x" id="readyClose" aria-label="Dismiss"><i data-icon="x"></i></button></div>
     <div class="hint" id="hint"></div>
-    <div class="running"><span class="blob" id="runBlob"></span>Something is running. <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button><button class="play" id="playGame"><i data-icon="gamepad-2"></i>Play a game while you wait</button></div>
+    <div class="running"><span class="blob" id="runBlob"></span><span id="runText">Something is running.</span> <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button><button class="play" id="playGame"><i data-icon="gamepad-2"></i>Play a game while you wait</button></div>
     <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next tab</span><span><b>⌘F</b> find</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
   </footer>
 </div>
@@ -665,6 +727,7 @@
 <script src="blob.js"></script>
 <script src="onboarding.js"></script>
 <script src="games.js"></script>
+<script src="reader.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

@@ -37,6 +37,12 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+**New**
+- **Read a book while Claude works.** Open a PDF or EPUB in the side panel (⌘P → **Read**, drag one in, or click it in the file list) and read next to your terminal. Books keep their own fonts and white pages. Pick **Pages** to turn one page at a time (←/→, Space, or a two-finger swipe), or **Scroll** for one long scroll. Fork remembers your place in every book, and when Claude finishes, a note says so with a link back to the terminal.
+
+**Fixed**
+- **"Claude is working" shows only while Claude is working.** The bar at the bottom used to say "Something is running" the whole time Claude was open, even while it waited for you. Now it appears only while Claude works on your prompt, and its Stop button sends Esc, which is how Claude stops. An idle Claude tab shows Ready, and one that finished while you were in another tab says "Finished while you were away". Plain `claude` also reopens properly after a restart now.
+
 ### 0.3.1 — 2026-09-26
 
 **Better**

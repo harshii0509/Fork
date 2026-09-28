@@ -22,6 +22,7 @@ How the pieces work underneath (DMG, `install.sh`, the update pill, signing) is 
 
 - **`main` is always ready to ship.** Releases only come from `main`. Bigger work goes on a branch and merges when it's done.
 - **Write the changelog as you go.** Every change people will notice gets a plain-English line under `### Unreleased` in [CHANGELOG.md](CHANGELOG.md), grouped as **New**, **Better** and **Fixed**. That text is exactly what people read in the update card and in What's new, so write it for them. Changes only developers see stay out of it; the git history has those.
+- **And on What's cooking.** Every change, big or small (developer-only ones too), also gets an entry on the website's changelog, [fork-terminal.vercel.app/whats-cooking](https://fork-terminal.vercel.app/whats-cooking): `app/whats-cooking/entries.ts` in the [fork-website](https://github.com/harshii0509/fork-website) repo, with when it landed, what changed and why. After a release, add its version to the entries it shipped and to `RELEASES` there.
 - **`install.sh` is live the moment it's pushed.** "Update and restart" downloads it straight from `main`, so a mistake there breaks updates for everyone. Run `bash install.sh` locally before pushing a change to it.
 - **Rhythm:** a patch whenever something's worth shipping. During the beta, a minor roughly every one to two weeks.
 

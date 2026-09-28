@@ -58,6 +58,17 @@ export async function readPreview(path) {
     lines: text.replace(/\n$/, '').split('\n').length };
 }
 
+// A book for the side panel's Read view (reader.js): its bytes, or why not.
+const BOOK = new Set(['pdf', 'epub']);
+export const MAX_BOOK = 300 * 1024 * 1024;
+export function readBook(path) {
+  if (typeof path !== 'string' || !BOOK.has(extname(path).slice(1).toLowerCase())) return { error: 'kind' };
+  let size;
+  try { size = statSync(path).size; } catch { return { error: 'missing' }; }
+  if (size > MAX_BOOK) return { error: 'big' };
+  try { return { bytes: readFileSync(path) }; } catch { return { error: 'missing' }; }
+}
+
 // The code editor to hand real edits to: the first one installed.
 const EDITORS = [['Cursor', 'Cursor'], ['Visual Studio Code', 'VS Code'], ['Zed', 'Zed'], ['Windsurf', 'Windsurf']];
 export function findEditor() {

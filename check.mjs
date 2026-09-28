@@ -103,14 +103,14 @@ for (const [name, svg] of Object.entries(ic.ICONS)) assert.match(svg, /^<(path|r
 assert.match(ic.icon('x'), /^<svg class="ic" viewBox="0 0 24 24"[^>]*><path d="M18 6 6 18"\/>/);
 const kinds = { 'hero.PNG': 'file-image', 'intro.mp4': 'file-video', 'Home.fig': 'pen-tool', 'Button.tsx': 'file-code',
   'app.css': 'file-code', 'index.html': 'file-code', 'package.json': 'file-braces', 'pnpm-lock.lock': 'file-cog',
-  'README.md': 'file-text', 'Inter.woff2': 'file-type', 'Makefile': 'file', 'archive.tar.gz': 'file-archive' };
+  'README.md': 'file-text', 'Dune.EPUB': 'book-open', 'Inter.woff2': 'file-type', 'Makefile': 'file', 'archive.tar.gz': 'file-archive' };
 for (const [name, icon] of Object.entries(kinds)) {
   assert.deepEqual({ ...ic.fileIcon(name) }, { icon }, name);
   assert.ok(ic.ICONS[icon], icon);
 }
 
 // --- Files: tree listing and what the preview shows (files.mjs) ---
-const { list, readPreview } = await import('./files.mjs');
+const { list, readPreview, readBook } = await import('./files.mjs');
 const proj = fresh();
 mkdirSync(join(proj, 'node_modules'));
 mkdirSync(join(proj, 'src'));
@@ -141,6 +141,41 @@ assert.equal((await readPreview(join(proj, 'notes'))).html, 'plain &lt;b&gt;text
 assert.equal((await readPreview(join(proj, 'data.bin'))).kind, 'other');
 assert.equal((await readPreview(join(proj, 'huge.json'))).why, 'big');
 assert.equal((await readPreview(join(proj, 'gone.txt'))).kind, 'missing');
+// Books for the Read view: only PDFs and EPUBs, as bytes.
+writeFileSync(join(proj, 'Book.PDF'), '%PDF-1.4');
+assert.equal(Buffer.from(readBook(join(proj, 'Book.PDF')).bytes).toString(), '%PDF-1.4');
+assert.equal(readBook(join(proj, 'app.ts')).error, 'kind'); // never any other file
+assert.equal(readBook(join(proj, 'gone.epub')).error, 'missing');
+assert.equal(readBook(undefined).error, 'kind');
+
+// --- Shell integration (shell/.zshrc): a command's first word, even when it's the only word ---
+{
+  const { execFileSync } = await import('node:child_process');
+  const hook = src('./shell/.zshrc').match(/^__dt_preexec\(\) \{[^]*?^\}/m)[0];
+  const first = (cmd) => execFileSync('zsh', ['-f', '-c', `${hook}\n__dt_preexec "$1"`, 'zsh', cmd], { encoding: 'utf8' });
+  assert.equal(first('claude'), '\x1b]133;C;claude\x07'); // was "c": Fork never knew Claude was open
+  assert.equal(first('npm run dev'), '\x1b]133;C;npm\x07');
+  assert.equal(first('FOO=1 git status'), '\x1b]133;C;FOO1\x07'); // only safe characters leave the shell
+}
+
+// --- Read view helpers (reader.js, browser script) ---
+const rd = { window: {} };
+runInNewContext(readFileSync(new URL('./reader.js', import.meta.url), 'utf8'), rd);
+const { kindOf: bookKind, remember, percent, MAX_RECENT } = rd.window.Reader.logic;
+assert.equal(bookKind('/b/Dune.epub'), 'epub');
+assert.equal(bookKind('/b/Paper.PDF'), 'pdf');
+assert.equal(bookKind('/b/notes.md'), null);
+assert.equal(bookKind('/b.pdf/README'), null); // a folder named like a book isn't one
+assert.equal(bookKind(undefined), null);
+let shelf = [];
+for (let i = 0; i < MAX_RECENT + 5; i++) shelf = remember(shelf, { path: `/b/${i}.pdf` });
+assert.equal(shelf.length, MAX_RECENT); // the oldest drop off
+assert.equal(shelf[0].path, `/b/${MAX_RECENT + 4}.pdf`); // newest first
+shelf = remember(shelf, { path: '/b/10.pdf', where: 7 });
+assert.equal(shelf[0].where, 7);
+assert.equal(shelf.filter((b) => b.path === '/b/10.pdf').length, 1); // reopening moves it up, no duplicate
+assert.equal(remember('broken', { path: '/x.pdf' }).map((b) => b.path).join(), '/x.pdf'); // damaged storage
+assert.deepEqual([percent(0.123), percent(undefined), percent(2)], ['12%', '0%', '100%']);
 
 // --- The Bloub mascot bundle (vendor/bloub/bloub.js): loads standalone and draws the thinking pose ---
 const bctx = { performance, setTimeout, clearTimeout };

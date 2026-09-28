@@ -12,7 +12,8 @@ ZDOTDIR=$HOME   # so ~/.zlogin and anything reading $ZDOTDIR behaves as usual
 __dt_ran=0
 __dt_preexec() {
   __dt_ran=1
-  local w=${${(z)1}[1]}
+  local -a words=(${(z)1}) # an array even for one word: ${${(z)1}[1]} gave "c" for plain `claude`
+  local w=$words[1]
   printf '\e]133;C;%s\a' "${w//[^A-Za-z0-9._-]/}"
 }
 __dt_precmd() {

@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('dt', {
   openExternal: (url) => ipcRenderer.send('open-external', url),
   openDefault: (path) => ipcRenderer.send('open-default', path), // in whatever app the Mac uses for that file
   pathOf: (file) => webUtils.getPathForFile(file), // a file dropped from Finder
+  readBook: (path) => ipcRenderer.invoke('book:read', path), // { bytes } or { error: kind | missing | big }
+  pickBook: () => ipcRenderer.invoke('book:pick'), // a .pdf or .epub path, or null
 
   palette: () => ipcRenderer.invoke('palette'),
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
