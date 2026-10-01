@@ -20,7 +20,9 @@ contextBridge.exposeInMainWorld('dt', {
   openDefault: (path) => ipcRenderer.send('open-default', path), // in whatever app the Mac uses for that file
   clipWrite: (text) => ipcRenderer.send('clip:write', text), // an app copying to your clipboard (OSC 52)
   notify: (n) => ipcRenderer.send('notify', n), // { title, body, pane }: shown only while Fork isn't in front
-  onGoPane: (fn) => ipcRenderer.on('go-pane', (_, id) => fn(id)), // a notification was clicked
+  onGoPane: (fn) => ipcRenderer.on('go-pane', (_, id, action) => fn(id, action)), // a notification or the notch was clicked
+  notchState: (tabs) => ipcRenderer.send('notch:state', tabs), // every tab's state, for the notch (main.js)
+  notchSetting: (on) => ipcRenderer.invoke('notch:setting', on), // no argument: { has, on }
   pathOf: (file) => webUtils.getPathForFile(file), // a file dropped from Finder
   readBook: (path) => ipcRenderer.invoke('book:read', path), // { bytes } or { error: kind | missing | big }
   pickBook: () => ipcRenderer.invoke('book:pick'), // a .pdf or .epub path, or null

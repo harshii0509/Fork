@@ -153,8 +153,9 @@ async function newPane(cwd, { screen, when } = {}) {
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
       pane.thinking = false; pane.sawSignal = false; pane.seen = null;
       workDone(pane);
-      if (pane.lastUsed - pane.startedAt >= 10e3) { // long enough that you may have gone to do something else
-        nudge(pane, pane.failed ? 'Your command failed' : 'Your command finished', pane.tool ? `${pane.tool} · ${folderOf(pane)}` : `In ${folderOf(pane)}`);
+      if (pane.failed) nudge(pane, `${pane.tool || 'Your command'} failed`, `in ${folderOf(pane)}`, 'failed');
+      else if (pane.lastUsed - pane.startedAt >= 10e3) { // long enough that you may have gone to do something else
+        nudge(pane, 'Your command finished', pane.tool ? `${pane.tool} · ${folderOf(pane)}` : `In ${folderOf(pane)}`);
       }
     }
     syncBusy();
@@ -187,7 +188,7 @@ dt.onData((id, d) => {
   // A dev server printed its address? Keep a short tail so one split across chunks is still caught.
   p.tail = (p.tail + d).slice(-400);
   const url = Preview.findLocalUrl(Preview.stripAnsi(p.tail));
-  if (url) { p.tail = ''; appFound(url); }
+  if (url) { p.tail = ''; appFound(url, p); }
 });
 dt.onExit((id) => closePane(id, { exited: true })); // typing `exit` closes the pane
 
@@ -304,7 +305,7 @@ function renderTabs() {
   $('tabs').innerHTML = tabs.map((t, i) => {
     const ps = Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
     const p = panes.get(t.activeId) || ps[0];
-    const name = isGame(p) && ps.length === 1 ? 'Games' : !p?.cwd ? 'New tab' : p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/';
+    const name = tabName(t);
     const where = p?.cwd ? ` · ${p.cwd}` : '';
     return `<div class="tab ${i === tabIx ? 'active' : ''}" data-i="${i}" ${i < 9 ? `data-key="⌘${i + 1}"` : ''} title="${esc(tabState(t).label + where)}">
       <span class="tblob"></span>
@@ -320,6 +321,7 @@ function renderTabs() {
     slot.replaceWith(t.blob.el);
   });
   syncTabBlobs();
+  syncNotch();
   saveSoon(); // tabs, splits, folders and busy states all pass through here
 }
 
@@ -332,14 +334,37 @@ const LOOKS = {
   dozing: { label: 'Dozing', state: 'sleep' },
   ready: { label: 'Ready', state: 'idle' },
 };
-function tabState(t) {
-  const ps = Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
-  const key = ps.some(working) ? 'running'
+const panesOf = (t) => Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
+function tabKey(t) {
+  const ps = panesOf(t);
+  return ps.some(working) ? 'running'
     : ps.some((p) => p.failed) ? 'failed'
     : ps.some((p) => p.unseen) ? 'done'
     : ps.length && ps.every((p) => Date.now() - p.lastUsed > DOZE_AFTER) ? 'dozing'
     : 'ready';
-  return LOOKS[key];
+}
+const tabState = (t) => LOOKS[tabKey(t)];
+function tabName(t) {
+  const ps = panesOf(t), p = panes.get(t.activeId) || ps[0];
+  return isGame(p) && ps.length === 1 ? 'Games' : !p?.cwd ? 'New tab' : p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/';
+}
+
+// The notch (main.js, notch.js) mirrors every tab while you're in another app: what it's doing, which
+// tool, since when, and the pane to jump to (the one working, failed or finished).
+let notchTimer = 0;
+function syncNotch() {
+  if (notchTimer) return;
+  notchTimer = setTimeout(() => {
+    notchTimer = 0;
+    dt.notchState(tabs.map((t) => {
+      const state = tabKey(t), ps = panesOf(t);
+      const p = { running: ps.find(working), failed: ps.find((x) => x.failed), done: ps.find((x) => x.unseen) }[state]
+        || panes.get(t.activeId) || ps[0];
+      const a = agentOf(p);
+      return { name: tabName(t), state, label: LOOKS[state].label, tool: a?.name || p?.tool || '', agent: !!a,
+        since: (a ? p.thinkingSince : p?.startedAt) || Date.now(), pane: p?.id };
+    }));
+  }, 250);
 }
 function syncTabBlobs() {
   for (const t of tabs) {
@@ -350,7 +375,7 @@ function syncTabBlobs() {
     t.blob.el.setAttribute('role', 'img');
   }
 }
-setInterval(syncTabBlobs, 30e3); // so an untouched tab dozes off on its own
+setInterval(() => { syncTabBlobs(); syncNotch(); }, 30e3); // so an untouched tab dozes off on its own
 
 $('tabs').onclick = (e) => {
   const c = e.target.closest('.tclose');
@@ -397,6 +422,7 @@ function setThinking(pane, on) {
   const was = pane.thinking, saw = pane.sawSignal;
   pane.thinking = on; pane.sawSignal = true;
   if (was === on && saw) return;
+  if (on) pane.thinkingSince = Date.now(); // for the notch's "working · 2m"
   if (!on) {
     if (tabOf(pane.id) !== tab()) pane.unseen = true; // it finished while you were elsewhere
     pane.lastUsed = Date.now();
@@ -420,21 +446,24 @@ function toolNotified(pane, { title, body }) {
   if (tabOf(pane.id) !== tab()) { pane.unseen = true; renderTabs(); }
   nudge(pane, title || agentOf(pane)?.name || 'Fork', body || `In ${folderOf(pane)}`);
 }
-// A Mac notification and a dock badge, only while you're in another app (Settings → Notifications).
+// Only while you're in another app: in the notch on a Mac that has one, otherwise a Mac notification,
+// plus a dock badge (Settings → Notifications). kind: done, failed or app (your app is ready, at url).
 // The tool's own notification and Fork's noticing it's done arrive close together: show one.
-function nudge(pane, title, body) {
-  if (settings.alerts === 'off' || document.hasFocus()) return;
+function nudge(pane, title, body, kind = 'done', url) {
+  if (document.hasFocus()) return;
   if (Date.now() - (pane.nudgedAt || 0) < 2000) return;
   pane.nudgedAt = Date.now();
-  dt.notify({ title, body, pane: pane.id });
-  dt.track('notification_shown', { tool: pane.tool });
+  dt.notify({ kind, title, body, pane: pane.id, url, alerts: settings.alerts !== 'off' });
+  dt.track('notification_shown', { tool: pane.tool, kind });
 }
-dt.onGoPane((id) => { // clicked a notification
+dt.onGoPane((id, action) => { // clicked a notification or the notch
   const t = tabOf(id);
   if (!t) return;
   goTab(tabs.indexOf(t));
   focusPane(id);
   panes.get(id)?.term?.focus();
+  if (action === 'failed') showOops(); // "What went wrong?"
+  if (action === 'app' && readyUrl) $('readyShow').click();
 });
 
 const runBlob = Blobs.mount($('runBlob'), { size: 34 });
@@ -744,7 +773,7 @@ $('pvUrl').onkeydown = (e) => {
 // A dev server printed its address: offer it once. Already looking at the app? Just follow it.
 const offered = new Set();
 let readyUrl = null;
-function appFound(url) {
+function appFound(url, pane) {
   if (offered.has(url) || url === pv.url) return;
   offered.add(url);
   if (inFork() && pvOpen() && pv.mode === 'app') return loadApp(url);
@@ -752,6 +781,7 @@ function appFound(url) {
   $('readyUrl').textContent = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
   $('readyShow').textContent = inFork() ? 'Show it' : 'Open in browser';
   $('ready').classList.add('show');
+  if (pane) nudge(pane, 'Your app is ready', $('readyUrl').textContent, 'app', url); // in the notch, if you're elsewhere
 }
 $('readyShow').onclick = () => {
   inFork() ? loadApp(readyUrl) : dt.openExternal(readyUrl);
@@ -1273,7 +1303,7 @@ function installed(font) {
 }
 // Appearance is Light, Dark or System; each side keeps its own theme, and System swaps them with macOS.
 const DEFAULTS = { mode: 'system', darkTheme: 'Designer', lightTheme: 'Catppuccin Latte',
-  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', smart: 'on' };
+  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', notch: 'on', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
@@ -1310,6 +1340,7 @@ async function applySettings(s) {
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
   dt.appearance(s.mode); // the frosted sidebar follows too
+  dt.notchSetting(s.notch !== 'off').then((n) => { $('notchRow').hidden = !n?.has; }); // its switch only on a Mac with a notch
   const run = ++applying;
   await document.fonts.load(`${s.size}px "${s.font}"`).catch(() => {}); // else xterm measures the fallback font
   if (run !== applying) return; // a newer change (e.g. hovering the next swatch) already won
@@ -1334,7 +1365,7 @@ const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
 const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
-const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setNotch', 'notch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, dialog, nativeTheme, Menu, Notification, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, dialog, nativeTheme, Menu, Notification, screen, shell, webContents } from 'electron';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -75,7 +75,7 @@ function createWindow(restore) {
   if (restore) startWith.set(wcId, restore);
   // The last window closing is quitting, so it comes back next time: grab its screens first.
   win.on('close', (e) => {
-    if (quitting || gone.has(wcId) || closingLast.has(wcId) || BrowserWindow.getAllWindows().length > 1) return;
+    if (quitting || gone.has(wcId) || closingLast.has(wcId) || forkWindows().length > 1) return;
     e.preventDefault();
     closingLast.add(wcId);
     collect([wc]).then(() => win.close());
@@ -84,8 +84,10 @@ function createWindow(restore) {
     for (const [id, t] of ptys) if (t.wc === wc) { t.pty.kill(); ptys.delete(id); }
     // One of several windows closed: that one's done. The last one is kept (see 'close' above), even
     // when it closes some other way, since closing the last window quits Fork.
-    const others = BrowserWindow.getAllWindows().some((w) => w !== win && !w.isDestroyed());
+    const others = forkWindows().some((w) => w !== win && !w.isDestroyed());
     if (!quitting && others) { sessions.delete(wcId); saveSoon(); }
+    notchTabs.delete(wcId); sendNotchState();
+    if (!others) notchWin?.destroy(); // the notch alone mustn't keep Fork open
   });
   win.loadFile(join(HERE, 'index.html'));
   return win;
@@ -198,26 +200,95 @@ ipcMain.on('open-default', (_, path) => openPath(path)); // the Mac's own app fo
 // An app in the terminal copying to your clipboard (OSC 52, see protocols.js). Text only.
 ipcMain.on('clip:write', (_, text) => { if (typeof text === 'string' && text.length <= 1024 * 1024) clipboard.writeText(text); });
 
-// "Done" / "needs you" while you're in another app: a Mac notification, and a count on the dock icon
-// until you come back. Clicking the notification brings you to that terminal.
+// "Done", "needs you", "failed" or "your app is ready", while you're in another app. On a Mac with a notch
+// it shows there (see The notch below); otherwise as a Mac notification. Either way the dock icon counts
+// them until you come back, and clicking brings you to that terminal (action: what to open there).
 let unread = 0;
 const shown = new Set(); // a notification that's garbage-collected forgets its click
-ipcMain.on('notify', (e, { title, body, pane } = {}) => {
+const KINDS = ['done', 'failed', 'app'];
+ipcMain.on('notify', (e, { kind, title, body, pane, url, alerts = true } = {}) => {
   const win = BrowserWindow.fromWebContents(e.sender);
-  if (!win || win.isFocused() || !Notification.isSupported()) return;
-  const n = new Notification({ title: String(title || 'Fork').slice(0, 120), body: String(body || '').slice(0, 300) });
-  shown.add(n);
-  n.on('click', () => {
-    shown.delete(n);
-    if (win.isDestroyed()) return;
-    win.show(); win.focus(); app.focus({ steal: true });
-    win.webContents.send('go-pane', pane);
-  });
-  n.on('close', () => shown.delete(n));
-  n.show();
-  app.dock?.setBadge(String(++unread));
+  if (!win || win.isFocused()) return;
+  const m = { kind: KINDS.includes(kind) ? kind : 'done', title: String(title || 'Fork').slice(0, 120), body: String(body || '').slice(0, 300),
+    pane, url: typeof url === 'string' ? url.slice(0, 300) : undefined, win: e.sender.id };
+  if (notchShowing()) notchWin.webContents.send('notch:moment', m);
+  else if (alerts && Notification.isSupported()) {
+    const n = new Notification({ title: m.title, body: m.body });
+    shown.add(n);
+    n.on('click', () => { shown.delete(n); goTo(m); });
+    n.on('close', () => shown.delete(n));
+    n.show();
+  }
+  if (alerts) app.dock?.setBadge(String(++unread));
 });
+// Bring that window forward, on that pane. action 'failed' opens "What went wrong?", 'app' shows the app.
+function goTo({ win, pane, kind }) {
+  const wc = webContents.fromId(win), w = wc && BrowserWindow.fromWebContents(wc);
+  if (!w || w.isDestroyed()) return;
+  w.show(); w.focus(); app.focus({ steal: true });
+  wc.send('go-pane', pane, kind === 'failed' || kind === 'app' ? kind : null);
+}
 app.on('browser-window-focus', () => { unread = 0; app.dock?.setBadge(''); });
+
+// --- The notch: what your terminals are doing, while you're in another app (notch.html) -------------
+// Only on a Mac with a notch, only while Fork isn't in front. A see-through window sits over the notch
+// and grows a black shape out of it. Each Fork window sends its tabs (notch:state); moments come from
+// `notify` above. Settings → Notifications turns it off (notch:setting).
+const NOTCH_W = 185; // Electron can't read the notch's width; it's about this on every MacBook that has one
+const NOTCH_BOX = { width: 420, height: 380 }; // room for the biggest shape: the list of tabs
+let notchWin = null, notchOn = true, forkActive = true;
+const notchTabs = new Map(); // webContents id -> that window's tabs
+const forkWindows = () => BrowserWindow.getAllWindows().filter((w) => w !== notchWin);
+// The built-in screen, if it has a notch: the menu bar there is taller (about 32pt, against 24).
+function notchScreen() {
+  const d = screen.getAllDisplays().find((x) => x.internal);
+  const bar = d ? d.workArea.y - d.bounds.y : 0;
+  return d && bar >= 30 ? { d, bar } : null;
+}
+function makeNotch() {
+  notchWin?.destroy();
+  notchWin = null;
+  const n = notchScreen();
+  if (!n) return;
+  const bounds = { ...NOTCH_BOX, x: Math.round(n.d.bounds.x + (n.d.bounds.width - NOTCH_BOX.width) / 2), y: n.d.bounds.y };
+  const w = new BrowserWindow({
+    ...bounds, type: 'panel', frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    focusable: false, skipTaskbar: true, show: false, enableLargerThanScreen: true, // allowed over the menu bar
+    webPreferences: { preload: join(HERE, 'notch-preload.cjs') },
+  });
+  w.setAlwaysOnTop(true, 'screen-saver');
+  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  w.setIgnoreMouseEvents(true, { forward: true }); // clicks go through, except over the shape (notch:mouse)
+  w.setBounds(bounds); // macOS may have nudged it below the menu bar
+  w.webContents.on('will-navigate', (e) => e.preventDefault());
+  w.webContents.once('did-finish-load', sendNotchState);
+  w.on('closed', () => { if (notchWin === w) notchWin = null; });
+  w.loadFile(join(HERE, 'notch.html'), { query: { w: String(NOTCH_W), h: String(n.bar) } });
+  notchWin = w;
+  syncNotch();
+}
+const notchShowing = () => !!notchWin && notchOn && !forkActive;
+function syncNotch() {
+  if (!notchWin) return;
+  if (notchShowing()) notchWin.showInactive();
+  else notchWin.hide();
+}
+function sendNotchState() {
+  if (!notchWin) return;
+  const tabs = [...notchTabs].flatMap(([win, ts]) => ts.map((t) => ({ ...t, win })));
+  notchWin.webContents.send('notch:state', tabs);
+}
+app.on('did-become-active', () => { forkActive = true; syncNotch(); });
+app.on('did-resign-active', () => { forkActive = false; syncNotch(); });
+ipcMain.on('notch:state', (e, tabs) => { notchTabs.set(e.sender.id, Array.isArray(tabs) ? tabs.slice(0, 40) : []); sendNotchState(); });
+ipcMain.on('notch:mouse', (_, over) => notchWin?.setIgnoreMouseEvents(!over, { forward: true }));
+ipcMain.on('notch:go', (_, t) => { if (t) { goTo(t); usage.track('notch_clicked', { kind: String(t.kind || '') }); } });
+// No argument: is there a notch, and is it on? Settings shows its switch only when there's a notch.
+ipcMain.handle('notch:setting', (_, on) => {
+  if (typeof on === 'boolean') { notchOn = on; syncNotch(); }
+  return { has: !!notchScreen(), on: notchOn };
+});
 
 ipcMain.handle('palette', () => PALETTE);
 // Settings → Appearance ('light', 'dark' or 'system'). The sidebar's frosted glass follows it, and with
@@ -391,7 +462,7 @@ app.on('before-quit', (e) => { // save the session and send what's left, never h
   quitting = true;
   e.preventDefault();
   usage.track('app_closed', { minutes_open: Math.round((Date.now() - openedAt) / 60_000) });
-  collect(BrowserWindow.getAllWindows().map((w) => w.webContents))
+  collect(forkWindows().map((w) => w.webContents))
     .then(() => Promise.race([usage.flush(), new Promise((r) => setTimeout(r, 2000))]))
     .then(() => app.quit());
 });
@@ -405,6 +476,9 @@ app.whenReady().then(() => {
   sessionOn = saved.enabled;
   if (sessionOn && saved.windows.length) for (const w of saved.windows) createWindow({ ...w, savedAt: saved.savedAt });
   else createWindow();
+  makeNotch();
+  // A screen plugged in, the lid closed, the resolution changed: find the notch again.
+  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(ev, makeNotch);
   usage.track('app_opened', { first_launch: usage.firstLaunch });
 });
 // Links in the app view that open a new window (target=_blank) go to the real browser.
@@ -412,5 +486,5 @@ app.on('web-contents-created', (_, c) => {
   if (c.getType() !== 'webview') return;
   c.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' }; });
 });
-app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
+app.on('activate', () => { if (!forkWindows().length) createWindow(); });
 app.on('window-all-closed', () => app.quit());

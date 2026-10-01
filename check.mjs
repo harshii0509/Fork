@@ -130,6 +130,35 @@ assert.ok(P.interruptHint('• Working (12s • esc to interrupt)')); // Codex
 assert.ok(P.interruptHint('⠏ Thinking… (esc to cancel, 4s)')); // Gemini
 assert.ok(!P.interruptHint('~/site  24.4K (12%)  ctrl+p commands'));
 
+// --- The notch (notch-logic.js, browser script) ---
+const nctx = { window: {} };
+runInNewContext(readFileSync(new URL('./notch-logic.js', import.meta.url), 'utf8'), nctx);
+const N = nctx.window.NotchLogic;
+assert.equal(N.ago(4_000), '4s');
+assert.equal(N.ago(125_000), '2m');
+assert.equal(N.ago(4_980_000), '1h 23m');
+const T0 = 1_000_000;
+const tab = (name, state, extra = {}) => ({ name, state, label: state, tool: '', agent: false, since: T0, pane: 1, win: 1, ...extra });
+const claude = tab('site', 'running', { tool: 'Claude', agent: true, since: T0 - 120_000 });
+// Nothing going on: the notch stays a notch.
+assert.equal(N.pick({ tabs: [tab('site', 'ready')], moments: [], hover: false, now: T0 }).mode, 'idle');
+// Working: who, where, how long.
+assert.deepEqual(plain(N.pick({ tabs: [claude, tab('docs', 'ready')], moments: [], hover: false, now: T0 })),
+  { mode: 'working', target: plain(claude), title: 'Claude is working', body: 'in site · 2m' });
+assert.equal(N.pick({ tabs: [tab('api', 'running', { tool: 'npm' })], moments: [], hover: false, now: T0 }).title, 'npm is running');
+assert.equal(N.pick({ tabs: [claude, tab('api', 'running', { tool: 'npm' })], moments: [], hover: false, now: T0 }).title, '2 things working');
+// A moment beats working, until it's old; hovering beats everything and lists every tab.
+let ms = N.add([], { kind: 'done', title: 'Claude’s done', body: 'in site' }, T0);
+assert.equal(N.pick({ tabs: [claude], moments: ms, hover: false, now: T0 + 1000 }).title, 'Claude’s done');
+assert.equal(N.pick({ tabs: [claude], moments: ms, hover: false, now: T0 + N.MOMENT_MS + 1 }).mode, 'working');
+const tabList = N.pick({ tabs: [claude, tab('docs', 'failed', { label: 'Last command failed' })], moments: ms, hover: true, now: T0 });
+assert.equal(tabList.mode, 'list');
+assert.deepEqual(plain(tabList.rows.map((r) => r.line)), ['Claude is working · 2m', 'Last command failed']);
+// Newest moment first, at most three kept.
+for (let i = 0; i < 4; i++) ms = N.add(ms, { kind: 'failed', title: `#${i}` }, T0 + i);
+assert.equal(ms.length, 3);
+assert.equal(ms[0].title, '#3');
+
 // --- Icons (icons.js, browser script) ---
 const ic = {}; ic.window = ic; // icon() reads ICONS as a global, like in the page
 runInNewContext(readFileSync(new URL('./icons.js', import.meta.url), 'utf8'), ic);
