@@ -1242,13 +1242,19 @@ setInterval(checkUpdate, 3600_000);
 window.addEventListener('focus', checkUpdate);
 $('updPill').onclick = () => showUpdate(`Fork ${update.version} is out`, update.notes, true);
 $('updLater').onclick = $('updOk').onclick = closeUpdate;
-$('updGo').onclick = () => { $('updGo').textContent = 'Closing…'; dt.track('update_clicked'); dt.updateInstall(); };
+$('updGo').onclick = () => {
+  $('updGo').textContent = 'Closing…';
+  try { localStorage.setItem('dt-notes-read', update.version); } catch {} // you just read them: no "What's new" after the restart
+  dt.track('update_clicked');
+  dt.updateInstall();
+};
 $('updNotes').onclick = (e) => { const a = e.target.closest('a[href]'); if (a) { e.preventDefault(); dt.openExternal(a.href); } };
-// Once, on the first launch of a new version. A fresh install has nothing saved, so no changelog on day one.
+// Once, on the first launch of a new version. A fresh install has nothing saved, so no changelog on day one,
+// and updating from the pill showed these notes already (dt-notes-read), so they don't come back after it.
 dt.version().then(async (v) => {
-  let seen;
-  try { seen = localStorage.getItem('dt-seen-version'); localStorage.setItem('dt-seen-version', v); } catch {}
-  if (!seen || seen === v || firstRun) return; // the welcome cards come first
+  let seen, read;
+  try { seen = localStorage.getItem('dt-seen-version'); read = localStorage.getItem('dt-notes-read'); localStorage.setItem('dt-seen-version', v); } catch {}
+  if (!seen || seen === v || firstRun || read === v) return; // the welcome cards come first
   const r = await dt.updateNotes();
   if (r) showUpdate(`What's new in Fork ${v}`, r.notes, false);
 });
