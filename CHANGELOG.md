@@ -38,9 +38,13 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 ### Unreleased
 
 **New**
+- **Fork lives in your notch.** On a MacBook with a notch, while you're in another app, the notch grows down to show what your terminals are doing: "Claude is working" with the blob thinking and how long it's been. For a few seconds it also shows when something's done, when a command failed (click for **What went wrong?**) or when your app is ready (click to see it). Hover the notch to see every tab and click one to go there. Turn it off in **Settings → Notifications**.
+- **Fork tells you when something's done while you're away.** When Claude or another tool finishes or needs you, a long command ends, or your app is ready while you're in another app, you get a Mac notification (or the notch, on a Mac that has one) and a count on the Dock icon. Click it to go straight to that terminal. Turn it off in **Settings → Notifications**.
+- **OpenCode and other terminal apps work fully in Fork.** Apps that run inside the terminal now get full colour, pictures, copying to your clipboard (apps can never read it) and links you can ⌘-click. OpenCode, Codex and Gemini get the same treatment as Claude: "OpenCode is working." at the bottom, **Stop it (Esc)**, and the tab's blob when it's done.
 - **Read a book while Claude works.** Open a PDF or EPUB in the side panel (⌘P → **Read**, drag one in, or click it in the file list) and read next to your terminal. Books keep their own fonts and white pages. Pick **Pages** to turn one page at a time (←/→, Space, or a two-finger swipe), or **Scroll** for one long scroll. Fork remembers your place in every book, and when Claude finishes, a note says so with a link back to the terminal.
 
 **Fixed**
+- **No "What's new" repeat after you update.** Updating with the pill shows the notes before you click **Update and restart**, so the new version no longer opens with the same notes again. (This one starts with your next update after this.)
 - **"Claude is working" shows only while Claude is working.** The bar at the bottom used to say "Something is running" the whole time Claude was open, even while it waited for you. Now it appears only while Claude works on your prompt, and its Stop button sends Esc, which is how Claude stops. An idle Claude tab shows Ready, and one that finished while you were in another tab says "Finished while you were away". Plain `claude` also reopens properly after a restart now.
 
 ### 0.3.1 — 2026-09-26
