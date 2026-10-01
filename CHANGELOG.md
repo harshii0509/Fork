@@ -37,6 +37,8 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+### 0.4.0 — 2026-10-01
+
 **New**
 - **Fork lives in your notch.** On a MacBook with a notch, while you're in another app, the notch grows down to show what your terminals are doing: "Claude is working" with the blob thinking and how long it's been. For a few seconds it also shows when something's done, when a command failed (click for **What went wrong?**) or when your app is ready (click to see it). Hover the notch to see every tab and click one to go there. Turn it off in **Settings → Notifications**.
 - **Fork tells you when something's done while you're away.** When Claude or another tool finishes or needs you, a long command ends, or your app is ready while you're in another app, you get a Mac notification (or the notch, on a Mac that has one) and a count on the Dock icon. Click it to go straight to that terminal. Turn it off in **Settings → Notifications**.
