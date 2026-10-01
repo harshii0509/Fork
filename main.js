@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme, Menu, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, dialog, nativeTheme, Menu, Notification, screen, shell } from 'electron';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -44,7 +44,8 @@ function createPty(wc, cwd) {
   const p = pty.spawn(process.env.SHELL || '/bin/zsh', ['-l'], {
     name: 'xterm-256color', cwd: cwd || homedir(), cols: 100, rows: 30,
     // Our shell/.zshrc loads the user's own config, then adds cwd reporting + safety nets.
-    env: { ...process.env, ZDOTDIR: SHELL_DIR, TERM_PROGRAM: 'Fork' },
+    // COLORTERM: apps (OpenCode and anything built with OpenTUI) use full colour only when it says so.
+    env: { ...process.env, ZDOTDIR: SHELL_DIR, TERM_PROGRAM: 'Fork', TERM_PROGRAM_VERSION: app.getVersion(), COLORTERM: 'truecolor' },
   });
   p.onData((d) => !wc.isDestroyed() && wc.send('pty:data', id, d));
   p.onExit(() => { ptys.delete(id); if (!wc.isDestroyed()) wc.send('pty:exit', id); }); // `exit` closes the pane
@@ -193,6 +194,30 @@ const opens = (fn) => (process.env.FORK_NO_OPEN ? (x) => console.log('[open]', x
 const openUrl = opens((url) => shell.openExternal(url)), openPath = opens((path) => shell.openPath(path));
 ipcMain.on('open-external', (_, url) => { if (/^https?:\/\//.test(url)) openUrl(url); });
 ipcMain.on('open-default', (_, path) => openPath(path)); // the Mac's own app for that kind of file
+
+// An app in the terminal copying to your clipboard (OSC 52, see protocols.js). Text only.
+ipcMain.on('clip:write', (_, text) => { if (typeof text === 'string' && text.length <= 1024 * 1024) clipboard.writeText(text); });
+
+// "Done" / "needs you" while you're in another app: a Mac notification, and a count on the dock icon
+// until you come back. Clicking the notification brings you to that terminal.
+let unread = 0;
+const shown = new Set(); // a notification that's garbage-collected forgets its click
+ipcMain.on('notify', (e, { title, body, pane } = {}) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || win.isFocused() || !Notification.isSupported()) return;
+  const n = new Notification({ title: String(title || 'Fork').slice(0, 120), body: String(body || '').slice(0, 300) });
+  shown.add(n);
+  n.on('click', () => {
+    shown.delete(n);
+    if (win.isDestroyed()) return;
+    win.show(); win.focus(); app.focus({ steal: true });
+    win.webContents.send('go-pane', pane);
+  });
+  n.on('close', () => shown.delete(n));
+  n.show();
+  app.dock?.setBadge(String(++unread));
+});
+app.on('browser-window-focus', () => { unread = 0; app.dock?.setBadge(''); });
 
 ipcMain.handle('palette', () => PALETTE);
 // Settings → Appearance ('light', 'dark' or 'system'). The sidebar's frosted glass follows it, and with

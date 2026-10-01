@@ -10,7 +10,7 @@ import { join } from 'node:path';
 export const POSTHOG_KEY = 'phc_Azjw5QQ5bbxXz9gREpHK6SKbntQ4KC5ECWAu6z6hjAZp';
 export const POSTHOG_HOST = 'https://us.i.posthog.com';
 
-const TOOLS = new Set(('claude codex gemini git gh npm npx pnpm yarn bun node deno python python3 pip pip3 brew ' +
+const TOOLS = new Set(('claude codex gemini opencode git gh npm npx pnpm yarn bun node deno python python3 pip pip3 brew ' +
   'cd ls open code cursor cat mkdir touch mv cp rm trash clear exit vercel netlify').split(' '));
 export const toolOf = (word) => (TOOLS.has(word) ? word : 'other');
 

@@ -7,6 +7,7 @@ export const DESCRIPTION = 'Is Fork growing, do new people get through the first
   + 'scripts/posthog-dashboard.mjs (every release). Installs, not people: each install has one random ID.';
 export const NOT_CHARTED = { // event: why it isn't on the dashboard
   game_played: 'new; chart it once we know whether people play',
+  notification_shown: 'new; chart it once we know whether people leave alerts on',
 };
 
 // --- Building blocks (website-dashboard-charts.mjs uses them too) -------------------------------

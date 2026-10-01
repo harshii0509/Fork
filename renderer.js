@@ -47,17 +47,22 @@ async function newPane(cwd, { screen, when } = {}) {
   $('hidden').append(el);
 
   // 10,000 lines to scroll back through (xterm's default is 1,000, which one Claude session outgrows).
-  const term = new Terminal({ ...xtermOpts(settings), lineHeight: 1.25, cursorBlink: true, scrollback: 10_000, allowProposedApi: true });
+  const term = new Terminal({ ...xtermOpts(settings), lineHeight: 1.25, cursorBlink: true, scrollback: 10_000, allowProposedApi: true,
+    // Links an app marks itself (OSC 8: OpenCode, `ls --hyperlink`, gh): ⌘-click, like the web addresses below.
+    linkHandler: { allowNonHttpProtocols: true, activate: (e, uri) => { if (e.metaKey) openUri(uri); },
+      hover: (_, uri) => { el.title = linkTip(uri); }, leave: () => { el.title = ''; } } });
   const fit = new FitAddon.FitAddon(), serial = new SerializeAddon.SerializeAddon(), search = new SearchAddon.SearchAddon();
   term.loadAddon(fit);
   term.loadAddon(serial);
   term.loadAddon(search);
   // Web addresses in the output: ⌘-click opens them (openLink); a plain click just focuses the pane.
   term.loadAddon(new WebLinksAddon.WebLinksAddon((e, uri) => { if (e.metaKey) openLink(uri); }, {
-    hover: (_, uri) => { el.title = Preview.findLocalUrl(uri) && inFork() ? '⌘-click to show it next to the terminal' : '⌘-click to open in your browser'; },
+    hover: (_, uri) => { el.title = linkTip(uri); },
     leave: () => { el.title = ''; },
   }));
   term.open(inner);
+  // Pictures apps draw in the terminal (Sixel and iTerm's inline images), e.g. OpenCode showing an image.
+  term.loadAddon(new ImageAddon.ImageAddon({ storageLimit: 32, showPlaceholder: false }));
   if (screen) term.write(`${screen}\x1b[0m\r\n\x1b[2m── Restored · ${restoredAt(when)} ──\x1b[0m\r\n`);
   const pane = { id, term, fit, serial, search, gl: null, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null };
   panes.set(id, pane);
@@ -98,20 +103,12 @@ async function newPane(cwd, { screen, when } = {}) {
   });
   term.textarea.addEventListener('focus', () => focusPane(id)); // clicking a pane makes it active
   // Claude Code starts the title with a spinner (◐ ◓ ◑ ◒) while it works and ✳ while it waits for you.
+  // OpenCode's title is "OpenCode" or "OC | <chat>". Either way the title says which tool is open.
   term.onTitleChange((title) => {
-    const was = pane.thinking, saw = pane.sawTitle;
-    if (pane.busy && title.startsWith('✳ ')) pane.claudeSeen = true; // Claude, however it was started (`cd x && claude`)
-    const claude = isClaude(pane);
-    if (claude && /^\S /.test(title)) pane.sawTitle = true;
-    pane.thinking = claude && /^\S /.test(title) && !title.startsWith('✳');
-    if (was === pane.thinking && saw === pane.sawTitle) return;
-    if (!pane.thinking) {
-      if (tabOf(pane.id) !== tab()) pane.unseen = true; // Claude finished while you were elsewhere
-      pane.lastUsed = Date.now();
-      workDone(pane);
-    }
-    syncBusy();
-    renderTabs();
+    if (!pane.busy) return;
+    pane.seen ||= Protocols.agentFromTitle(title); // however it was started (`cd x && claude`)
+    const now = agentOf(pane)?.titled ? Protocols.claudeTitle(title) : null;
+    if (now !== null) setThinking(pane, now);
   });
   new ResizeObserver(() => {
     if (!el.offsetParent) return; // hidden tab
@@ -141,7 +138,7 @@ async function newPane(cwd, { screen, when } = {}) {
       // Where this command's output starts, so "What went wrong?" reads only that. A marker follows the line as the buffer scrolls.
       pane.cmdMark?.dispose();
       pane.cmdMark = term.registerMarker(0);
-      pane.busy = true; pane.failed = false; pane.lastUsed = Date.now(); if (pane === active()) hideOops();
+      pane.busy = true; pane.failed = false; pane.lastUsed = pane.startedAt = Date.now(); if (pane === active()) hideOops();
       pane.tool = data.slice(2); // the command's first word; analytics.mjs keeps it only if it's a known tool
       dt.track('command_run', { tool: pane.tool, source: pane.suggested ? 'fork' : 'typed' });
       pane.suggested = false;
@@ -154,13 +151,30 @@ async function newPane(cwd, { screen, when } = {}) {
       if (tabOf(pane.id) !== tab()) pane.unseen = true; // finished while you were elsewhere
       pane.lastUsed = Date.now();
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
-      pane.thinking = false; pane.sawTitle = false; pane.claudeSeen = false;
+      pane.thinking = false; pane.sawSignal = false; pane.seen = null;
       workDone(pane);
+      if (pane.lastUsed - pane.startedAt >= 10e3) { // long enough that you may have gone to do something else
+        nudge(pane, pane.failed ? 'Your command failed' : 'Your command finished', pane.tool ? `${pane.tool} · ${folderOf(pane)}` : `In ${folderOf(pane)}`);
+      }
     }
     syncBusy();
     renderTabs();
     return true;
   });
+
+  // What terminal apps ask of us (protocols.js). Notifications: "done" or "needs you" from the app itself.
+  const kitty = Protocols.kitty99();
+  term.parser.registerOscHandler(99, (data) => {
+    const n = kitty(data);
+    if (n?.query != null) dt.write(id, Protocols.kitty99Reply(n.query)); // "what do you support?"
+    else if (n) toolNotified(pane, n);
+    return true;
+  });
+  for (const code of [9, 777]) {
+    term.parser.registerOscHandler(code, (data) => { const n = Protocols.notifyFrom(code, data); if (n) toolNotified(pane, n); return true; });
+  }
+  // An app copying to your clipboard (OpenCode, when you select its text). Writing only, never reading.
+  term.parser.registerOscHandler(52, (data) => { const text = Protocols.clipFrom(data); if (text != null) dt.clipWrite(text); return true; });
   return pane;
 }
 
@@ -168,6 +182,8 @@ dt.onData((id, d) => {
   const p = panes.get(id);
   if (!p) return;
   p.term.write(d);
+  // OpenCode, Codex or Gemini open? They show "esc to interrupt" at the bottom only while they work.
+  if (p.busy && !p.hintCheck && agentOf(p) && !agentOf(p).titled) p.hintCheck = setTimeout(() => checkHint(p), 250);
   // A dev server printed its address? Keep a short tail so one split across chunks is still caught.
   p.tail = (p.tail + d).slice(-400);
   const url = Preview.findLocalUrl(Preview.stripAnsi(p.tail));
@@ -366,20 +382,70 @@ dt.onCmd((cmd) => ({
   tour: replayTour,
 }[cmd]?.()));
 
-// A program being open (busy) isn't the same as it working: Claude sits open at its prompt between
-// requests. Its title says which (spinner = working, ✳ = waiting for you). No title seen? Assume working.
-const isClaude = (p) => !!p?.busy && (p.tool === 'claude' || !!p.claudeSeen);
-const working = (p) => !!p?.busy && (!isClaude(p) || p.thinking || !p.sawTitle);
-const busyMsg = (p) => (isClaude(p) ? 'Claude is open here. Type /exit to leave it first.' : 'Something is running. Stop it first (Ctrl+C), then try again.');
+// A program being open (busy) isn't the same as it working: an AI tool sits open at its prompt between
+// requests. Claude's title says which (spinner = working, ✳ = waiting for you); the others show "esc to
+// interrupt" only while they work. No sign of either yet? Assume working.
+const agentOf = (p) => (p?.busy && (Protocols.AGENTS[p.tool] || Protocols.AGENTS[p.seen])) || null;
+const isClaude = (p) => agentOf(p)?.key === 'claude';
+const working = (p) => !!p?.busy && (!agentOf(p) || p.thinking || !p.sawSignal);
+const busyMsg = (p) => (agentOf(p) ? `${agentOf(p).name} is open here. ${agentOf(p).leave}` : 'Something is running. Stop it first (Ctrl+C), then try again.');
+const doneText = (p) => (agentOf(p) ? `${agentOf(p).name}’s done` : 'Your command finished');
+const folderOf = (p) => (p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/'); // the tab's name
+
+// The tool went from working to waiting for you (or back). Waiting after working = it's done, or needs you.
+function setThinking(pane, on) {
+  const was = pane.thinking, saw = pane.sawSignal;
+  pane.thinking = on; pane.sawSignal = true;
+  if (was === on && saw) return;
+  if (!on) {
+    if (tabOf(pane.id) !== tab()) pane.unseen = true; // it finished while you were elsewhere
+    pane.lastUsed = Date.now();
+    workDone(pane);
+    if (was) nudge(pane, doneText(pane), `In ${folderOf(pane)}`);
+  }
+  syncBusy();
+  renderTabs();
+}
+function checkHint(p) {
+  p.hintCheck = null;
+  if (!panes.has(p.id) || !agentOf(p) || agentOf(p).titled) return;
+  const b = p.term.buffer.active, end = b.viewportY + p.term.rows;
+  let text = '';
+  for (let y = Math.max(0, end - 12); y < end; y++) text += `${b.getLine(y)?.translateToString(true) ?? ''}\n`;
+  setThinking(p, Protocols.interruptHint(text));
+}
+
+// The app itself said it's done or needs you (OSC 9 / 777 / 99).
+function toolNotified(pane, { title, body }) {
+  if (tabOf(pane.id) !== tab()) { pane.unseen = true; renderTabs(); }
+  nudge(pane, title || agentOf(pane)?.name || 'Fork', body || `In ${folderOf(pane)}`);
+}
+// A Mac notification and a dock badge, only while you're in another app (Settings → Notifications).
+// The tool's own notification and Fork's noticing it's done arrive close together: show one.
+function nudge(pane, title, body) {
+  if (settings.alerts === 'off' || document.hasFocus()) return;
+  if (Date.now() - (pane.nudgedAt || 0) < 2000) return;
+  pane.nudgedAt = Date.now();
+  dt.notify({ title, body, pane: pane.id });
+  dt.track('notification_shown', { tool: pane.tool });
+}
+dt.onGoPane((id) => { // clicked a notification
+  const t = tabOf(id);
+  if (!t) return;
+  goTab(tabs.indexOf(t));
+  focusPane(id);
+  panes.get(id)?.term?.focus();
+});
 
 const runBlob = Blobs.mount($('runBlob'), { size: 34 });
 function syncBusy() {
   const p = activeTerm(), on = working(p);
   $('app').classList.toggle('busy', !!p?.busy); // chips and folders wait while anything is open
   $('app').classList.toggle('working', on); // the "running" bar only while it's really working
-  $('runText').textContent = isClaude(p) ? 'Claude is working.' : 'Something is running.';
-  $('stop').textContent = isClaude(p) ? 'Stop it (Esc)' : 'Stop it (Ctrl+C)'; // Esc interrupts Claude; Ctrl+C would quit it
-  $('stop').dataset.key = isClaude(p) ? 'esc' : '⌃C';
+  const a = agentOf(p);
+  $('runText').textContent = a ? `${a.name} is working.` : 'Something is running.';
+  $('stop').textContent = a ? 'Stop it (Esc)' : 'Stop it (Ctrl+C)'; // Esc interrupts an AI tool; Ctrl+C would quit it
+  $('stop').dataset.key = a ? 'esc' : '⌃C';
   on ? runBlob.start() : runBlob.stop();
 }
 
@@ -412,12 +478,12 @@ function openGame(id) {
 function workDone(pane) {
   if (readingBook() && tabOf(pane.id) === tab()) {
     doneIn = pane.id;
-    return Reader.workDone(isClaude(pane) ? 'Claude’s done' : 'Your command finished');
+    return Reader.workDone(doneText(pane));
   }
   if (!Games.isOpen() || !isGame(active())) return; // looking at the terminal? Then you saw it finish
   if (pane.id !== gameFrom && pane.id !== tab().lastTerm) return;
   doneIn = pane.id;
-  Games.workDone(isClaude(pane) ? 'Claude’s done' : 'Your command finished');
+  Games.workDone(doneText(pane));
 }
 const backToTerminal = (id) => { const p = panes.get(id) || activeTerm(); if (p) { focusPane(p.id); p.term.focus(); } }; // already active? still type there
 Games.setup({
@@ -553,7 +619,7 @@ dt.onFsChanged((paths) => {
 document.addEventListener('dragover', (e) => { if (!e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; } });
 document.addEventListener('drop', (e) => e.preventDefault());
 $('chips').onclick = (e) => { const b = e.target.closest('.chip'); if (b) { const s = chips[b.dataset.i]; send(s.cmd, s.why, s.run); } };
-$('stop').onclick = () => { const p = activeTerm(); if (isClaude(p)) { dt.write(p.id, '\x1b'); p.term.focus(); } else send('\x03'); };
+$('stop').onclick = () => { const p = activeTerm(); if (agentOf(p)) { dt.write(p.id, '\x1b'); p.term.focus(); } else send('\x03'); };
 
 // --- Preview panel: a file or the running app, next to the terminal ---------------------
 // Read-only on purpose: this isn't a code editor. Real edits go to the person's editor.
@@ -701,6 +767,17 @@ function openLink(uri) {
   if (local && inFork()) return loadApp(local);
   dt.openExternal(uri);
 }
+// A link an app marked itself (OSC 8): a web page, or a file on this Mac (file://…).
+function openUri(uri) {
+  if (/^https?:\/\//i.test(uri)) return openLink(uri);
+  const m = uri.match(/^file:\/\/[^/]*(\/[^?#]*)/);
+  if (!m) return;
+  let path = m[1];
+  try { path = decodeURIComponent(path); } catch {}
+  inFork() ? openFile(path) : dt.openDefault(path);
+}
+const linkTip = (uri) => (/^file:/i.test(uri) ? (inFork() ? '⌘-click to show it next to the terminal' : '⌘-click to open it')
+  : Preview.findLocalUrl(uri) && inFork() ? '⌘-click to show it next to the terminal' : '⌘-click to open in your browser');
 $('readyClose').onclick = () => $('ready').classList.remove('show');
 
 // --- Read: a book next to the terminal, for while Claude works (reader.js) -----------------
@@ -1190,7 +1267,7 @@ function installed(font) {
 }
 // Appearance is Light, Dark or System; each side keeps its own theme, and System swaps them with macOS.
 const DEFAULTS = { mode: 'system', darkTheme: 'Designer', lightTheme: 'Catppuccin Latte',
-  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', smart: 'on' };
+  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
@@ -1251,7 +1328,7 @@ const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
 const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
-const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;

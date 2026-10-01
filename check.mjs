@@ -89,6 +89,47 @@ assert.equal(findLocalUrl('http://localhost:3000 then http://127.0.0.1:4000'), '
 assert.equal(dropText(['/Users/me/My Designs/hero (final).png']), '/Users/me/My\\ Designs/hero\\ \\(final\\).png ');
 assert.equal(dropText(['/a/it\'s & more', '/b/café.svg']), "/a/it\\'s\\ \\&\\ more /b/café.svg ");
 
+// --- What terminal apps ask of us (protocols.js, browser script) ---
+const pctx = { window: {}, atob, TextDecoder };
+runInNewContext(readFileSync(new URL('./protocols.js', import.meta.url), 'utf8'), pctx);
+const P = pctx.window.Protocols;
+const plain = (x) => JSON.parse(JSON.stringify(x)); // objects from the vm context aren't deepEqual to ours
+const b64 = (s) => Buffer.from(s).toString('base64');
+// Notifications: iTerm's OSC 9 (but not ConEmu's 9;4 progress), OSC 777, kitty's OSC 99.
+assert.deepEqual(plain(P.notifyFrom(9, 'Build finished')), { title: '', body: 'Build finished' });
+assert.equal(P.notifyFrom(9, '4;1;50'), null);
+assert.deepEqual(plain(P.notifyFrom(777, 'notify;OpenCode;Done; all good')), { title: 'OpenCode', body: 'Done; all good' });
+assert.equal(P.notifyFrom(777, 'preexec'), null);
+const k = P.kitty99();
+assert.deepEqual(plain(k('i=opentui-notifications:p=?;')), { query: 'opentui-notifications' });
+assert.equal(k(`i=1:d=0:e=1;${b64('Session ')}`), null); // more coming
+assert.equal(k(`i=1:d=0:e=1;${b64('done')}`), null);
+assert.deepEqual(plain(k(`i=1:p=body:e=1;${b64('It took 2 minutes ✓')}`)), { title: 'Session done', body: 'It took 2 minutes ✓' });
+assert.deepEqual(plain(k(';Hello')), { title: 'Hello', body: '' });
+// OpenTUI turns notifications on when the reply names p=? and offers titles.
+const reply = P.kitty99Reply('opentui-notifications');
+assert.ok(reply.startsWith('\x1b]99;i=opentui-notifications:p=?;') && reply.includes('p=title') && reply.endsWith('\x1b\\'));
+// Clipboard: writes only, never reads; big ones are dropped.
+assert.equal(P.clipFrom(`c;${b64('héllo ✳')}`), 'héllo ✳');
+assert.equal(P.clipFrom(`;${b64('x')}`), 'x');
+assert.equal(P.clipFrom('c;?'), null);
+assert.equal(P.clipFrom('c;'), null);
+assert.equal(P.clipFrom(`c;${'A'.repeat(2_000_000)}`), null);
+// Which AI tool is open, and is it working?
+assert.equal(P.AGENTS.opencode.name, 'OpenCode');
+assert.equal(P.AGENTS.ls, undefined);
+assert.equal(P.agentFromTitle('✳ Claude Code'), 'claude');
+assert.equal(P.agentFromTitle('OpenCode'), 'opencode');
+assert.equal(P.agentFromTitle('OC | Fix the hero'), 'opencode');
+assert.equal(P.agentFromTitle('vim notes.md'), null);
+assert.equal(P.claudeTitle('◐ Fixing the hero'), true);
+assert.equal(P.claudeTitle('✳ Fixing the hero'), false);
+assert.equal(P.claudeTitle('Claude Code'), null);
+assert.ok(P.interruptHint('■■■⬝⬝⬝  esc interrupt        tab agents  ctrl+p commands')); // OpenCode
+assert.ok(P.interruptHint('• Working (12s • esc to interrupt)')); // Codex
+assert.ok(P.interruptHint('⠏ Thinking… (esc to cancel, 4s)')); // Gemini
+assert.ok(!P.interruptHint('~/site  24.4K (12%)  ctrl+p commands'));
+
 // --- Icons (icons.js, browser script) ---
 const ic = {}; ic.window = ic; // icon() reads ICONS as a global, like in the page
 runInNewContext(readFileSync(new URL('./icons.js', import.meta.url), 'utf8'), ic);
