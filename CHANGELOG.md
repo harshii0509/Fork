@@ -37,6 +37,8 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+### 1.0.0 — 2026-10-03
+
 **Fork 1.0: signed by Apple, and it updates itself.**
 
 **New**
