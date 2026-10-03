@@ -21,6 +21,7 @@ const add = (ctx, pkg) => (ctx.pm === 'npm' ? `npm install ${pkg}` : `${ctx.pm} 
 const pkgRoot = (name) => (name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0]);
 const first = (m) => m.slice(1).find((x) => x !== undefined);
 const HOMEBREW = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"';
+const PRIVACY = 'open "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"';
 
 // "command not found" for tools people are usually told to use. Anything else gets the general answer.
 const MISSING = {
@@ -290,8 +291,10 @@ export const ERRORS = [
   {
     id: 'mac-privacy',
     match: /operation not permitted/i,
-    text: () => 'macOS is protecting this folder. Let Fork in: System Settings → Privacy & Security → Files and Folders (or Full Disk Access), then try again.',
-    samples: ['ls: Desktop: Operation not permitted', 'zsh: operation not permitted: ./install.sh'],
+    text: () => 'macOS hasn\'t let Fork into this folder. This opens Privacy & Security → Files & Folders: turn the folder on for Fork, then try again.',
+    fix: () => PRIVACY,
+    samples: ['ls: Desktop: Operation not permitted', 'zsh: operation not permitted: ./install.sh',
+      'Error: EPERM: operation not permitted, uv_cwd\n    at process.wrappedCwd [as cwd] (node:internal/bootstrap/switches/does_own_process_state:126:28)'],
   },
 
   // --- Files and folders ------------------------------------------------------------------------------

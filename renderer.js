@@ -1247,16 +1247,20 @@ $('palList').onclick = (e) => {
 };
 $('openPal').onclick = openPal;
 
-// --- Updates: a quiet pill when a newer Fork is out, and What's new once after updating ----------
+// --- Updates: a quiet pill once a newer Fork is downloaded, and What's new once after updating -----
+// ready: downloaded, Restart now swaps it in (or it installs when Fork quits). Not ready: the old way,
+// where Update and restart downloads it with install.sh (main.js explains when).
 let update = null;
 function showUpdate(title, notes, isUpdate) {
   $('updTitle').textContent = title;
   $('updNotes').innerHTML = DOMPurify.sanitize(notes);
   for (const id of ['updLater', 'updGo', 'updWarn']) $(id).style.display = isUpdate ? '' : 'none';
   $('updOk').style.display = isUpdate ? 'none' : '';
+  $('updGo').textContent = update?.ready ? 'Restart now' : 'Update and restart';
   if (isUpdate) dt.sessionEnabled().then((on) => {
-    $('updWarn').textContent = on ? 'Fork will close and reopen with your tabs as they were. Anything running will stop; Claude picks up where it left off.'
-      : 'Fork will close and reopen. Anything running in your terminals will stop.';
+    $('updWarn').textContent = (on ? 'Fork will close and reopen with your tabs as they were. Anything running will stop; Claude picks up where it left off.'
+      : 'Fork will close and reopen. Anything running in your terminals will stop.')
+      + (update?.ready ? ' Or keep working: it updates the next time you quit Fork.' : '');
   });
   $('updOv').classList.add('show');
 }
@@ -1264,16 +1268,17 @@ function closeUpdate() { $('updOv').classList.remove('show'); focusActive(); }
 async function checkUpdate() {
   update = await dt.updateCheck();
   $('updPill').hidden = !update;
-  if (update) $('updPillV').textContent = `Fork ${update.version}`;
+  if (update) $('updPillV').textContent = update.ready ? `Fork ${update.version} · Restart` : `Fork ${update.version}`;
 }
 checkUpdate();
+dt.onUpdateReady(checkUpdate);
 // Hourly, and whenever Fork comes to the front. Cheap: main asks GitHub at most once an hour.
 setInterval(checkUpdate, 3600_000);
 window.addEventListener('focus', checkUpdate);
-$('updPill').onclick = () => showUpdate(`Fork ${update.version} is out`, update.notes, true);
+$('updPill').onclick = () => showUpdate(`Fork ${update.version} ${update.ready ? 'is ready' : 'is out'}`, update.notes, true);
 $('updLater').onclick = $('updOk').onclick = closeUpdate;
 $('updGo').onclick = () => {
-  $('updGo').textContent = 'Closing…';
+  $('updGo').textContent = update.ready ? 'Restarting…' : 'Closing…';
   try { localStorage.setItem('dt-notes-read', update.version); } catch {} // you just read them: no "What's new" after the restart
   dt.track('update_clicked');
   dt.updateInstall();

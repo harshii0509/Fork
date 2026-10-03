@@ -20,18 +20,22 @@ window.NotchLogic = (() => {
   // A new moment goes first; only the newest few are kept.
   const add = (moments, m, now) => [{ ...m, at: now }, ...moments.filter((x) => now - x.at < MOMENT_MS)].slice(0, MAX_MOMENTS);
 
+  // The word beside the notch, right of the camera.
+  const SIDE = { done: 'Done', failed: 'Failed', app: 'Ready' };
+
   // Most pressing first: you're hovering it (every tab), something just happened, something's working, nothing.
   const pick = ({ tabs, moments, hover, now }) => {
     if (hover && tabs.length) return { mode: 'list', rows: tabs.map((t) => ({ ...t, line: line(t, now) })) };
     const m = moments.find((x) => now - x.at < MOMENT_MS);
-    if (m) return { mode: 'moment', ...m };
+    if (m) return { mode: 'moment', ...m, side: SIDE[m.kind] || SIDE.done };
     const work = tabs.filter((t) => t.state === 'running');
     if (work.length === 1) {
       const t = work[0];
-      return { mode: 'working', target: t, title: workTitle(t), body: `in ${t.name} · ${ago(now - t.since)}` };
+      return { mode: 'working', target: t, title: workTitle(t), body: `in ${t.name} · ${ago(now - t.since)}`, side: ago(now - t.since) };
     }
     if (work.length > 1) {
-      return { mode: 'working', target: work[0], title: `${work.length} things working`, body: `in ${[...new Set(work.map((t) => t.name))].join(', ')}` };
+      return { mode: 'working', target: work[0], title: `${work.length} things working`, body: `in ${[...new Set(work.map((t) => t.name))].join(', ')}`,
+        side: ago(now - work[0].since) };
     }
     return { mode: 'idle' };
   };

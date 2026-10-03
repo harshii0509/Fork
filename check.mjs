@@ -144,12 +144,16 @@ const claude = tab('site', 'running', { tool: 'Claude', agent: true, since: T0 -
 assert.equal(N.pick({ tabs: [tab('site', 'ready')], moments: [], hover: false, now: T0 }).mode, 'idle');
 // Working: who, where, how long.
 assert.deepEqual(plain(N.pick({ tabs: [claude, tab('docs', 'ready')], moments: [], hover: false, now: T0 })),
-  { mode: 'working', target: plain(claude), title: 'Claude is working', body: 'in site · 2m' });
+  { mode: 'working', target: plain(claude), title: 'Claude is working', body: 'in site · 2m', side: '2m' });
 assert.equal(N.pick({ tabs: [tab('api', 'running', { tool: 'npm' })], moments: [], hover: false, now: T0 }).title, 'npm is running');
 assert.equal(N.pick({ tabs: [claude, tab('api', 'running', { tool: 'npm' })], moments: [], hover: false, now: T0 }).title, '2 things working');
 // A moment beats working, until it's old; hovering beats everything and lists every tab.
 let ms = N.add([], { kind: 'done', title: 'Claude’s done', body: 'in site' }, T0);
 assert.equal(N.pick({ tabs: [claude], moments: ms, hover: false, now: T0 + 1000 }).title, 'Claude’s done');
+// Beside the notch: the time while working, one word for a moment.
+assert.equal(N.pick({ tabs: [claude], moments: ms, hover: false, now: T0 + 1000 }).side, 'Done');
+assert.equal(N.pick({ tabs: [], moments: N.add([], { kind: 'failed' }, T0), hover: false, now: T0 }).side, 'Failed');
+assert.equal(N.pick({ tabs: [], moments: N.add([], { kind: 'app' }, T0), hover: false, now: T0 }).side, 'Ready');
 assert.equal(N.pick({ tabs: [claude], moments: ms, hover: false, now: T0 + N.MOMENT_MS + 1 }).mode, 'working');
 const tabList = N.pick({ tabs: [claude, tab('docs', 'failed', { label: 'Last command failed' })], moments: ms, hover: true, now: T0 });
 assert.equal(tabList.mode, 'list');

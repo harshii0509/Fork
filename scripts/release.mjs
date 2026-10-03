@@ -3,7 +3,7 @@
 // release notes, builds, checks the build, tags, pushes and publishes on GitHub. See RELEASING.md.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bump, parse } from '../version.mjs';
@@ -12,6 +12,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = 'harshii0509/Fork';
 const LATEST_DMG = `https://github.com/${REPO}/releases/latest/download/Fork.dmg`;
 const APP = join(ROOT, 'dist/mac-arm64/Fork.app');
+const DMG = join(ROOT, 'dist/Fork.dmg');
+// The App Store Connect API key Apple notarizes with. Never in the repo. See DISTRIBUTION.md §3.
+const NOTARY = join(homedir(), '.config/fork/notary.env');
 
 const args = process.argv.slice(2);
 const dry = args.includes('--dry-run');
@@ -37,6 +40,11 @@ const [behind, ahead] = quiet('git', ['rev-list', '--left-right', '--count', 'or
 if (behind) problem(`main is ${behind} commit(s) behind GitHub. Run git pull first.`);
 if (ahead) console.log(`  ${ahead} commit(s) not on GitHub yet; they'll be pushed with the release.`);
 try { quiet('gh', ['auth', 'status']); } catch { stop('The GitHub CLI isn\'t logged in. Run: gh auth login'); }
+if (!existsSync(NOTARY)) problem(`The notarization key isn't set up (${NOTARY} is missing). See DISTRIBUTION.md §3.`);
+else for (const [, k, v] of readFileSync(NOTARY, 'utf8').matchAll(/^(APPLE_API_\w+)=(.*)$/gm)) process.env[k] = v.trim();
+if (quiet('security', ['find-identity', '-v', '-p', 'codesigning']).indexOf('Developer ID Application') < 0) {
+  problem('The Developer ID certificate isn\'t in this Mac\'s Keychain. See DISTRIBUTION.md §3.');
+}
 try { quiet('npm', ['run', 'check']); } catch (e) { stop(`npm run check failed:\n${e.stdout || ''}${e.stderr || ''}`); }
 console.log('  check ok');
 
@@ -77,37 +85,54 @@ writeFileSync(join(ROOT, 'CHANGELOG.md'), nextChangelog);
 const undo = () => { try { quiet('git', ['checkout', '--', 'package.json', 'package-lock.json', 'CHANGELOG.md']); } catch {} };
 
 // --- 5. Build --------------------------------------------------------------------------------------
-step('Building Fork.dmg (takes a minute)');
+step('Building Fork.dmg and having Apple notarize it (takes 5–10 minutes)');
 rmSync(join(ROOT, 'dist'), { recursive: true, force: true });
 try { loud('npm', ['run', 'dist']); } catch { undo(); stop('The build failed (see above). package.json and CHANGELOG.md are back as they were.'); }
 
 // --- 6. Check the build ----------------------------------------------------------------------------
 step('Checking the build');
 const fail = (why) => { undo(); stop(`${why}\npackage.json and CHANGELOG.md are back as they were. Nothing was published.`); };
-if (!existsSync(join(ROOT, 'dist/Fork.dmg'))) fail('dist/Fork.dmg is missing.');
+if (!existsSync(DMG)) fail('dist/Fork.dmg is missing.');
 const shell = join(APP, 'Contents/Resources/app.asar.unpacked/shell');
 for (const f of ['.zshrc', '.zprofile', '.zshenv']) if (!existsSync(join(shell, f))) fail(`The app is missing shell/${f}.`);
-const sig = spawnSync('codesign', ['-dv', APP], { encoding: 'utf8' }).stderr; // codesign -dv reports on stderr
-if (!/Signature=adhoc|Authority=Developer ID/.test(sig)) fail('The app isn\'t signed.');
+const sig = spawnSync('codesign', ['-dv', '--verbose=2', APP], { encoding: 'utf8' }).stderr; // codesign -dv reports on stderr
+if (!/Authority=Developer ID Application/.test(sig)) fail('The app isn\'t signed with the Developer ID.');
+// electron-builder notarized the app; the DMG around it gets its own ticket, so it opens without a check online.
+const notary = ['--key', process.env.APPLE_API_KEY, '--key-id', process.env.APPLE_API_KEY_ID, '--issuer', process.env.APPLE_API_ISSUER];
+try { loud('xcrun', ['notarytool', 'submit', DMG, ...notary, '--wait']); loud('xcrun', ['stapler', 'staple', DMG]); } catch { fail('Apple didn\'t notarize Fork.dmg (see above).'); }
+const gk = spawnSync('spctl', ['-a', '-vv', APP], { encoding: 'utf8' }).stderr; // spctl reports on stderr too
+if (!/source=Notarized Developer ID/.test(gk)) fail(`Gatekeeper doesn't accept the app as notarized:\n${gk}`);
 const built = quiet('plutil', ['-extract', 'CFBundleShortVersionString', 'raw', join(APP, 'Contents/Info.plist')]);
 if (built !== version) fail(`The app says it's ${built}, not ${version}.`);
-console.log(`  Fork.dmg ok · shell files ok · signed · version ${built}`);
+// What installed Forks update from (main.js): the zip, and the .yml that points at it. A beta writes beta-mac.yml,
+// which nobody reads: installed Forks only follow latest-mac.yml, so betas stay link-only.
+const ZIP = join(ROOT, `dist/Fork-${version}-arm64-mac.zip`);
+const YML = join(ROOT, `dist/${beta ? 'beta' : 'latest'}-mac.yml`);
+for (const f of [ZIP, `${ZIP}.blockmap`, YML]) if (!existsSync(f)) fail(`${f.slice(ROOT.length + 1)} is missing.`);
+if (!readFileSync(YML, 'utf8').includes(`version: ${version}\n`)) fail(`${YML.slice(ROOT.length + 1)} isn't for ${version}.`);
+const unzipped = mkdtempSync(join(tmpdir(), 'fork-zip-'));
+quiet('ditto', ['-x', '-k', ZIP, unzipped]);
+const zgk = spawnSync('spctl', ['-a', '-vv', join(unzipped, 'Fork.app')], { encoding: 'utf8' }).stderr;
+rmSync(unzipped, { recursive: true, force: true });
+if (!/source=Notarized Developer ID/.test(zgk)) fail(`The app in the update zip isn't notarized:\n${zgk}`);
+console.log(`  Fork.dmg ok · update zip ok · shell files ok · signed and notarized · version ${built}`);
 
 // --- 7. Publish ------------------------------------------------------------------------------------
 step(`Publishing ${tag}`);
+const assets = [DMG, ZIP, `${ZIP}.blockmap`, YML].map((f) => f.slice(ROOT.length + 1));
 const notesFile = join(mkdtempSync(join(tmpdir(), 'fork-notes-')), 'notes.md');
 writeFileSync(notesFile, notes + '\n');
 quiet('git', ['add', 'package.json', 'package-lock.json', 'CHANGELOG.md']);
 quiet('git', ['commit', '-m', `Fork ${version}`]);
 quiet('git', ['tag', tag]);
 try { loud('git', ['push', 'origin', 'main', tag]); } catch {
-  stop(`Pushing failed. The release commit and tag are made locally; fix the problem, then run:\n  git push origin main ${tag}\n  gh release create ${tag} dist/Fork.dmg --title "Fork ${version}" --notes-file ${notesFile}${beta ? ' --prerelease' : ''}`);
+  stop(`Pushing failed. The release commit and tag are made locally; fix the problem, then run:\n  git push origin main ${tag}\n  gh release create ${tag} ${assets.join(' ')} --title "Fork ${version}" --notes-file ${notesFile}${beta ? ' --prerelease' : ''}`);
 }
 try {
-  loud('gh', ['release', 'create', tag, 'dist/Fork.dmg', '--repo', REPO, '--title', `Fork ${version}`,
+  loud('gh', ['release', 'create', tag, ...assets, '--repo', REPO, '--title', `Fork ${version}`,
     '--notes-file', notesFile, ...(beta ? ['--prerelease'] : ['--latest'])]);
 } catch {
-  stop(`The tag is pushed but the GitHub release wasn't made. Run:\n  gh release create ${tag} dist/Fork.dmg --title "Fork ${version}" --notes-file ${notesFile}${beta ? ' --prerelease' : ''}`);
+  stop(`The tag is pushed but the GitHub release wasn't made. Run:\n  gh release create ${tag} ${assets.join(' ')} --title "Fork ${version}" --notes-file ${notesFile}${beta ? ' --prerelease' : ''}`);
 }
 
 // --- 8. Is it live? --------------------------------------------------------------------------------
@@ -122,7 +147,10 @@ if (beta) {
   if (latest !== tag) stop(`GitHub says the latest release is ${latest}, not ${tag}. Check ${url}`);
   const head = quiet('curl', ['-fsSIL', '-o', '/dev/null', '-w', '%{http_code}', LATEST_DMG]);
   if (head !== '200') stop(`The download link answered ${head}, not 200: ${LATEST_DMG}`);
-  console.log(`  latest = ${tag} · download link ok`);
+  let yml = '';
+  try { yml = quiet('curl', ['-fsSL', `https://github.com/${REPO}/releases/latest/download/latest-mac.yml`]); } catch {}
+  if (!yml.includes(`version: ${version}`)) stop(`latest-mac.yml on the release doesn't say ${version}, so installed Forks won't update. Check ${url}`);
+  console.log(`  latest = ${tag} · download link ok · auto-update file ok`);
   console.log(`\n✓ Fork ${version} is out: ${url}`);
   console.log('  Everyone with Fork sees the update pill within the hour, or the next time they open it.');
   // Bring the PostHog dashboards in line with their chart files (app and website). Never fails the release.

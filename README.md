@@ -11,8 +11,7 @@ https://github.com/user-attachments/assets/c06bb1b9-58f7-4fd4-94d4-fc6b548e3b44
     curl -fsSL https://raw.githubusercontent.com/harshii0509/Fork/main/install.sh | bash
 
 **Or download the app:** [Fork.dmg](https://github.com/harshii0509/Fork/releases/latest/download/Fork.dmg).
-Drag it to Applications. The first time you open it, macOS may say it can't verify the app:
-open System Settings → Privacy & Security and click **Open Anyway**.
+Drag it to Applications and open it.
 
 Requires an Apple Silicon Mac (M1 or newer).
 

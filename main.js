@@ -1,10 +1,12 @@
 import { app, BrowserWindow, clipboard, ipcMain, dialog, nativeTheme, Menu, Notification, screen, shell, webContents } from 'electron';
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, opendirSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import pty from 'node-pty';
+import updater from 'electron-updater';
 import { marked } from 'marked';
 import { suggest, PALETTE, shape, pm, scripts } from './suggest.mjs';
 import { diagnose, explainEntry, looksLikeCommand, ERRORS } from './errors.mjs';
@@ -245,12 +247,18 @@ function notchScreen() {
   const bar = d ? d.workArea.y - d.bounds.y : 0;
   return d && bar >= 30 ? { d, bar } : null;
 }
+// Screens report changes often (the Dock hiding, the menu bar, app switching): rebuild only when the
+// notch itself moved or went, since every rebuild costs a new window.
+let notchKey = null;
 function makeNotch() {
+  const n = notchScreen();
+  const bounds = n && { ...NOTCH_BOX, x: Math.round(n.d.bounds.x + (n.d.bounds.width - NOTCH_BOX.width) / 2), y: n.d.bounds.y };
+  const key = n && `${n.d.id}:${bounds.x}:${bounds.y}:${n.bar}`;
+  if (notchWin && key === notchKey) return;
   notchWin?.destroy();
   notchWin = null;
-  const n = notchScreen();
+  notchKey = key;
   if (!n) return;
-  const bounds = { ...NOTCH_BOX, x: Math.round(n.d.bounds.x + (n.d.bounds.width - NOTCH_BOX.width) / 2), y: n.d.bounds.y };
   const w = new BrowserWindow({
     ...bounds, type: 'panel', frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
     resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
@@ -258,7 +266,10 @@ function makeNotch() {
     webPreferences: { preload: join(HERE, 'notch-preload.cjs') },
   });
   w.setAlwaysOnTop(true, 'screen-saver');
-  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // skipTransformProcessType: without it, Electron briefly turns Fork into a background app on every
+  // call, hiding all its windows and its Dock icon. A panel floats over full-screen apps without that.
+  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+  w.setHiddenInMissionControl(true); // it's part of the notch, not a window: Mission Control and App Exposé leave it out
   w.setIgnoreMouseEvents(true, { forward: true }); // clicks go through, except over the shape (notch:mouse)
   w.setBounds(bounds); // macOS may have nudged it below the menu bar
   w.webContents.on('will-navigate', (e) => e.preventDefault());
@@ -339,7 +350,10 @@ const jevLog = app.isPackaged ? () => {} : console.log;
 const COMMAND_Q = commandQuestion(PALETTE.map((p) => ({ ...p, cmd: shape(p) }))), ERROR_Q = errorQuestion(ERRORS, (id) => explainEntry(id).text);
 // 1. Fork's library (instant). 2. Jev picks the closest known error, shown in Fork's own words. 3. null: "unusual".
 ipcMain.handle('explain', async (_, output, cwd, smart) => {
-  const ctx = errorContext(cwd), hit = diagnose(output, ctx);
+  const ctx = errorContext(cwd);
+  // macOS keeping Fork out of this folder (Downloads, Desktop…) makes tools fail in vague ways
+  // ("An unknown error occurred"), so check the folder itself before reading the output.
+  const hit = (cwd && blockedByMac(cwd) && explainEntry('mac-privacy', ctx)) || diagnose(output, ctx);
   if (hit) return { ...hit, source: 'fork' };
   if (!smart) return null;
   const a = await judge({ terminal_output: String(output).slice(-4000) }, ERROR_Q, jevLog);
@@ -373,10 +387,18 @@ const startWith = new Map(); // webContents id -> saved state it restores, hande
 const gone = new Set(), closingLast = new Set();
 let sessionOn = true, quitting = false, writeTimer;
 const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
-function readSession() {
+// macOS's privacy protection (Downloads, Desktop, Documents…) says EPERM; a missing folder says ENOENT.
+const blockedByMac = (p) => { try { opendirSync(p).closeSync(); return false; } catch (e) { return e.code === 'EPERM'; } };
+// The saved folders are checked off the main thread: the first look inside Downloads, Desktop or
+// Documents waits for macOS's "allow access" prompt, and a sync check froze Fork until it was answered.
+async function readSession() {
   let raw = null;
   try { raw = JSON.parse(readFileSync(SESSION(), 'utf8')); } catch {} // none yet, or damaged: start fresh
-  return clean(raw, { exists: isDir, home: homedir() });
+  const dirs = new Set();
+  clean(raw, { exists: (p) => dirs.add(p), home: homedir() }); // collect them first
+  const ok = new Set();
+  await Promise.all([...dirs].map((d) => stat(d).then((s) => s.isDirectory() && ok.add(d), () => {})));
+  return clean(raw, { exists: (p) => ok.has(p), home: homedir() });
 }
 function writeSession() {
   clearTimeout(writeTimer);
@@ -408,8 +430,12 @@ const collect = (wcs) => Promise.all(wcs.filter((wc) => !gone.has(wc.id)).map((w
   wc.send('session:collect');
 }))).then(writeSession);
 
-// --- Updates: a pill when GitHub has a newer release; Update reruns install.sh ------------------
-// ponytail: not electron-updater, because Squirrel.Mac won't update an ad-hoc signed app. Swap once notarized.
+// --- Updates: downloaded quietly, installed on quit or from the pill's Restart now ----------------
+// electron-updater reads latest-mac.yml on the latest GitHub release, downloads the zip in the background,
+// and Squirrel.Mac checks it's signed by the same team and swaps it in. It can only do that to a Fork in
+// Applications, so anywhere else (opened from the DMG, say), or if the updater fails, it's the
+// old way: the pill offers the newest release and install.sh replaces the app.
+// FORK_UPDATE_URL=http://localhost:8000 serves updates from a local folder instead, from wherever Fork is: for testing.
 const REPO = 'harshii0509/Fork';
 async function release(which) {
   try {
@@ -419,18 +445,39 @@ async function release(which) {
     return { version: j.tag_name.replace(/^v/, ''), notes: marked.parse(j.body || '') };
   } catch { return null; } // offline: say nothing
 }
-let latest = { at: 0, p: null }; // one GitHub call an hour, however many windows ask
+// npm run app builds have no app-update.yml (electron-builder only writes it for the DMG/zip), so they use the old way.
+const inPlace = app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml'))
+  && (app.isInApplicationsFolder() || !!process.env.FORK_UPDATE_URL);
+const autoUpdater = inPlace ? updater.autoUpdater : null; // only touched in an installed Fork
+let ready = null, failed = false, lastCheck = 0; // ready: the downloaded update, waiting for a restart
+if (inPlace) {
+  Object.assign(autoUpdater, { autoDownload: true, autoInstallOnAppQuit: true, allowPrerelease: false, channel: 'latest', logger: null });
+  if (process.env.FORK_UPDATE_URL) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.FORK_UPDATE_URL });
+  autoUpdater.on('update-available', () => { failed = false; });
+  autoUpdater.on('update-not-available', () => { failed = false; });
+  autoUpdater.on('error', () => { failed = true; }); // offline, or something worse: the pill falls back to install.sh
+  autoUpdater.on('update-downloaded', async ({ version }) => {
+    ready = { version, notes: (await release(`tags/v${version}`))?.notes || '', ready: true };
+    for (const w of forkWindows()) w.webContents.send('update:ready');
+  });
+}
+let latest = { at: 0, p: null }; // one check an hour, however many windows ask
 ipcMain.handle('update:check', async () => {
   if (!app.isPackaged) return null; // npm start
+  if (ready) return ready;
+  if (inPlace && Date.now() - lastCheck > 3600_000) { lastCheck = Date.now(); autoUpdater.checkForUpdates().catch(() => {}); }
+  if (inPlace && !failed) return null; // the pill shows once it's downloaded (update:ready)
   if (Date.now() - latest.at > 3600_000) latest = { at: Date.now(), p: release('latest') };
   const r = await latest.p;
   if (!r) latest.at = 0; // failed: try again next time
-  return r && newer(r.version, app.getVersion()) ? r : null;
+  return r && newer(r.version, app.getVersion()) ? { ...r, ready: false } : null;
 });
 ipcMain.handle('update:notes', () => release(`tags/v${app.getVersion()}`));
 ipcMain.handle('version', () => app.getVersion());
-// Once Fork has quit, install.sh swaps in the latest Fork.app and opens it. If the download fails, reopen this one.
+// Restart now: save the tabs first (Squirrel closes the windows before Fork's usual before-quit), then swap and reopen.
+// The old way: once Fork has quit, install.sh swaps in the latest Fork.app and opens it. If the download fails, reopen this one.
 ipcMain.on('update:install', () => {
+  if (ready) return void wrapUp().then(() => autoUpdater.quitAndInstall());
   spawn('/bin/bash', ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.2; done
     s=$(curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh) && bash -c "$s" || open -b com.forkterminal.app`],
   { detached: true, stdio: 'ignore' }).unref();
@@ -455,30 +502,34 @@ ipcMain.on('track', (_, event, props) => usage.track(event, props));
 ipcMain.handle('analytics', (_, on) => (typeof on === 'boolean' ? usage.setOn(on) : usage.isOn()));
 setInterval(() => usage.flush(), app.isPackaged ? 30_000 : 2_000);
 const openedAt = Date.now();
-let flushed = false;
-app.on('before-quit', (e) => { // save the session and send what's left, never holding up quitting for long
-  if (flushed) return;
-  flushed = true;
+let wrapping = null, wrapped = false;
+function wrapUp() { // save the session and send what's left, never holding up quitting for long. Runs once.
   quitting = true;
+  return wrapping ??= (usage.track('app_closed', { minutes_open: Math.round((Date.now() - openedAt) / 60_000) }),
+    collect(forkWindows().map((w) => w.webContents))
+      .then(() => Promise.race([usage.flush(), new Promise((r) => setTimeout(r, 2000))]))
+      .then(() => { wrapped = true; }));
+}
+app.on('before-quit', (e) => {
+  if (wrapped) return;
   e.preventDefault();
-  usage.track('app_closed', { minutes_open: Math.round((Date.now() - openedAt) / 60_000) });
-  collect(forkWindows().map((w) => w.webContents))
-    .then(() => Promise.race([usage.flush(), new Promise((r) => setTimeout(r, 2000))]))
-    .then(() => app.quit());
+  wrapUp().then(() => app.quit());
 });
 
 app.on('will-quit', ai.stop); // never leave a Claude running after Fork quits
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   nativeTheme.themeSource = 'system'; // until the window applies its saved appearance
   buildMenu();
-  const saved = readSession();
+  const saved = await readSession();
   sessionOn = saved.enabled;
   if (sessionOn && saved.windows.length) for (const w of saved.windows) createWindow({ ...w, savedAt: saved.savedAt });
   else createWindow();
   makeNotch();
   // A screen plugged in, the lid closed, the resolution changed: find the notch again.
-  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(ev, makeNotch);
+  let screenTimer;
+  const screenChanged = () => { clearTimeout(screenTimer); screenTimer = setTimeout(makeNotch, 300); };
+  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(ev, screenChanged);
   usage.track('app_opened', { first_launch: usage.firstLaunch });
 });
 // Links in the app view that open a new window (target=_blank) go to the real browser.

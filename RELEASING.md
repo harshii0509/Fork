@@ -13,10 +13,11 @@ How the pieces work underneath (DMG, `install.sh`, the update pill, signing) is 
 |---|---|---|
 | Fixes and small tweaks | **patch** | 0.2.0 → 0.2.1 |
 | New features, or anything people will notice | **minor** | 0.2.1 → 0.3.0 |
-| The public launch | **1.0.0** | signed, renamed, past the private beta |
-| After 1.0: something that changes habits or needs a reinstall | **major** | 1.4.2 → 2.0.0 |
+| Something that changes habits or needs a reinstall | **major** | 1.4.2 → 2.0.0 |
 
-**Betas** are `X.Y.Z-beta.N`, e.g. `0.3.0-beta.1`. They're published as GitHub *prereleases*, and the update pill only looks at the latest normal release, so regular users are never offered a beta. Testers install a beta from its own DMG link. When the final `0.3.0` comes out, testers get the pill like everyone else (`version.mjs` knows `0.3.0` is newer than `0.3.0-beta.2`).
+**1.0.0 is the fresh start:** the first Fork signed and notarized by Apple, and the first that updates itself. The rename, which needs a reinstall, will be a major (2.0.0).
+
+**Betas** are `X.Y.Z-beta.N`, e.g. `0.3.0-beta.1`. They're published as GitHub *prereleases*, and installed Forks only update to the latest normal release, so regular users are never offered a beta. Testers install a beta from its own DMG link. When the final `0.3.0` comes out, testers get it like everyone else (`version.mjs` knows `0.3.0` is newer than `0.3.0-beta.2`).
 
 ## 2. Day to day
 
@@ -58,20 +59,20 @@ People then see the **Fork X.Y.Z** pill within the hour (Fork checks hourly and 
 
 ## 5. When a release is broken
 
-The pill only ever offers a *newer* version, so there's no way to move people back. Instead:
+Updates only ever go to a *newer* version, so there's no way to move people back. And since 1.0 Forks download updates by themselves within the hour, a broken release spreads fast. Instead:
 
 1. **Really bad** (Fork won't open, or updating fails)? Delete that release on GitHub straight away: `gh release delete vX.Y.Z --cleanup-tag`. The "latest" link then serves the previous version to anyone installing. Also run `git tag -d vX.Y.Z`.
 2. Fix it, add a **Fixed** line under Unreleased, and ship the next patch. Everyone who got the broken one updates to it.
 
-## 6. Road to 1.0
+## 6. Roadmap
 
 | Stage | Versions | What ships | Move on when |
 |---|---|---|---|
 | **Polish** | 0.3 – 0.4 | ~~Tabs and splits restored after a relaunch, ⌘F search, clickable links, faster drawing (WebGL), 10,000 lines of history~~ (0.3). Claude Code setup inside onboarding for people who don't have it. A privacy page saying what goes to PostHog and what goes to Anthropic. A "not affiliated with Anthropic" line. | Someone new to terminals installs Fork and finishes a real task without help. |
-| **Private beta** | 0.5 – 0.9 | 10–30 designers testing. A new name, because Fork clashes with fork.dev. An Apple Developer ID ($99/yr), notarization and silent updates (electron-updater). Releases move to a GitHub Action holding the signing keys. A Homebrew tap. | No scary macOS warning, updates happen quietly, and testers' main complaints are fixed. |
-| **Launch** | 1.0.0 | Landing page with a short demo video. Product Hunt and X first, then Show HN once installing is smooth. | |
+| **Private beta** | 0.5 – 0.9 | 10–30 designers testing. A new name, because Fork clashes with fork.dev. ~~An Apple Developer ID ($99/yr), notarization and automatic updates (electron-updater)~~ (1.0.0). Releases move to a GitHub Action holding the signing keys. A Homebrew tap. | No scary macOS warning, updates happen quietly, and testers' main complaints are fixed. |
+| **Launch** | 1.x – 2.0 | Landing page with a short demo video. Product Hunt and X first, then Show HN once installing is smooth. | |
 | **After** | 1.x | A "Claude needs you" blob, translations, an Intel build. | |
 
-**Rename and signing go out together, in one release.** Both change the app's ID and where it installs. That means one "please reinstall" note, the same as 0.1 → 0.2, instead of two.
+**Signing and automatic updates went out first (1.0.0), under the name Fork.** It kept the app ID `com.forkterminal.app`, so the old update pill brought everyone across and nobody had to reinstall. The rename still changes the app's ID and where it installs, so it'll be 2.0.0 with one "please reinstall" note, the same as 0.1 → 0.2.
 
 Background for these choices: the research page "Fork vs the World" (claude.ai artifact) compares Fork with 11 terminals and 9 AI coding tools.

@@ -4,25 +4,29 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const q = new URLSearchParams(location.search);
-  const NH = +q.get('h') || 32;
-  document.documentElement.style.setProperty('--nw', `${+q.get('w') || 185}px`);
+  const NH = +q.get('h') || 32, NW = +q.get('w') || 185;
+  const SIDE = 56; // each side of the notch: the blob on the left, the time or Done/Failed/Ready on the right
+  document.documentElement.style.setProperty('--nw', `${NW}px`);
   document.documentElement.style.setProperty('--nh', `${NH}px`);
+  document.documentElement.style.setProperty('--side', `${SIDE}px`);
 
   let tabs = [], moments = [], hover = false, view = { mode: 'idle' }, tick = 0, momentTimer = 0, drawn = '';
 
-  // The blob for the pill, and one per tab in the list (kept between redraws so they keep animating).
+  // The blob beside the notch, and one per tab in the list (kept between redraws so they keep animating).
   const LOOK = {
     running: ['thinking'], done: ['notify'], failed: ['idle', 'sad', 'bad'], dozing: ['sleep'], ready: ['idle'],
     app: ['idle', 'happy'],
   };
-  const pillBlob = Blobs.status(28);
+  const sideBlob = Blobs.status(20);
   const rowBlobs = new Map();
   const rowBlob = (key) => { if (!rowBlobs.has(key)) rowBlobs.set(key, Blobs.status(20)); return rowBlobs.get(key); };
   const look = (blob, key) => blob.set(...(LOOK[key] || LOOK.ready));
 
-  const SIZES = { // the shape's width and height in each mode (the notch's own height is on top)
-    working: () => [330, NH + 58],
-    moment: () => [330, NH + 58],
+  // The shape's width and height in each mode. Working and moments stay in the menu bar, beside the
+  // notch; only hovering (the list) grows down below it.
+  const SIZES = {
+    working: () => [NW + 2 * SIDE, NH],
+    moment: () => [NW + 2 * SIDE, NH],
     list: (n) => [360, NH + 8 + Math.min(n, 6) * 46 - 2 + 12], // rows are 44 + 2 apart; 8 above, 12 below
   };
 
@@ -31,6 +35,7 @@
     view = NotchLogic.pick({ tabs, moments, hover, now });
     const shape = $('shape'), content = $('content');
     shape.classList.toggle('open', view.mode !== 'idle');
+    shape.classList.toggle('compact', view.mode === 'working' || view.mode === 'moment');
     if (view.mode === 'idle') {
       shape.style.width = shape.style.height = '';
       // Leave what was there while the shape closes, so it fades rather than vanishes.
@@ -45,7 +50,7 @@
     if (sig === drawn && view.mode !== 'idle') {
       const bodies = content.querySelectorAll('.body');
       if (view.mode === 'list') view.rows.forEach((r, i) => { bodies[i].textContent = r.line; });
-      else bodies[0].textContent = view.body;
+      else content.querySelector('.side').textContent = view.side;
     } else if (view.mode === 'list') {
       const keys = view.rows.map((r) => `${r.win}:${r.pane}:${r.name}`);
       for (const [k, b] of rowBlobs) if (!keys.includes(k)) { b.destroy(); rowBlobs.delete(k); }
@@ -59,12 +64,10 @@
       });
     } else if (view.mode !== 'idle') {
       const kind = view.mode === 'working' ? 'running' : view.kind;
-      const go = view.mode === 'moment' ? { failed: 'What went wrong?', app: 'Show it' }[view.kind] || 'Show' : '';
-      content.innerHTML = `<div class="pill ${kind}"><span class="slot"></span>
-        <div class="text"><div class="title">${esc(view.title)}</div><div class="body">${esc(view.body)}</div></div>
-        ${go ? `<span class="go">${esc(go)}</span>` : ''}</div>`;
-      look(pillBlob, kind);
-      content.querySelector('.slot').replaceWith(pillBlob.el);
+      content.innerHTML = `<div class="beside ${kind}" title="${esc(`${view.title} ${view.body}`)}">
+        <span class="left"><span class="slot"></span></span><span class="camera"></span><span class="side">${esc(view.side)}</span></div>`;
+      look(sideBlob, kind);
+      content.querySelector('.slot').replaceWith(sideBlob.el);
     }
     if (view.mode !== 'idle') drawn = sig;
     // The time ticks while something's working or the list is open.
@@ -97,7 +100,7 @@
   $('content').addEventListener('click', (e) => {
     const row = e.target.closest('.row');
     if (row) { const r = view.rows[+row.dataset.i]; return notch.go({ win: r.win, pane: r.pane, kind: 'tab' }); }
-    if (!e.target.closest('.pill')) return;
+    if (!e.target.closest('.beside')) return;
     const t = view.mode === 'working' ? view.target : view;
     notch.go({ win: t.win, pane: t.pane, action: view.mode === 'moment' ? view.kind : null, url: view.url, kind: view.mode === 'moment' ? view.kind : 'working' });
   });

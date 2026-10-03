@@ -37,6 +37,21 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+**Fork 1.0: signed by Apple, and it updates itself.**
+
+**New**
+- **Updates download by themselves.** When a new Fork is out, it downloads quietly in the background. Once it's ready, a **Restart** pill shows in the top bar: click it to update now, or keep working and it updates the next time you quit Fork. Your tabs come back either way.
+
+**Better**
+- **Fork is signed and checked by Apple.** Downloading Fork.dmg from the website no longer shows "Apple could not verify Fork", so there's no trip to System Settings to click Open Anyway. It opens like any other Mac app.
+- **The notch stays a notch.** While Claude works, the blob sits just left of the notch and how long it's been sits just right of it, all inside the menu bar. When something's done, failed or your app is ready, it says Done, Failed or Ready there for a few seconds. Click it to go there. Nothing drops down unless you hover, which still lists every tab.
+
+**Fixed**
+- **Fork keeps its access to Downloads, Desktop and Documents.** Every new version of Fork looked like a different app to macOS, so the permission you'd given was lost and terminals in those folders failed with `EPERM: operation not permitted`. Now one **Allow** lasts through updates. macOS asks one more time after this update.
+- **No more freeze on macOS's "access your Downloads folder" question.** Fork used to stop and wait while it was on screen, with a spinning cursor. Now it keeps responding while you answer.
+- **What went wrong? spots folders macOS is keeping Fork out of**, even when the tool only says "An unknown error occurred", and **Type the fix** opens the right page in System Settings.
+- **No more windows popping up or a missing Dock icon.** Setting up the notch briefly hid Fork, Dock icon and all, and the notch kept setting itself up again whenever your screen changed. Now Fork stays put, and the notch only rebuilds when it really moves, like when you close the lid or plug in a screen. The notch also no longer shows up as an empty Fork window with a black bar in Mission Control.
+
 ### 0.4.0 — 2026-10-01
 
 **New**

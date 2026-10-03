@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('dt', {
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateNotes: () => ipcRenderer.invoke('update:notes'), // this version's release notes
   updateInstall: () => ipcRenderer.send('update:install'),
+  onUpdateReady: (fn) => ipcRenderer.on('update:ready', fn), // downloaded: show the pill now, not at the next check
 
   // Reopen the way you left it (session.mjs, main.js)
   sessionStart: () => ipcRenderer.invoke('session:start'), // this window's saved state, or null
