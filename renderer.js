@@ -333,12 +333,24 @@ function renderTabs() {
       url && `<div class="ws-line">${ph('globe')}<span>${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span></div>`,
     ].filter(Boolean).join('');
     return `<div class="tab ${i === tabIx ? 'active' : ''}" data-i="${i}" ${i < 9 ? `data-key="⌘${i + 1}"` : ''} title="${esc(tabState(t).label + where)}">
-      <div class="ws-head"><span class="ws-sq" style="--sq: var(--ws-${(t.color ?? 0) + 1})"></span><span class="tname">${esc(tabName(t))}</span>
+      <div class="ws-head"><span class="ws-sq" style="--sq: var(--ws-${(t.color ?? 0) + 1})">${badge(t)}</span><span class="tname">${esc(tabName(t))}</span>
         <button class="tclose" data-close="${i}" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button></div>
       <div class="ws-info">${info}</div></div>`;
   }).join('');
   syncNotch();
   saveSoon(); // tabs, splits, folders and busy states all pass through here
+}
+
+// The corner badge on a workspace's square (index.html .ws-badge): working, needs you (or finished while you
+// were away), failed. It pops in only when the state changes, not on every redraw.
+const BADGES = { running: ['run', 'Working'], done: ['done', 'Needs you'], failed: ['failed', 'Failed'] };
+const RING = [0, 1, 2, 7, null, 3, 6, 5, 4]; // each pixel's turn, clockwise from the top left; the centre sits still
+function badge(t) {
+  const key = tabKey(t), [s, label] = BADGES[key] || [], enter = key !== t.badgeWas && s;
+  t.badgeWas = key;
+  if (!s) return '';
+  const px = s === 'run' ? RING.map((n) => (n == null ? '<i></i>' : `<i style="--i:${n}"></i>`)).join('') : '';
+  return `<span class="ws-badge${enter ? ' enter' : ''}" data-s="${s}" role="img" aria-label="${label}" style="--phase:-${Date.now() % 1200}ms">${px}</span>`;
 }
 
 // Each workspace's square: the colour the fewest others have, so the first three always differ.
