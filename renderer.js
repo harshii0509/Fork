@@ -39,6 +39,21 @@ function useGpu(p, on) {
   } else if (!on && p.gl) { p.gl.dispose(); p.gl = null; }
 }
 
+// As many rows and columns as fit the pane, and tell the shell. Hidden tabs refit when shown (their ResizeObserver).
+function refit(p) {
+  if (!p.el.offsetParent) return;
+  p.fit.fit();
+  dt.resize(p.id, p.term.cols, p.term.rows);
+}
+
+// A row's height can change while the pane stays the same size: the window moves to a screen with another
+// scale, or a font finishes loading. Without a refit the rows overflow and the bottom line (the prompt) is cut.
+const refitAll = () => requestAnimationFrame(() => { for (const p of panes.values()) if (!isGame(p)) refit(p); });
+(function watchScale() {
+  matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => { refitAll(); watchScale(); }, { once: true });
+})();
+document.fonts.addEventListener('loadingdone', refitAll);
+
 // screen/when: output saved from last time (session.mjs), shown above a quiet "Restored" line.
 async function newPane(cwd, { screen, when } = {}) {
   const id = await dt.create(cwd);
@@ -122,11 +137,7 @@ async function newPane(cwd, { screen, when } = {}) {
     const now = agentOf(pane)?.titled ? Protocols.claudeTitle(title) : null;
     if (now !== null) setThinking(pane, now);
   });
-  new ResizeObserver(() => {
-    if (!el.offsetParent) return; // hidden tab
-    fit.fit();
-    dt.resize(id, term.cols, term.rows);
-  }).observe(inner);
+  new ResizeObserver(() => refit(pane)).observe(inner);
 
   // Shell integration (see shell/.zshrc): OSC 7 = current folder, OSC 133 C/D = command started/finished.
   term.parser.registerOscHandler(7, (data) => {
@@ -1547,7 +1558,7 @@ async function applySettings(s) {
     if (isGame(p)) continue;
     Object.assign(p.term.options, xtermOpts(s));
     useGpu(p, s.smoothing === 'on');
-    if (p.el.offsetParent) { p.fit.fit(); dt.resize(p.id, p.term.cols, p.term.rows); } // hidden tabs refit when shown
+    refit(p);
   }
 }
 
