@@ -2,7 +2,7 @@
 // between start() and stop(), so a hidden one costs nothing. Needs vendor/bloub/bloub.js (the `Bloub` global) first.
 window.Blobs = (() => {
   const all = [];
-  let color = '#7c6cff', bad = '#e5484d';
+  let color = '#f8f8f7', bad = '#e5484d';
   const still = matchMedia('(prefers-reduced-motion: reduce)');
 
   // `state` plays while running; between runs it rests as idle, so each start() morphs into it.

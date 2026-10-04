@@ -1125,7 +1125,7 @@ $('oopsClose').onclick = hideOops;
 // Every match is tinted with the theme's accent; the current one is also outlined in the text colour.
 let findPane = null;
 const findOpen = () => $('find').classList.contains('show');
-const hex6 = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#7c6cff');
+const hex6 = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#f8f8f7');
 const mix = (a, b, t) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex6(a).slice(i, i + 2), 16) * (1 - t)
   + parseInt(hex6(b).slice(i, i + 2), 16) * t).toString(16).padStart(2, '0')).join('');
 function findLooks() {

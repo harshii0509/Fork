@@ -293,7 +293,7 @@ window.Games = (() => {
 
   // --- Everything below touches the page, and runs only once setup() is called -------------------
   let els, ctx, img, scr, blob, opts = {};
-  let colors = { bg: '#141416', ink: '#ececf1', accent: '#7c6cff', fontSize: 13 }, rgb = [];
+  let colors = { bg: '#141416', ink: '#ececf1', accent: '#f8f8f7', fontSize: 13 }, rgb = [];
   let game = null, state = null, mode = 'closed', before = null, pickIx = 0, doneText = '';
   let raf = 0, last = 0, acc = 0, newBest = false;
   let px = 3, world = { w: W, h: H }, dims = null; // pixel size, what fits the pane now, what the current game was started at
