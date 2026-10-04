@@ -37,6 +37,9 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+**Redesign (ui-redesign branch)**
+- The blob mascot is gone: workspaces show their state with shapes now (the square splits into a rippling lattice while working; a yellow or red badge when it needs you or failed). The welcome cards are text only, and the notch leaves the blob's spot empty for now.
+
 ### 1.0.2 — 2026-10-04
 
 **New**

@@ -3,11 +3,11 @@
 // resolve when the person finishes or skips. renderer.js decides when each runs.
 window.Onboarding = (() => {
   const CARDS = [
-    { expression: 'happy', title: 'A terminal is a chat with your computer',
+    { title: 'A terminal is a chat with your computer',
       text: 'You type what you want and it does it. Fork shows you the words, so you never have to remember them.' },
-    { expression: 'curious', title: 'Fork does the typing for you',
+    { title: 'Fork does the typing for you',
       text: 'Click a folder, a file or a suggestion, and Fork puts the real command in the terminal. Anything that can’t be undone asks first.' },
-    { expression: 'excited', title: 'Stuck? Just ask',
+    { title: 'Stuck? Just ask',
       text: 'Press ⌘K and say what you want in plain words. If something goes wrong, Fork explains it and suggests a fix.' },
   ];
 
@@ -35,10 +35,8 @@ window.Onboarding = (() => {
   };
 
   // --- Welcome cards (#welcomeOv in index.html) -------------------------------------------------
-  let blob = null; // made once, reused when the tour is replayed
   function welcome() {
     return new Promise((resolve) => {
-      blob ??= Blobs.mount($('welcomeBlob'), { size: 72, state: 'idle', expression: CARDS[0].expression });
       let i = 0;
       const show = () => {
         const c = CARDS[i];
@@ -46,11 +44,9 @@ window.Onboarding = (() => {
         $('welcomeText').textContent = c.text;
         $('welcomeDots').innerHTML = CARDS.map((_, j) => `<i class="${j === i ? 'on' : ''}"></i>`).join('');
         $('welcomeNext').textContent = i === CARDS.length - 1 ? 'Get started' : 'Next';
-        blob.ctrl.setExpression(c.expression);
       };
       const end = (done) => {
         unkey();
-        blob.stop();
         $('welcomeOv').classList.remove('show');
         $('welcomeNext').onclick = $('welcomeSkip').onclick = null;
         resolve({ done, card: i + 1 });
@@ -61,7 +57,6 @@ window.Onboarding = (() => {
       $('welcomeNext').onclick = next;
       $('welcomeSkip').onclick = () => end(false);
       show();
-      blob.start();
       $('welcomeOv').classList.add('show');
     });
   }

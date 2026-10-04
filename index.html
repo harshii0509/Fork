@@ -302,9 +302,6 @@
   /* Files stay usable while something runs (that's when Claude is working); moving folders waits. */
   .busy .chips .chip, .busy .crumb { opacity: .35; pointer-events: none; }
   .running { display: none; align-items: center; gap: 10px; color: var(--dim); }
-  /* The Bloub mascot (blob.js) marks work in progress; its SVG sizes the box. */
-  .blob { display: inline-grid; place-items: center; flex: none; margin: -10px -6px; } /* dots sit mid-SVG: don't grow the row */
-  .blob[hidden] { display: none; }
   .stop { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); }
   .stop:hover { border-color: var(--bad); color: var(--bad); }
 
@@ -462,7 +459,6 @@
   /* First run (onboarding.js): welcome cards, then a spotlight that walks through the app. */
   #welcomeOv { z-index: 12; } /* above the start screen and What's new */
   .welcome { padding: 32px 32px 20px; text-align: center; }
-  .welcome .blob { margin: 0 0 12px; }
   .welcome h1 { margin: 0 0 8px; font-size: 22px; text-wrap: balance; }
   .welcome p { margin: 0 auto; max-width: 400px; color: var(--dim); line-height: 1.5; min-height: 3em; text-wrap: pretty; }
   .wdots { display: flex; justify-content: center; gap: 6px; margin: 22px 0 14px; }
@@ -549,7 +545,6 @@
     background: color-mix(in srgb, var(--bg) 80%, transparent); }
   .game-msg h2 { margin: 8px 0 0; font-size: 14px; color: var(--text); text-transform: uppercase; letter-spacing: .08em; }
   .game-msg p { margin: 0 0 10px; color: var(--dim); }
-  .game-blob { display: grid; place-items: center; }
   .game-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; }
   .game-btns button { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; color: var(--text); }
   .game-btns button:hover { background: var(--hover); }
@@ -786,7 +781,6 @@
 
   <footer class="dock">
     <div class="oops" id="oops">
-      <span class="blob" id="oopsBlob" hidden></span>
       <p id="oopsText">That didn't work.</p>
       <button id="explainBtn">What went wrong?</button>
       <button id="fixBtn" style="display:none">Type the fix</button>
@@ -796,7 +790,7 @@
     <div class="ready" id="ready"><span class="dot"></span><p>Your app is running at <b id="readyUrl"></b></p>
       <button class="go" id="readyShow">Show it</button><button class="x" id="readyClose" aria-label="Dismiss"><i data-icon="x"></i></button></div>
     <div class="hint" id="hint"></div>
-    <div class="running"><span class="blob" id="runBlob"></span><span id="runText">Something is running.</span> <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button><button class="play" id="playGame"><i data-icon="gamepad-2"></i>Play a game while you wait</button></div>
+    <div class="running"><span id="runText">Something is running.</span> <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button><button class="play" id="playGame"><i data-icon="gamepad-2"></i>Play a game while you wait</button></div>
     <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next workspace</span><span><b>⌘F</b> find</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
   </footer>
   </div>
@@ -804,7 +798,6 @@
 
 <div class="overlay" id="welcomeOv">
   <div class="card welcome" role="dialog" aria-live="polite">
-    <span class="blob" id="welcomeBlob"></span>
     <h1 id="welcomeTitle"></h1>
     <p id="welcomeText"></p>
     <div class="wdots" id="welcomeDots"></div>
@@ -859,8 +852,6 @@
 <script src="preview.js"></script>
 <script src="protocols.js"></script>
 <script src="themes.js"></script>
-<script src="vendor/bloub/bloub.js"></script>
-<script src="blob.js"></script>
 <script src="onboarding.js"></script>
 <script src="games.js"></script>
 <script src="reader.js"></script>

@@ -12,7 +12,6 @@
     "dashboard": "node scripts/posthog-dashboard.mjs",
     "dmg:background": "electron build/render-dmg-background.mjs",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper",
-    "build:bloub": "esbuild vendor/bloub/src/entry.ts --bundle --format=iife --global-name=Bloub --minify --legal-comments=inline --banner:js=\"/* Bloub (MIT, see vendor/bloub/LICENSE). Built from vendor/bloub/src by npm run build:bloub. */\" --outfile=vendor/bloub/bloub.js",
     "dist": "electron-builder --mac --publish never",
     "app": "electron-builder --mac dir --arm64 --publish never && bash scripts/install-app.sh"
   },
@@ -45,7 +44,6 @@
   "devDependencies": {
     "electron": "^41.10.7",
     "electron-builder": "^26.15.3",
-    "esbuild": "^0.28.2",
     "motion": "^13.4.0"
   },
   "build": {
@@ -64,7 +62,6 @@
       "!install.sh",
       "!build/**",
       "!dist/**",
-      "!vendor/bloub/src/**",
       "!shell/.zsh_history",
       "!**/.DS_Store",
       "!.claude/**"

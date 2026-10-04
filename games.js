@@ -3,7 +3,6 @@
 // terminal font) in the theme's colours, as many as fit, the way text fills a terminal.
 // The rules are plain functions of a game's state (check.mjs tests them). setup() builds the pane's
 // contents (Games.el) and wires keys, beeps and best scores; renderer.js puts it in a pane.
-// Needs blob.js first (the mascot).
 window.Games = (() => {
   const W = 84, H = 48; // the smallest world, and the picker's little previews: a Nokia 3310's screen
 
@@ -292,7 +291,7 @@ window.Games = (() => {
   const byId = Object.fromEntries(LIST.map((g) => [g.id, g]));
 
   // --- Everything below touches the page, and runs only once setup() is called -------------------
-  let els, ctx, img, scr, blob, opts = {};
+  let els, ctx, img, scr, opts = {};
   let colors = { bg: '#141416', ink: '#ececf1', accent: '#f8f8f7', fontSize: 13 }, rgb = [];
   let game = null, state = null, mode = 'closed', before = null, pickIx = 0, doneText = '';
   let raf = 0, last = 0, acc = 0, newBest = false;
@@ -384,7 +383,7 @@ window.Games = (() => {
     els.hint.textContent = (pickOn ? '← → choose · Enter play' : game?.hint ?? '') + ' · Esc back to the terminal · ⌘W close';
   };
 
-  // What shows over the game: the picker, or a message with the blob.
+  // What shows over the game: the picker, or a message.
   function show(m) {
     if (m === 'play') acc = 0; // no catching up on the time spent paused
     mode = m;
@@ -402,8 +401,6 @@ window.Games = (() => {
       els.msgTitle.textContent = say[0];
       els.msgText.textContent = say[1];
       els.msgBtns.innerHTML = say.slice(2).map(([act, label, key]) => `<button data-act="${act}"><kbd>${key}</kbd>${label}</button>`).join('');
-      const look = { start: ['idle', 'happy'], paused: ['sleep'], over: newBest ? ['idle', 'excited'] : ['idle', 'sad'], done: ['notify'] }[m];
-      blob?.set(look[0], look[1] || null);
     }
     status();
     draw();
@@ -504,7 +501,7 @@ window.Games = (() => {
     root.innerHTML = `
       <div class="game-stage"><canvas width="${W}" height="${H}" tabindex="0" aria-label="Game"></canvas></div>
       <div class="game-pick" hidden></div>
-      <div class="game-msg" hidden><span class="game-blob"></span><h2></h2><p></p><div class="game-btns"></div></div>
+      <div class="game-msg" hidden><h2></h2><p></p><div class="game-btns"></div></div>
       <div class="game-status"><b></b><span class="game-stats">score <b>0</b>  best <b>0</b></span><span class="game-hint"></span>
         <button class="game-sound" aria-label="Sound">${window.icon?.('volume-x') ?? ''}${window.icon?.('volume-2') ?? ''}</button></div>`;
     const q = (sel) => root.querySelector(sel);
@@ -517,8 +514,6 @@ window.Games = (() => {
     ctx = els.canvas.getContext('2d');
     img = ctx.createImageData(W, H);
     scr = screen();
-    blob = window.Blobs?.status(44);
-    if (blob) { blob.el.className = 'game-blob'; q('.game-blob').replaceWith(blob.el); }
     palette();
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('keyup', onKey, true);

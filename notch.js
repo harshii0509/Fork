@@ -5,22 +5,12 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const q = new URLSearchParams(location.search);
   const NH = +q.get('h') || 32, NW = +q.get('w') || 185;
-  const SIDE = 56; // each side of the notch: the blob on the left, the time or Done/Failed/Ready on the right
+  const SIDE = 56; // each side of the notch: empty on the left for now, the time or Done/Failed/Ready on the right
   document.documentElement.style.setProperty('--nw', `${NW}px`);
   document.documentElement.style.setProperty('--nh', `${NH}px`);
   document.documentElement.style.setProperty('--side', `${SIDE}px`);
 
   let tabs = [], moments = [], hover = false, view = { mode: 'idle' }, tick = 0, momentTimer = 0, drawn = '';
-
-  // The blob beside the notch, and one per tab in the list (kept between redraws so they keep animating).
-  const LOOK = {
-    running: ['thinking'], done: ['notify'], failed: ['idle', 'sad', 'bad'], dozing: ['sleep'], ready: ['idle'],
-    app: ['idle', 'happy'],
-  };
-  const sideBlob = Blobs.status(20);
-  const rowBlobs = new Map();
-  const rowBlob = (key) => { if (!rowBlobs.has(key)) rowBlobs.set(key, Blobs.status(20)); return rowBlobs.get(key); };
-  const look = (blob, key) => blob.set(...(LOOK[key] || LOOK.ready));
 
   // The shape's width and height in each mode. Working and moments stay in the menu bar, beside the
   // notch; only hovering (the list) grows down below it.
@@ -52,22 +42,13 @@
       if (view.mode === 'list') view.rows.forEach((r, i) => { bodies[i].textContent = r.line; });
       else content.querySelector('.side').textContent = view.side;
     } else if (view.mode === 'list') {
-      const keys = view.rows.map((r) => `${r.win}:${r.pane}:${r.name}`);
-      for (const [k, b] of rowBlobs) if (!keys.includes(k)) { b.destroy(); rowBlobs.delete(k); }
       content.innerHTML = `<div class="list">${view.rows.map((r, i) => `
-        <div class="row" data-i="${i}"><span class="slot"></span>
+        <div class="row" data-i="${i}">
           <div class="text"><div class="title">${esc(r.name)}</div><div class="body">${esc(r.line)}</div></div></div>`).join('')}</div>`;
-      content.querySelectorAll('.slot').forEach((slot, i) => {
-        const b = rowBlob(keys[i]);
-        look(b, view.rows[i].state);
-        slot.replaceWith(b.el);
-      });
     } else if (view.mode !== 'idle') {
       const kind = view.mode === 'working' ? 'running' : view.kind;
       content.innerHTML = `<div class="beside ${kind}" title="${esc(`${view.title} ${view.body}`)}">
-        <span class="left"><span class="slot"></span></span><span class="camera"></span><span class="side">${esc(view.side)}</span></div>`;
-      look(sideBlob, kind);
-      content.querySelector('.slot').replaceWith(sideBlob.el);
+        <span class="left"></span><span class="camera"></span><span class="side">${esc(view.side)}</span></div>`;
     }
     if (view.mode !== 'idle') drawn = sig;
     // The time ticks while something's working or the list is open.

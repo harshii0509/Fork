@@ -307,7 +307,6 @@ function closePane(id, { exited = false, force = false } = {}) {
   panes.delete(id);
   t.root = Panes.remove(t.root, id);
   if (!t.root) {
-    t.blob?.destroy();
     tabs.splice(tabs.indexOf(t), 1);
     if (!tabs.length) return forgetAndClose(); // last tab closes the window, and it won't come back
     tabIx = t === cur ? Math.min(tabIx, tabs.length - 1) : tabs.indexOf(cur);
@@ -332,7 +331,6 @@ function goTab(i) {
 
 // The sidebar's workspaces: one per tab. A coloured square and the folder's name; under it the branch,
 // what's changed (gitSoon) and the app it's serving (appFound), each only when there is one.
-// Each tab's status blob (blob.js) isn't shown in this design; its state is still in the row's tooltip.
 // Rows are kept and updated in place (not redrawn), so a square's split, merge and wave, and a badge popping
 // in, carry on smoothly however often this runs.
 const rowOf = new WeakMap(); // tab -> its row
@@ -445,14 +443,14 @@ function renameTerminal(p) {
   input.onblur = () => done(true);
 }
 
-// What each tab's blob shows. With split panes, the most pressing pane wins.
+// Each tab's state, in words (the row's tooltip, the notch). With split panes, the most pressing pane wins.
 const DOZE_AFTER = 5 * 60e3;
 const LOOKS = {
-  running: { label: 'Running', state: 'thinking' },
-  failed: { label: 'Last command failed', state: 'idle', expression: 'sad', tint: 'bad' },
-  done: { label: 'Finished while you were away', state: 'notify' },
-  dozing: { label: 'Dozing', state: 'sleep' },
-  ready: { label: 'Ready', state: 'idle' },
+  running: { label: 'Running' },
+  failed: { label: 'Last command failed' },
+  done: { label: 'Finished while you were away' },
+  dozing: { label: 'Dozing' },
+  ready: { label: 'Ready' },
 };
 const panesOf = (t) => Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
 function tabKey(t) {
@@ -486,16 +484,7 @@ function syncNotch() {
     }));
   }, 250);
 }
-function syncTabBlobs() {
-  for (const t of tabs) {
-    if (!t.blob) continue;
-    const look = tabState(t);
-    t.blob.set(look.state, look.expression, look.tint);
-    t.blob.el.setAttribute('aria-label', look.label);
-    t.blob.el.setAttribute('role', 'img');
-  }
-}
-setInterval(() => { syncTabBlobs(); syncNotch(); }, 30e3); // so an untouched tab dozes off on its own
+setInterval(syncNotch, 30e3); // so an untouched tab dozes off on its own
 
 $('tabs').onclick = (e) => {
   const c = e.target.closest('.tclose');
@@ -608,7 +597,6 @@ dt.onGoPane((id, action) => { // clicked a notification or the notch
   if (action === 'app' && readyUrl) $('readyShow').click();
 });
 
-const runBlob = Blobs.mount($('runBlob'), { size: 34 });
 function syncBusy() {
   const p = activeTerm(), on = working(p);
   $('app').classList.toggle('busy', !!p?.busy); // chips and folders wait while anything is open
@@ -617,7 +605,6 @@ function syncBusy() {
   $('runText').textContent = a ? `${a.name} is working.` : 'Something is running.';
   $('stop').textContent = a ? 'Stop it (Esc)' : 'Stop it (Ctrl+C)'; // Esc interrupts an AI tool; Ctrl+C would quit it
   $('stop').dataset.key = a ? 'esc' : '⌃C';
-  on ? runBlob.start() : runBlob.stop();
 }
 
 // --- Games (games.js): Snake, Stack and Space Run, in a pane of their own -----------------------
@@ -1090,9 +1077,7 @@ function showOops() {
   $('explainBtn').style.display = ''; $('fixBtn').style.display = 'none'; $('askAiBtn').style.display = 'none';
   $('oops').classList.add('show');
 }
-const oopsBlob = Blobs.mount($('oopsBlob'), { size: 40, expression: 'curious' });
-function reading(on) { $('oopsBlob').hidden = !on; on ? oopsBlob.start() : oopsBlob.stop(); }
-function hideOops() { $('oops').classList.remove('show'); reading(false); }
+function hideOops() { $('oops').classList.remove('show'); }
 // The failed command and what it printed: from its prompt line (at most 80 lines), or the last 40 lines.
 function lastLines() {
   const p = activeTerm(), b = p.term.buffer.active, end = b.baseY + b.cursorY, out = [];
@@ -1123,9 +1108,7 @@ $('explainBtn').onclick = async () => {
 $('askAiBtn').onclick = async () => {
   $('askAiBtn').style.display = 'none'; $('fixBtn').style.display = 'none';
   $('oopsText').textContent = 'Reading the error…';
-  reading(true);
   const r = await dt.explainAI(failed.output, failed.cwd);
-  reading(false);
   explained(r, null);
   dt.track('error_explained', { source: 'ai', ok: !r.failed });
 };
@@ -1543,7 +1526,6 @@ async function applySettings(s) {
     tree: t.dark ? '#e6e6e6' : t.foreground, // files and folders; #e6e6e6 would vanish on a light theme
     blue: t.blue, magenta: t.magenta, cyan: t.cyan, mono: fontStack(s.font), 'mono-size': `${s.size}px` }; // the last five: code previews
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(`--${k}`, v);
-  Blobs.setColor(t.accent, t.red);
   Games.setColors({ bg: t.background, ink: t.foreground, accent: t.accent, fontSize: s.size }); // its pixels follow the font
   root.style.colorScheme = root.dataset.mode = t.dark ? 'dark' : 'light'; // native bits match; CSS can say :root[data-mode=light]
   root.dataset.smooth = s.smoothing;

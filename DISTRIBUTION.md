@@ -64,7 +64,7 @@ The app builds and installs locally. Everything lives in `package.json`:
 
 - **`npm run app`** builds `Fork.app` and installs it into `/Applications`, replacing the old copy. Quit Fork first. This is the everyday command after making changes.
 - **`npm run dist`** makes `dist/Fork.dmg` for sharing.
-- The `build` block includes every file except dev-only ones (`*.md`, `check.mjs`, `build/`, `vendor/bloub/src/`, `shell/.zsh_history`), so new files ship without editing a list. It unpacks `shell/` (zsh can't read inside `app.asar`) and `node-pty` (its `spawn-helper`).
+- The `build` block includes every file except dev-only ones (`*.md`, `check.mjs`, `build/`, `shell/.zsh_history`), so new files ship without editing a list. It unpacks `shell/` (zsh can't read inside `app.asar`) and `node-pty` (its `spawn-helper`).
 - `npmRebuild: false`: node-pty ships prebuilt binaries that work with Electron as they are, so nothing is compiled.
 - **Signing:** Developer ID with the hardened runtime and `build/entitlements.mac.plist`; releases are notarized. See section 3.
 - `main.js` points `ZDOTDIR` at `app.asar.unpacked/shell`, and borrows `PATH` from an interactive login shell so `claude` is found when the app is opened from Finder or the Dock.

@@ -71,7 +71,7 @@ Updates only ever go to a *newer* version, so there's no way to move people back
 | **Polish** | 0.3 – 0.4 | ~~Tabs and splits restored after a relaunch, ⌘F search, clickable links, faster drawing (WebGL), 10,000 lines of history~~ (0.3). Claude Code setup inside onboarding for people who don't have it. A privacy page saying what goes to PostHog and what goes to Anthropic. A "not affiliated with Anthropic" line. | Someone new to terminals installs Fork and finishes a real task without help. |
 | **Private beta** | 0.5 – 0.9 | 10–30 designers testing. A new name, because Fork clashes with fork.dev. ~~An Apple Developer ID ($99/yr), notarization and automatic updates (electron-updater)~~ (1.0.0). Releases move to a GitHub Action holding the signing keys. A Homebrew tap. | No scary macOS warning, updates happen quietly, and testers' main complaints are fixed. |
 | **Launch** | 1.x – 2.0 | Landing page with a short demo video. Product Hunt and X first, then Show HN once installing is smooth. | |
-| **After** | 1.x | A "Claude needs you" blob, translations, an Intel build. | |
+| **After** | 1.x | A "Claude needs you" signal, translations, an Intel build. | |
 
 **Signing and automatic updates went out first (1.0.0), under the name Fork.** It kept the app ID `com.forkterminal.app`, so the old update pill brought everyone across and nobody had to reinstall. The rename still changes the app's ID and where it installs, so it'll be 2.0.0 with one "please reinstall" note, the same as 0.1 → 0.2.
 

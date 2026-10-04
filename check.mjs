@@ -259,16 +259,6 @@ assert.equal(shelf.filter((b) => b.path === '/b/10.pdf').length, 1); // reopenin
 assert.equal(remember('broken', { path: '/x.pdf' }).map((b) => b.path).join(), '/x.pdf'); // damaged storage
 assert.deepEqual([percent(0.123), percent(undefined), percent(2)], ['12%', '0%', '100%']);
 
-// --- The Bloub mascot bundle (vendor/bloub/bloub.js): loads standalone and draws the thinking pose ---
-const bctx = { performance, setTimeout, clearTimeout };
-runInNewContext(readFileSync(new URL('./vendor/bloub/bloub.js', import.meta.url), 'utf8'), bctx);
-const bloub = new bctx.Bloub.BloubController({ state: 'thinking', color: '#7c6cff' });
-const pose = bloub.sample(1);
-assert.ok(pose.bodyPath.length > 20 && !/NaN|Infinity/.test(pose.bodyPath));
-assert.ok(pose.dots.length >= 2 && pose.dots.every((d) => Number.isFinite(d.x + d.r)));
-bloub.dispose();
-assert.equal(typeof bctx.Bloub.createPixelView, 'function'); // blob.js draws them as pixel art
-
 // --- Games (games.js, browser script): the rules of Snake, Stack and Space Run ---
 const gm = { window: {} };
 runInNewContext(readFileSync(new URL('./games.js', import.meta.url), 'utf8'), gm);
@@ -332,7 +322,7 @@ runInNewContext(readFileSync(new URL('./onboarding.js', import.meta.url), 'utf8'
 const { CARDS, STEPS } = ob.window.Onboarding;
 const page = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 assert.equal(CARDS.length, 3);
-for (const c of CARDS) assert.ok(c.title && c.text && c.expression, c.title);
+for (const c of CARDS) assert.ok(c.title && c.text, c.title);
 assert.equal(STEPS.length, 5);
 for (const s of STEPS) {
   assert.ok(s.title && s.text && ['inside', 'right', 'below'].includes(s.place), s.title);
@@ -342,7 +332,7 @@ for (const s of STEPS) {
     assert.ok(page.includes(tag ? `<${tag} ${attr}` : attr), `tour target ${sel} is not in index.html`);
   }
 }
-for (const id of ['welcomeOv', 'welcomeBlob', 'welcomeTitle', 'welcomeText', 'welcomeDots', 'welcomeNext', 'welcomeSkip', 'replayTour'])
+for (const id of ['welcomeOv', 'welcomeTitle', 'welcomeText', 'welcomeDots', 'welcomeNext', 'welcomeSkip', 'replayTour'])
   assert.ok(page.includes(`id="${id}"`), id);
 
 // --- Anonymous usage (analytics.mjs): only allow-listed tools and plain values; nothing when off ---

@@ -28,7 +28,7 @@
   .shape.open .content { opacity: 1; transition: opacity 200ms 140ms; }
   .shape.compact .content { inset: 0; padding: 0; }
 
-  /* Beside the notch: the blob left of the camera, a word right of it. */
+  /* Beside the notch: empty left of the camera for now, a word right of it. */
   .beside { display: flex; align-items: center; height: 100%; cursor: pointer; }
   .beside .left { width: var(--side); display: flex; justify-content: center; align-items: center; }
   .beside .camera { width: var(--nw); flex: none; }
@@ -37,7 +37,6 @@
   .beside.running .side { color: #a1a1aa; font-weight: 500; }
   .beside.failed .side { color: #ff8a8f; }
 
-  .beside canvas, .row canvas { image-rendering: pixelated; }
   .text { min-width: 0; flex: 1; }
   .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .body { color: #a1a1aa; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
@@ -56,8 +55,6 @@
 </head>
 <body>
 <div class="shape" id="shape"><div class="content" id="content"></div></div>
-<script src="vendor/bloub/bloub.js"></script>
-<script src="blob.js"></script>
 <script src="notch-logic.js"></script>
 <script src="notch.js"></script>
 </body>
