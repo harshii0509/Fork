@@ -322,35 +322,59 @@ function goTab(i) {
 // The sidebar's workspaces: one per tab. A coloured square and the folder's name; under it the branch,
 // what's changed (gitSoon) and the app it's serving (appFound), each only when there is one.
 // Each tab's status blob (blob.js) isn't shown in this design; its state is still in the row's tooltip.
+// Rows are kept and updated in place (not redrawn), so a square's split, merge and wave, and a badge popping
+// in, carry on smoothly however often this runs.
+const rowOf = new WeakMap(); // tab -> its row
+const CELLS = [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => `<i style="--c:${c};--r:${r}"></i>`)).join('');
+const put = (el, prop, v) => { if (el[prop] !== v) el[prop] = v; };
 function renderTabs() {
-  $('tabs').innerHTML = tabs.map((t, i) => {
-    const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], g = t.git, url = ps.find((x) => x.url)?.url;
-    const where = p?.cwd ? ` · ${p.cwd}` : '';
-    const info = [
+  const box = $('tabs');
+  tabs.forEach((t, i) => {
+    let row = rowOf.get(t);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'tab';
+      row.innerHTML = `<div class="ws-head"><span class="ws-sq"><span class="ws-cubes">${CELLS}</span><span class="ws-slot"></span></span>`
+        + `<span class="tname"></span><button class="tclose" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button></div>`
+        + '<div class="ws-info"></div>';
+      rowOf.set(t, row);
+    }
+    if (box.children[i] !== row) box.insertBefore(row, box.children[i] || null);
+    const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], g = t.git, url = ps.find((x) => x.url)?.url, key = tabKey(t);
+    row.classList.toggle('active', i === tabIx);
+    row.dataset.i = i;
+    if (i < 9) row.dataset.key = `⌘${i + 1}`; else delete row.dataset.key;
+    put(row, 'title', LOOKS[key].label + (p?.cwd ? ` · ${p.cwd}` : ''));
+    row.querySelector('.ws-sq').style.setProperty('--sq', `var(--ws-${(t.color ?? 0) + 1})`);
+    put(row.querySelector('.tname'), 'textContent', tabName(t));
+    row.querySelector('.tclose').dataset.close = i;
+    put(row.querySelector('.ws-info'), 'innerHTML', [
       g?.branch && `<div class="ws-line">${ph('git-branch')}<span>${esc(g.branch)}</span></div>`,
       g?.files && `<div class="ws-line">${ph('plus-minus')}<span><span class="plus">+${g.add}</span> <span class="minus">-${g.del}</span></span>`
         + `<span>·</span><span>${g.files} ${g.files === 1 ? 'file' : 'files'} changed</span></div>`,
       url && `<div class="ws-line">${ph('globe')}<span>${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span></div>`,
-    ].filter(Boolean).join('');
-    return `<div class="tab ${i === tabIx ? 'active' : ''}" data-i="${i}" ${i < 9 ? `data-key="⌘${i + 1}"` : ''} title="${esc(tabState(t).label + where)}">
-      <div class="ws-head"><span class="ws-sq" style="--sq: var(--ws-${(t.color ?? 0) + 1})">${badge(t)}</span><span class="tname">${esc(tabName(t))}</span>
-        <button class="tclose" data-close="${i}" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button></div>
-      <div class="ws-info">${info}</div></div>`;
-  }).join('');
+    ].filter(Boolean).join(''));
+    // Working: the square separates into a lattice and ripples (index.html .ws-cubes); it merges back when done.
+    const sq = row.querySelector('.ws-cubes'), run = key === 'running';
+    if (sq.classList.contains('working') !== run) {
+      if (run) sq.style.setProperty('--phase', `-${Date.now() % 2100}ms`); // every working square ripples in step
+      sq.classList.toggle('working', run);
+      run ? sq.setAttribute('aria-label', 'Working') : sq.removeAttribute('aria-label');
+      sq.setAttribute('role', run ? 'img' : 'presentation');
+    }
+    put(row.querySelector('.ws-slot'), 'innerHTML', badge(key));
+  });
+  for (const row of [...box.children].slice(tabs.length)) row.remove(); // closed workspaces
   syncNotch();
   saveSoon(); // tabs, splits, folders and busy states all pass through here
 }
 
-// The corner badge on a workspace's square (index.html .ws-badge): working, needs you (or finished while you
-// were away), failed. It pops in only when the state changes, not on every redraw.
-const BADGES = { running: ['run', 'Working'], done: ['done', 'Needs you'], failed: ['failed', 'Failed'] };
-const RING = [0, 1, 2, 7, null, 3, 6, 5, 4]; // each pixel's turn, clockwise from the top left; the centre sits still
-function badge(t) {
-  const key = tabKey(t), [s, label] = BADGES[key] || [], enter = key !== t.badgeWas && s;
-  t.badgeWas = key;
-  if (!s) return '';
-  const px = s === 'run' ? RING.map((n) => (n == null ? '<i></i>' : `<i style="--i:${n}"></i>`)).join('') : '';
-  return `<span class="ws-badge${enter ? ' enter' : ''}" data-s="${s}" role="img" aria-label="${label}" style="--phase:-${Date.now() % 1200}ms">${px}</span>`;
+// The corner badge (index.html .ws-badge): needs you (or finished while you were away), or failed.
+// It pops in when it changes; renderTabs only replaces it then.
+const BADGES = { done: ['done', 'Needs you'], failed: ['failed', 'Failed'] };
+function badge(key) {
+  const [s, label] = BADGES[key] || [];
+  return s ? `<span class="ws-badge enter" data-s="${s}" role="img" aria-label="${label}"></span>` : '';
 }
 
 // Each workspace's square: the colour the fewest others have, so the first three always differ.
