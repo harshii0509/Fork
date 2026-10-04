@@ -405,6 +405,7 @@ dt.onCmd((cmd) => ({
   back: () => go(-1),
   forward: () => go(1),
   tour: replayTour,
+  'check-update': checkUpdateNow,
 }[cmd]?.()));
 
 // A program being open (busy) isn't the same as it working: an AI tool sits open at its prompt between
@@ -1275,6 +1276,23 @@ dt.onUpdateReady(checkUpdate);
 // Hourly, and whenever Fork comes to the front. Cheap: main asks GitHub at most once an hour.
 setInterval(checkUpdate, 3600_000);
 window.addEventListener('focus', checkUpdate);
+// Check for Updates… (Fork menu): the same card, saying what it found. Closing it while it checks cancels the answer.
+async function checkUpdateNow() {
+  showUpdate('Checking for updates…', '', false);
+  const r = await dt.updateCheckNow();
+  if (!$('updOv').classList.contains('show')) return;
+  const say = (title, text) => showUpdate(title, `<p>${text}</p>`, false);
+  if (r.state === 'ready' || r.state === 'out') {
+    update = r;
+    checkUpdate(); // the pill too
+    return showUpdate(`Fork ${r.version} ${r.ready ? 'is ready' : 'is out'}`, r.notes, true);
+  }
+  if (r.state === 'downloading') return showUpdate(`Fork ${r.version} is downloading`,
+    `<p>It downloads in the background. When it's ready, a Restart pill shows at the top.</p>${r.notes}`, false);
+  if (r.state === 'current') return say("You're up to date", `Fork ${r.version} is the newest version.`);
+  if (r.state === 'dev') return say('Updates only work in the installed Fork', 'This Fork is running from its code (npm start).');
+  say("Couldn't check for updates", 'Check your internet connection and try again.');
+}
 $('updPill').onclick = () => showUpdate(`Fork ${update.version} ${update.ready ? 'is ready' : 'is out'}`, update.notes, true);
 $('updLater').onclick = $('updOk').onclick = closeUpdate;
 $('updGo').onclick = () => {

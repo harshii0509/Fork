@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('dt', {
 
   version: () => ipcRenderer.invoke('version'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateCheckNow: () => ipcRenderer.invoke('update:check-now'), // Check for Updates…: what was found, right now
   updateNotes: () => ipcRenderer.invoke('update:notes'), // this version's release notes
   updateInstall: () => ipcRenderer.send('update:install'),
   onUpdateReady: (fn) => ipcRenderer.on('update:ready', fn), // downloaded: show the pill now, not at the next check

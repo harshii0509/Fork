@@ -37,6 +37,12 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+**New**
+- **Check for Updates…** in the Fork menu. Fork still checks by itself every hour, but now you can ask any time: it tells you if you're up to date, or shows the new version and its notes.
+
+**Fixed**
+- The Fork menu now says **About Fork**, **Hide Fork** and **Quit Fork**, so Fork goes by its own name everywhere.
+
 ### 1.0.1 — 2026-10-04
 
 **Better**

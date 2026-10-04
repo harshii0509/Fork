@@ -100,15 +100,16 @@ const toRenderer = (cmd) => () => BrowserWindow.getFocusedWindow()?.webContents.
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: app.name, submenu: [
-      { role: 'about' },
+      { role: 'about', label: 'About Fork' }, // app.name is still the old package name; renaming it would move everyone's settings
+      { label: 'Check for Updates…', click: () => (BrowserWindow.getFocusedWindow() || forkWindows()[0])?.webContents.send('cmd', 'check-update') },
       { type: 'separator' },
       { label: 'Settings…', accelerator: 'Cmd+,', click: toRenderer('settings') },
       { type: 'separator' },
       { role: 'services' },
       { type: 'separator' },
-      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+      { role: 'hide', label: 'Hide Fork' }, { role: 'hideOthers' }, { role: 'unhide' },
       { type: 'separator' },
-      { role: 'quit' },
+      { role: 'quit', label: 'Quit Fork' },
     ] },
     { label: 'File', submenu: [
       { id: 'new-window', label: 'New Window', accelerator: 'Cmd+N', click: () => createWindow() },
@@ -472,6 +473,27 @@ ipcMain.handle('update:check', async () => {
   if (!r) latest.at = 0; // failed: try again next time
   return r && newer(r.version, app.getVersion()) ? { ...r, ready: false } : null;
 });
+// Check for Updates… in the Fork menu: ask now, not at the next hourly check, and say what was found.
+// state: ready (downloaded), downloading, out (the old way's Update and restart), current, offline, dev.
+ipcMain.handle('update:check-now', async () => {
+  if (!app.isPackaged) return { state: 'dev' };
+  if (ready) return { state: 'ready', ...ready };
+  const notes = async (v) => (await release(`tags/v${v}`))?.notes || '';
+  if (inPlace) {
+    lastCheck = Date.now();
+    try {
+      const r = await autoUpdater.checkForUpdates();
+      failed = false;
+      if (ready) return { state: 'ready', ...ready }; // it was quick
+      const v = r?.updateInfo?.version;
+      return r?.isUpdateAvailable && v ? { state: 'downloading', version: v, notes: await notes(v) } : { state: 'current', version: app.getVersion() };
+    } catch { failed = true; } // offline, or the updater broke: try the old way below
+  }
+  latest = { at: Date.now(), p: release('latest') };
+  const r = await latest.p;
+  if (!r) { latest.at = 0; return { state: 'offline' }; }
+  return newer(r.version, app.getVersion()) ? { state: 'out', ...r, ready: false } : { state: 'current', version: app.getVersion() };
+});
 ipcMain.handle('update:notes', () => release(`tags/v${app.getVersion()}`));
 ipcMain.handle('version', () => app.getVersion());
 // Restart now: save the tabs first (Squirrel closes the windows before Fork's usual before-quit), then swap and reopen.
@@ -519,6 +541,7 @@ app.on('before-quit', (e) => {
 app.on('will-quit', ai.stop); // never leave a Claude running after Fork quits
 
 app.whenReady().then(async () => {
+  app.setAboutPanelOptions({ applicationName: 'Fork', applicationVersion: app.getVersion(), version: '' });
   nativeTheme.themeSource = 'system'; // until the window applies its saved appearance
   buildMenu();
   const saved = await readSession();
