@@ -186,9 +186,9 @@
   .side:hover .add, .add:focus-visible { opacity: 1; }
   .add:hover { background: var(--field); color: var(--text-1); }
   #tabs { display: flex; flex-direction: column; gap: 20px; }
-  /* Hover: a soft box that reaches 8px past the row (padding + negative margin), so nothing moves. */
+  /* Hover: a soft box past the row (padding + negative margin: 8px above and below, 4px at the sides), so nothing moves. */
   .tab { display: flex; flex-direction: column; gap: 8px; cursor: default;
-    padding: 8px; margin: -8px; border-radius: 8px; transition: background-color .12s ease; }
+    padding: 8px 4px; margin: -8px -4px; border-radius: 8px; transition: background-color .12s ease; }
   .tab:hover { background: var(--hover); }
   @media (prefers-reduced-motion: reduce) { .tab { transition: none; } }
   /* Workspaces you're not in are dimmed, all but the badge, which is how you notice one needs you. */
@@ -280,7 +280,7 @@
     background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-key); pointer-events: none;
     opacity: 0; transform: scale(.85); transition: opacity .12s, transform .12s var(--ease); }
   .show-keys [data-key]::after { opacity: 1; transform: none; }
-  .tab[data-key]::after { top: 7px; right: 8px; } /* inside the hover padding */
+  .tab[data-key]::after { top: 7px; right: 4px; } /* inside the hover padding */
   .show-keys .tab .tclose { visibility: hidden; }
   .tbtn[data-key]::after { top: calc(100% + 4px); right: 50%; transform: translateX(50%) scale(.85); }
   .show-keys .tbtn[data-key]::after { transform: translateX(50%); }
