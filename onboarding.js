@@ -16,16 +16,14 @@ window.Onboarding = (() => {
   const STEPS = [
     { targets: ['#term'], place: 'inside', title: 'This is the terminal',
       text: 'Commands show up here, and so does whatever they print. You can type here too, then press Enter.' },
-    { targets: ['#chips'], place: 'right', title: 'Next steps for this folder',
-      text: 'Fork suggests what you’d likely do next. Click one and it types the real command for you, so you learn it as you go.' },
-    { targets: ['h3.folder', '#entries'], place: 'right', title: 'What’s in this folder',
-      text: 'Click a folder to go into it. Click a file to preview it.' },
+    { targets: ['#railFiles'], place: 'right', title: 'What’s in this folder',
+      text: 'This shows the files in the folder you’re in. Click a folder to go into it, or a file to preview it.' },
     { targets: ['#openPal'], place: 'right', title: 'Search for anything (⌘K)',
       text: 'Say what you want in plain words, like “go back a folder”. Fork finds the command, or asks Claude.' },
     { targets: ['#pvToggle'], place: 'below', title: 'Preview (⌘P)',
       text: 'See a file, or your app while it’s running, right beside the terminal.' },
-    { targets: ['.sec', '#tabs'], place: 'right', title: 'Your terminals',
-      text: 'Each one is its own terminal. + opens another, and the split buttons at the top put two side by side.' },
+    { targets: ['.sec', '#tabs'], place: 'right', title: 'Your workspaces',
+      text: 'Each one is a folder you’re working in, with its branch and what’s changed. + opens another, and the split buttons at the top add terminals side by side.' },
   ];
 
   const $ = (id) => document.getElementById(id);

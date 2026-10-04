@@ -3,6 +3,9 @@ const q = (s) => `'${s.replace(/'/g, `'\\''`)}'`; // shell-quote a path
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Icons in index.html are <i data-icon="name"> placeholders; draw them (icons.js, Lucide).
 for (const el of document.querySelectorAll("[data-icon]")) el.outerHTML = icon(el.dataset.icon);
+// The redesign's icons (Phosphor, exported from the Figma file into icons/ph) are <i class="ph" data-ph="name">.
+const ph = (name, cls = '') => `<i class="ph ${cls}" style="--ph:url(icons/ph/${name}.svg)"></i>`;
+for (const el of document.querySelectorAll("[data-ph]")) el.style.setProperty('--ph', `url(icons/ph/${el.dataset.ph}.svg)`);
 
 // --- Tabs and panes -------------------------------------------------------------
 // Window -> tabs (listed in the sidebar) -> panes (split tree, see panes.js). Each pane is
@@ -43,7 +46,10 @@ async function newPane(cwd, { screen, when } = {}) {
   el.className = 'pane';
   const inner = document.createElement('div'); // unpadded box so FitAddon measures exactly
   inner.className = 'pane-inner';
-  el.append(inner);
+  const title = document.createElement('div'); // the terminal's name (see nameChip)
+  title.className = 'pane-title';
+  title.innerHTML = `<div class="pane-chip"><span></span><button class="x" aria-label="Close this terminal" title="Close (⌘W)">${ph('x', 'small')}</button></div>`;
+  el.append(title, inner);
   $('hidden').append(el);
 
   // 10,000 lines to scroll back through (xterm's default is 1,000, which one Claude session outgrows).
@@ -64,8 +70,14 @@ async function newPane(cwd, { screen, when } = {}) {
   // Pictures apps draw in the terminal (Sixel and iTerm's inline images), e.g. OpenCode showing an image.
   term.loadAddon(new ImageAddon.ImageAddon({ storageLimit: 32, showPlaceholder: false }));
   if (screen) term.write(`${screen}\x1b[0m\r\n\x1b[2m── Restored · ${restoredAt(when)} ──\x1b[0m\r\n`);
-  const pane = { id, term, fit, serial, search, gl: null, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null };
+  const pane = { id, term, fit, serial, search, gl: null, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null, name: '', url: null };
   panes.set(id, pane);
+  const chip = title.firstChild;
+  chip.onclick = (e) => {
+    if (e.target.closest('.x')) return closePane(id);
+    if (!chip.querySelector('input')) { focusPane(id); term.focus(); }
+  };
+  chip.ondblclick = (e) => { if (!e.target.closest('.x')) renameTerminal(pane); };
   useGpu(pane, settings.smoothing === 'on');
   search.onDidChangeResults(({ resultIndex, resultCount }) => { if (pane === findPane) showCount(resultIndex, resultCount); });
 
@@ -129,6 +141,7 @@ async function newPane(cwd, { screen, when } = {}) {
       }
       pane.cwd = p;
       if (pane === active()) refresh();
+      gitSoon(tabOf(pane.id));
       renderTabs();
     }
     return true;
@@ -152,6 +165,8 @@ async function newPane(cwd, { screen, when } = {}) {
       pane.lastUsed = Date.now();
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
       pane.thinking = false; pane.sawSignal = false; pane.seen = null;
+      pane.url = null; // whatever served the app it printed has stopped
+      gitSoon(tabOf(pane.id)); // the command may have changed files or the branch
       workDone(pane);
       if (pane.failed) nudge(pane, `${pane.tool || 'Your command'} failed`, `in ${folderOf(pane)}`, 'failed');
       else if (pane.lastUsed - pane.startedAt >= 10e3) { // long enough that you may have gone to do something else
@@ -244,6 +259,7 @@ function focusPane(id) {
   if (!isGame(panes.get(id))) t.lastTerm = id;
   for (const pid of Panes.leaves(t.root)) panes.get(pid).unseen = false;
   render();
+  gitSoon(t);
   if (findOpen()) find(); // find follows you to the pane you switched to
   hideOops();
   setHint('');
@@ -254,7 +270,8 @@ function focusPane(id) {
 
 async function newTab(cwd) {
   const p = await newPane(cwd);
-  tabs.push({ root: { id: p.id }, activeId: null });
+  nameTerminal(p, null);
+  tabs.push({ root: { id: p.id }, activeId: null, color: nextColor() });
   focusPane(p.id);
 }
 
@@ -263,6 +280,7 @@ async function split(dir) {
   if (!cur) return;
   const p = await newPane(cur.cwd); // a split opens in the same folder
   dt.track('pane_split', { dir });
+  nameTerminal(p, tab());
   tab().root = Panes.split(tab().root, cur.id, p.id, dir);
   focusPane(p.id);
 }
@@ -301,28 +319,83 @@ function goTab(i) {
   focusPane(tabs[(i + tabs.length) % tabs.length].activeId);
 }
 
+// The sidebar's workspaces: one per tab. A coloured square and the folder's name; under it the branch,
+// what's changed (gitSoon) and the app it's serving (appFound), each only when there is one.
+// Each tab's status blob (blob.js) isn't shown in this design; its state is still in the row's tooltip.
 function renderTabs() {
   $('tabs').innerHTML = tabs.map((t, i) => {
-    const ps = Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
-    const p = panes.get(t.activeId) || ps[0];
-    const name = tabName(t);
+    const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], g = t.git, url = ps.find((x) => x.url)?.url;
     const where = p?.cwd ? ` · ${p.cwd}` : '';
+    const info = [
+      g?.branch && `<div class="ws-line">${ph('git-branch')}<span>${esc(g.branch)}</span></div>`,
+      g?.files && `<div class="ws-line">${ph('plus-minus')}<span><span class="plus">+${g.add}</span> <span class="minus">-${g.del}</span></span>`
+        + `<span>·</span><span>${g.files} ${g.files === 1 ? 'file' : 'files'} changed</span></div>`,
+      url && `<div class="ws-line">${ph('globe')}<span>${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span></div>`,
+    ].filter(Boolean).join('');
     return `<div class="tab ${i === tabIx ? 'active' : ''}" data-i="${i}" ${i < 9 ? `data-key="⌘${i + 1}"` : ''} title="${esc(tabState(t).label + where)}">
-      <span class="tblob"></span>
-      <span class="tname">${esc(name)}</span>
-      ${ps.length > 1 ? `<span class="tcount">${ps.length} panes</span>` : ''}
-      <button class="tclose" data-close="${i}" aria-label="Close tab">${icon("x")}</button></div>`;
+      <div class="ws-head"><span class="ws-sq" style="--sq: var(--ws-${(t.color ?? 0) + 1})"></span><span class="tname">${esc(tabName(t))}</span>
+        <button class="tclose" data-close="${i}" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button></div>
+      <div class="ws-info">${info}</div></div>`;
   }).join('');
-  // The rows were just rebuilt; move each tab's own blob back in so its animation carries on.
-  $('tabs').querySelectorAll('.tblob').forEach((slot, i) => {
-    const t = tabs[i];
-    t.blob ||= Blobs.status(22);
-    t.blob.el.className = 'tblob';
-    slot.replaceWith(t.blob.el);
-  });
-  syncTabBlobs();
   syncNotch();
   saveSoon(); // tabs, splits, folders and busy states all pass through here
+}
+
+// Each workspace's square: the colour the fewest others have, so the first three always differ.
+function nextColor() {
+  const n = [0, 0, 0];
+  for (const t of tabs) if (t.color >= 0 && t.color < 3) n[t.color]++;
+  return n.indexOf(Math.min(...n));
+}
+
+// Each workspace's branch and what's changed (main.js git:info), for the folder its open terminal is in.
+// Read again when a command finishes, the folder changes, files change on disk, or you switch terminals; never on a timer.
+function gitSoon(t) {
+  if (!t) return;
+  clearTimeout(t.gitTimer);
+  t.gitTimer = setTimeout(async () => {
+    const cwd = (panes.get(t.activeId) || panesOf(t)[0])?.cwd;
+    const g = cwd ? await dt.gitInfo(cwd) : null;
+    if (!tabs.includes(t) || JSON.stringify(g) === JSON.stringify(t.git ?? null)) return;
+    t.git = g;
+    renderTabs();
+  }, 300);
+}
+
+// Terminal names, on each pane's chip: "Terminal 1", "Terminal 2"… in a workspace, the lowest number not
+// taken. Double-click one to name it yourself. Saved with the session.
+function nameTerminal(p, t, name) {
+  if (!name) {
+    const taken = new Set(t ? panesOf(t).map((x) => x.name) : []);
+    let n = 1;
+    while (taken.has(`Terminal ${n}`)) n++;
+    name = `Terminal ${n}`;
+  }
+  p.name = name;
+  const label = p.el.querySelector('.pane-chip > span');
+  if (label) label.textContent = name;
+}
+function renameTerminal(p) {
+  const label = p.el.querySelector('.pane-chip > span');
+  if (!label) return;
+  const input = document.createElement('input');
+  input.value = p.name;
+  input.spellcheck = false;
+  input.setAttribute('aria-label', 'Terminal name');
+  label.replaceWith(input);
+  input.focus();
+  input.select();
+  let over = false;
+  const done = (keep) => {
+    if (over) return;
+    over = true;
+    input.replaceWith(label);
+    nameTerminal(p, null, keep ? input.value.trim().slice(0, 60) || p.name : p.name);
+    saveSoon();
+    p.term.focus();
+  };
+  input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); };
+  input.onblur = () => done(true);
 }
 
 // What each tab's blob shows. With split panes, the most pressing pane wins.
@@ -386,6 +459,27 @@ $('tabs').onclick = (e) => {
 $('newTab').onclick = () => { newTab(active()?.cwd); dt.track('tab_opened'); };
 const toggleSide = () => { $('app').classList.toggle('no-side'); dt.track('sidebar_toggled'); saveSoon(); }; // panes refit via their ResizeObserver
 $('sideToggle').onclick = $('sideShow').onclick = toggleSide;
+
+// --- Icon rail: what the sidebar shows (your workspaces, or what's in this folder), then What's new,
+// Settings and the welcome tour. Clicking the view that's already showing hides the sidebar, like ⌘B.
+function showView(v) {
+  const app = $('app'), was = inSettings();
+  closeSettings();
+  if (!was && !app.classList.contains('no-side') && app.classList.contains('view-files') === (v === 'files')) return toggleSide();
+  app.classList.remove('no-side');
+  app.classList.toggle('view-files', v === 'files');
+  $('railWs').classList.toggle('on', v !== 'files');
+  $('railFiles').classList.toggle('on', v === 'files');
+  saveSoon();
+}
+$('railWs').onclick = () => showView('workspaces');
+$('railFiles').onclick = () => showView('files');
+$('railHelp').onclick = () => replayTour();
+// This version's release notes, any time (they also show once by themselves after an update).
+$('railNew').onclick = async () => {
+  const [v, r] = await Promise.all([dt.version(), dt.updateNotes()]);
+  showUpdate(`What's new in Fork ${v}`, r?.notes || "<p>Couldn't load what's new. Check your internet connection and try again.</p>", false);
+};
 $('splitR').onclick = () => split('row');
 $('splitD').onclick = () => split('col');
 
@@ -500,7 +594,7 @@ function openGame(id) {
     const r = src?.el.getBoundingClientRect(), t = src && tabOf(src.id);
     const dir = !r ? null : r.width >= 640 && r.width >= r.height ? 'row' : r.height >= 400 ? 'col' : null;
     if (dir) t.root = Panes.split(t.root, src.id, g.id, dir); // the game half is at least 320 × 200
-    else tabs.push({ root: { id: g.id }, activeId: null });
+    else tabs.push({ root: { id: g.id }, activeId: null, color: nextColor() });
   }
   focusPane(g.id);
   Games.open(id);
@@ -643,6 +737,7 @@ $('entries').ondragstart = (e) => {
 // Something changed on disk (usually Claude at work): update the tree, and the file being previewed.
 dt.onFsChanged((paths) => {
   refresh();
+  gitSoon(tab());
   if (pv.file && paths.includes(pv.file)) openFile(pv.file, true);
 });
 // A file dropped anywhere but a pane does nothing (instead of Chromium trying to open it).
@@ -775,6 +870,7 @@ $('pvUrl').onkeydown = (e) => {
 const offered = new Set();
 let readyUrl = null;
 function appFound(url, pane) {
+  if (pane && pane.url !== url) { pane.url = url; renderTabs(); } // its workspace shows it, until the command stops
   if (offered.has(url) || url === pv.url) return;
   offered.add(url);
   if (inFork() && pvOpen() && pv.mode === 'app') return loadApp(url);
@@ -1006,6 +1102,7 @@ function snapshot(full) {
   const node = (n) => {
     if (n.dir) return { dir: n.dir, ratio: n.ratio ?? 0.5, a: node(n.a), b: node(n.b) };
     const p = panes.get(n.id), s = { cwd: p?.cwd || '' };
+    if (p?.name) s.name = p.name;
     if (isClaude(p)) s.claude = true;
     if (full && p) try { s.screen = p.serial.serialize({ scrollback: 1000 }); } catch {}
     return s;
@@ -1017,7 +1114,7 @@ function snapshot(full) {
   return {
     tabIx: Math.max(0, kept.findIndex(({ t }) => t === tab())),
     side: { hidden: $('app').classList.contains('no-side'), ...(width ? { width } : {}) },
-    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)) })),
+    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)), color: t.color })),
   };
 }
 function saveSoon() {
@@ -1046,11 +1143,14 @@ async function restore(saved) {
       if (n.dir) return { dir: n.dir, ratio: n.ratio, a: await build(n.a), b: await build(n.b) };
       const p = await newPane(n.cwd, { screen: n.screen, when: saved.savedAt });
       if (n.claude) { dt.write(p.id, 'claude --continue\r'); p.suggested = true; } // zsh holds it until the prompt is up
+      if (n.name) nameTerminal(p, null, n.name);
       ids.push(p.id);
       return { id: p.id };
     };
     const root = await build(t.root);
-    tabs.push({ root, activeId: ids[t.active] ?? ids[0] });
+    const tb = { root, activeId: ids[t.active] ?? ids[0], color: t.color ?? nextColor() };
+    tabs.push(tb);
+    for (const id of ids) if (!panes.get(id).name) nameTerminal(panes.get(id), tb); // saved before terminals had names
   }
   if (saved.side.hidden) $('app').classList.add('no-side');
   if (saved.side.width) $('app').style.setProperty('--side', `${saved.side.width}px`);
@@ -1107,6 +1207,7 @@ async function runWelcome() {
 }
 async function runTour() {
   $('app').classList.remove('no-side'); // everything the tour points at must be on screen
+  if ($('app').classList.contains('view-files')) showView('workspaces');
   closeSettings(); closePal();
   const r = await Onboarding.tour();
   dt.track(r.done ? 'tour_done' : 'tour_skipped', { step: r.step, of: r.of });
@@ -1327,7 +1428,7 @@ function installed(font) {
 // Appearance is Light, Dark or System (follows the Mac); each has one look while the UI is redesigned (themes.js).
 // Theme picks saved before the redesign (darkTheme, lightTheme) are left alone, unused.
 const DEFAULTS = { mode: 'system',
-  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', showNotch: 'off', smart: 'on' };
+  font: 'IBM Plex Mono', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', showNotch: 'off', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
@@ -1341,7 +1442,10 @@ const sysDark = matchMedia('(prefers-color-scheme: dark)'); // macOS's own, whil
 const isDark = (s) => (s.mode === 'system' ? sysDark.matches : s.mode === 'dark');
 const currentTheme = (s) => THEMES[isDark(s) ? 'dark' : 'light'];
 const fontStack = (f) => `"${f}", Menlo, monospace`;
-const xtermOpts = (s) => ({ theme: currentTheme(s), fontFamily: fontStack(s.font), fontSize: s.size });
+// Medium (500), as in the design; a font without a 500 uses its regular.
+// Bold text keeps its colour (not the bright one), as in the design's prompt.
+const xtermOpts = (s) => ({ theme: currentTheme(s), fontFamily: fontStack(s.font), fontSize: s.size, fontWeight: 500, fontWeightBold: 700,
+  drawBoldTextInBrightColors: false });
 
 let applying = 0;
 async function applySettings(s) {
@@ -1355,10 +1459,11 @@ async function applySettings(s) {
   root.style.colorScheme = root.dataset.mode = t.dark ? 'dark' : 'light'; // native bits match; CSS can say :root[data-mode=light]
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
-  dt.appearance(s.mode); // the frosted sidebar follows too
+  dt.appearance(s.mode); // the frosted frame follows too
   dt.notchSetting(s.showNotch === 'on').then((n) => { $('notchRow').hidden = !n?.has; }); // its switch only on a Mac with a notch
   const run = ++applying;
-  await document.fonts.load(`${s.size}px "${s.font}"`).catch(() => {}); // else xterm measures the fallback font
+  await Promise.all([`500 ${s.size}px "${s.font}"`, `700 ${s.size}px "${s.font}"`, '450 13px "Inter Variable"']
+    .map((f) => document.fonts.load(f).catch(() => {}))); // else xterm measures the fallback font
   if (run !== applying) return; // a newer change (e.g. hovering the next swatch) already won
   for (const p of panes.values()) {
     if (isGame(p)) continue;

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('dt', {
   onCmd: (fn) => ipcRenderer.on('cmd', (_, cmd) => fn(cmd)),
   dir: (path) => ipcRenderer.invoke('dir', path),
   ls: (path) => ipcRenderer.invoke('ls', path),
+  gitInfo: (cwd) => ipcRenderer.invoke('git:info', cwd), // { branch, files, add, del } or null (git.mjs)
   watch: (dirs) => ipcRenderer.send('watch', dirs),
   onFsChanged: (fn) => ipcRenderer.on('fs:changed', (_, paths) => fn(paths)),
   preview: (path) => ipcRenderer.invoke('preview', path),

@@ -1,6 +1,7 @@
 /* Fork's palette for the redesign: every colour from the Figma file, named by its hex.
    Roles come later: each theme in index.html points at these (e.g. --sidebar: var(--c-1d1d1f)).
-   #RRGGBBAA colours keep their alpha in the name: --c-ffffff-14 is #FFFFFF14. */
+   #RRGGBBAA colours keep their alpha in the name: --c-ffffff-14 is #FFFFFF14.
+   The second block uses the Figma variables' own names (--gray-950 …), for the ones the designs use by name. */
 :root {
   /* Dark greys */
   --c-070707: #070707;
@@ -100,4 +101,24 @@
   --c-a6a6f8: #A6A6F8;
   /* Cyans */
   --c-26b5ce: #26B5CE;
+}
+
+/* Figma variables, by their names in the file (the Workspaces frame). Six aren't in the list above. */
+:root {
+  --gray-25: #f8f8f7;
+  --gray-500: #8b8b89;
+  --gray-600: #737371;
+  --gray-700: #5b5b59;
+  --gray-900: #2c2c2a;
+  --gray-925: #242422;
+  --gray-950: #1d1d1b;
+  --gray-975: #171716;
+  --gray-1000: #111110;
+  --blue-700: #3d5f74;
+  --orange-700: #744a32;
+  --purple-700: #5e4a69;
+  --green-500: #62976e;
+  --green-600: #4e7d59;
+  --red-500: #b96359;
+  --red-600: #984d46;
 }

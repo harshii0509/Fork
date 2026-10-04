@@ -10,7 +10,10 @@
 <link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/700.css">
 <link rel="stylesheet" href="node_modules/@fontsource/geist-mono/400.css">
 <link rel="stylesheet" href="node_modules/@fontsource/geist-mono/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource-variable/inter/index.css"> <!-- the UI's font -->
 <link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/500.css">
+<link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/600.css">
 <link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/700.css">
 <link rel="stylesheet" href="node_modules/@fontsource/fira-code/400.css">
 <link rel="stylesheet" href="node_modules/@fontsource/fira-code/700.css">
@@ -42,6 +45,30 @@
     --shadow-pop: 0 8px 24px rgb(0 0 0 / .25); /* the find bar */
     --shadow-card: 0 24px 60px #0008;  /* cards: ⌘K, welcome, updates */
     --radius: 10px; --ease: cubic-bezier(.2, .8, .2, 1);
+    /* The redesign's roles (Figma: Workspaces frame), from colors.css. Light has its own values below. */
+    --chrome: var(--gray-1000);     /* the outer frame: top strip and icon rail */
+    --card: var(--gray-975);        /* the rounded card holding the sidebar and terminals */
+    --card-line: var(--gray-900);   /* its edge, and the lines inside it */
+    --field: var(--gray-950); --field-line: var(--gray-900); /* search box, the selected rail icon */
+    --chip: var(--gray-925);        /* the active terminal's name chip */
+    --kbd: var(--gray-900);
+    --text-1: var(--gray-25);       /* names */
+    --text-2: var(--gray-500);      /* the active workspace's details */
+    --text-3: var(--gray-600);      /* other workspaces' details */
+    --text-4: var(--gray-700);      /* labels, placeholders, icons */
+    --plus: var(--green-500); --minus: var(--red-500);           /* +8 -1 */
+    --plus-dim: var(--green-600); --minus-dim: var(--red-600);   /* the same, on a workspace that isn't open */
+    --ws-1: var(--blue-700); --ws-2: var(--orange-700); --ws-3: var(--purple-700); /* each workspace's square */
+    --ui: "Inter Variable", -apple-system, BlinkMacSystemFont, sans-serif;
+    --ui-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  /* Light: a first pass from the palette, until a light frame sets these. */
+  :root[data-mode="light"] {
+    --chrome: var(--c-f1f1f0); --card: var(--c-ffffff); --card-line: var(--c-dddddd);
+    --field: var(--c-f5f5f5); --field-line: var(--c-dddddd); --chip: var(--c-eeeeee); --kbd: var(--c-e6e6e6);
+    --text-1: var(--c-1d1d1f); --text-2: var(--c-6f6f6f); --text-3: var(--c-858585); --text-4: var(--c-9e9e9e);
+    --plus: var(--c-19c332); --minus: var(--c-eb5757); --plus-dim: var(--c-4cb782); --minus-dim: var(--c-ff736a);
+    --ws-1: var(--c-628ca9); --ws-2: var(--c-b6764d); --ws-3: var(--c-a6a6f8);
   }
   * { box-sizing: border-box; }
   /* Thin scrollbars on a clear track, so a long file list doesn't paint a white strip over the glass. */
@@ -50,11 +77,11 @@
   ::-webkit-scrollbar-thumb:hover { background-color: var(--faint); }
   ::-webkit-scrollbar-corner { background: transparent; }
   html, body { margin: 0; height: 100%; background: transparent; color: var(--text);
-    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; overflow: hidden; }
+    font: 13px/1.4 var(--ui); overflow: hidden; -webkit-font-smoothing: antialiased; } /* as Figma draws it */
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
   /* Shortcut hints: a soft pill, readable but never louder than the label beside it. Each key is its
      own span, so ⌘ and the key get a little room between them. */
-  kbd { display: inline-flex; align-items: center; gap: 3px; font: 500 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  kbd { display: inline-flex; align-items: center; gap: 3px; font: 500 11px/1 var(--ui);
     padding: 3px 7px; border-radius: 999px; background: var(--hover); color: var(--dim); }
   /* Icons (icons.js, Lucide): 14px with a 1.5px line everywhere. non-scaling-stroke makes 1.5 mean
      screen pixels, not Lucide's 24px grid, so the line is the same weight at any icon size. */
@@ -62,49 +89,77 @@
   .ic * { vector-effect: non-scaling-stroke; }
   .twisty .ic, .tclose .ic { width: 12px; height: 12px; }
   .arrows .ic { width: 10px; height: 10px; }
+  /* The redesign's icons (Phosphor, from the Figma file, icons/ph): each SVG is a mask over currentColor,
+     so the files stay as exported and any state can recolour them. */
+  .ph { flex: none; display: block; width: 16px; height: 16px; background: currentColor;
+    -webkit-mask: var(--ph) center / contain no-repeat; }
+  .ph.big { width: 20px; height: 20px; }
+  .ph.small { width: 14px; height: 14px; }
   .fi { flex: none; display: grid; } /* a file's type icon: never squeezed by a long name */
   .pv-name .fi { display: inline-grid; vertical-align: -3px; margin-right: 7px; }
 
-  .app { --pvw: 0px; display: grid; grid-template: 44px 1fr auto / var(--side, 232px) 1fr var(--pvw); height: 100%; }
+  /* The window: a top strip and an icon rail (the frame), around a rounded card that holds the sidebar,
+     the terminals and the preview. With Translucent on, the frame is frosted glass and the card stays solid. */
+  .app { display: grid; grid-template: 36px 1fr / 49px 1fr; height: 100%; background: var(--chrome); }
+  :root[data-translucent="on"] .app { background: transparent; }
+  .stage { --pvw: 0px; grid-area: 2 / 2; margin: 0 8px 8px 0; min-width: 0; min-height: 0; overflow: hidden;
+    display: grid; grid-template: 1fr auto / var(--side, 224px) 1fr var(--pvw);
+    background: var(--card); border: .5px solid var(--card-line); border-radius: 12px; }
   /* ⌘P opens the preview panel on the right. --pv is the dragged width. */
-  .app.has-pv { --pvw: clamp(320px, var(--pv, 42vw), calc(100vw - 420px)); }
-  .app.in-settings { --pvw: 0px; }
-  /* ⌘B hides the sidebar. A class rule, not --side, so the dragged width comes back. */
-  .app.no-side { grid-template-columns: 0 1fr var(--pvw); }
+  .has-pv .stage { --pvw: clamp(320px, var(--pv, 42vw), calc(100vw - 480px)); }
+  .in-settings .stage { --pvw: 0px; }
+  /* ⌘B hides the sidebar. A class rule, not --side, so the dragged width comes back. The rail stays. */
+  .no-side .stage { grid-template-columns: 0 1fr var(--pvw); }
   .no-side .side, .no-side .side-grip { display: none; }
-  .no-side .top { padding-left: 76px; } /* clear the traffic lights; #sideShow lands where #sideToggle was */
-  #sideShow { display: none; }
-  .no-side #sideShow { display: grid; }
-  .side-grip { grid-row: 1 / 4; grid-column: 1; justify-self: end; width: 6px; margin-right: -3px;
-    cursor: col-resize; z-index: 2; -webkit-app-region: no-drag; }
+  #sideShow, #crumbs { display: none !important; } /* the rail brings the sidebar back; where you are is in the sidebar */
+  .side-grip { grid-row: 1 / 3; grid-column: 1; justify-self: end; width: 6px; margin-right: -3px;
+    cursor: col-resize; z-index: 2; }
 
-  /* Top bar: where am I. Drag region, room for the traffic lights. */
-  .top { grid-column: 2; display: flex; align-items: center; gap: 2px; padding: 0 16px; background: var(--bg);
-    border-bottom: 1px solid var(--line); -webkit-app-region: drag; min-width: 0; }
+  /* Top strip: traffic lights on the left (main.js places them), the split and preview buttons on the right. */
+  .top { grid-area: 1 / 1 / 2 / 3; display: flex; align-items: center; gap: 2px; padding: 0 12px;
+    -webkit-app-region: drag; min-width: 0; }
   .top button { -webkit-app-region: no-drag; }
-  .crumb { padding: 4px 8px; border-radius: 6px; color: var(--dim); white-space: nowrap; }
-  .crumb:hover { background: var(--line); color: var(--text); }
-  .crumb:last-of-type { color: var(--text); font-weight: 600; }
-  .sep { color: var(--faint); }
   .top .spacer { flex: 1; }
+  .tbtn { width: 24px; height: 24px; padding: 0; border-radius: 6px; display: grid; place-items: center; color: var(--text-4); }
+  .tbtn:hover { background: var(--field); color: var(--text-1); }
+  #splitR .ph { transform: rotate(-90deg) scaleY(-1); }
+  #splitD .ph { transform: rotate(-90deg) scaleY(-1); }
+  #pvToggle .ph { transform: scaleX(-1); } /* the sidebar icon, mirrored: the panel on the right */
+  .has-pv #pvToggle { color: var(--text-1); }
+  .crumb { padding: 4px 8px; border-radius: 6px; color: var(--dim); white-space: nowrap; }
+  .sep { color: var(--faint); }
 
-  /* Sidebar: what is in this folder. */
-  .side { grid-row: 1 / 4; grid-column: 1; position: relative; border-right: 1px solid var(--hover);
-    display: flex; flex-direction: column; min-height: 0; }
-  .side-scroll { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
-  /* Top row, lined up with the main top bar: traffic lights, sidebar toggle, ← →. */
-  .side-top { flex: none; height: 44px; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 76px;
-    -webkit-app-region: drag; }
-  .side-top button { -webkit-app-region: no-drag; }
+  /* Icon rail: Workspaces and Files switch what the sidebar shows; What's new, Settings and Help at the bottom. */
+  .rail { grid-area: 2 / 1; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    padding: 10px 0 18px; min-height: 0; } /* the bottom lines up with the card's, 8px up */
+  .rail-top { display: flex; flex-direction: column; gap: 12px; }
+  .rail-bottom { display: flex; flex-direction: column; gap: 4px; margin-bottom: -4px; } /* 16px icons 12px apart, in 24px buttons */
+  .rbtn { width: 29px; height: 29px; padding: 0; display: grid; place-items: center; border-radius: 8px;
+    border: .5px solid transparent; color: var(--text-4); }
+  .rbtn:hover { color: var(--text-2); }
+  .rbtn.on { background: var(--field); border-color: var(--field-line); color: var(--text-1); }
+  .rsm { width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border-radius: 6px; color: var(--text-4); }
+  .rsm:hover, .rsm.on { color: var(--text-1); }
+  .in-settings #openSettings { color: var(--text-1); }
+
+  /* Sidebar: the name, search, then your workspaces (or, in Files, what's in this folder). */
+  .side { grid-row: 1 / 3; grid-column: 1; position: relative; border-right: .5px solid var(--card-line);
+    display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .side-top { flex: none; height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; }
+  .brand { font: 500 18px/1 var(--ui-mono); letter-spacing: -.36px; color: var(--text-1); }
+  .side-scroll { flex: 1; overflow-y: auto; padding: 12px 10px 12px; }
+  .parked { display: none; } /* ← →, suggestions: kept working, not in this design yet */
   .ibtn:disabled { opacity: .35; cursor: default; background: none; color: var(--dim); }
-  .brand { margin: 2px 8px 12px; font: 700 15px/1.2 "IBM Plex Mono", monospace; letter-spacing: -.01em; }
-  /* Search and Settings: icon rows, then a thin divider. */
-  .srow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 6px;
-    color: var(--tree); text-align: left; }
-  .srow:hover { background: var(--hover); }
-  .srow kbd { margin-left: auto; }
-  .side-div { height: 1px; margin: 8px 8px 14px; background: var(--hover); }
-  .side h3 { margin: 4px 8px 6px; font-size: 12px; font-weight: 500; color: var(--dim); }
+  .search { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 4px; border-radius: 8px;
+    background: var(--field); border: .5px solid var(--field-line); color: var(--text-4); text-align: left;
+    font: 450 12px/1.2 var(--ui); }
+  .search span:first-of-type { flex: 1; }
+  .search:hover { color: var(--text-2); }
+  .search kbd { gap: 2px; padding: 2px; border-radius: 4px; background: var(--kbd); color: var(--text-4); font: 450 10px/1 var(--ui); }
+  .side h3 { margin: 0; font: 600 12px/1.2 var(--ui-mono); letter-spacing: .48px; text-transform: uppercase; color: var(--text-4); }
+  .side-files, .view-files .side-ws { display: none; }
+  .view-files .side-files { display: block; }
+  .side h3.folder { margin: 20px 0 8px; }
   /* The folder tree: ▸ expands in place, the name moves there (folders) or previews it (files). */
   .entry { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px 5px calc(2px + var(--depth, 0) * 14px);
     border-radius: 6px; cursor: default; white-space: nowrap; overflow: hidden; color: var(--tree); }
@@ -120,44 +175,63 @@
   .empty { color: var(--dim); padding: 4px 8px; }
   .entries-empty { padding: 3px 8px 3px calc(24px + var(--depth, 0) * 14px); color: var(--faint); }
 
-  /* Terminals list in the sidebar (one row per tab). */
-  .sec { display: flex; align-items: center; justify-content: space-between; margin: 4px 4px 6px 8px; }
-  .sec h3 { margin: 0; }
-  .side h3.folder { margin-top: 20px; }
-  .add { width: 22px; height: 22px; padding: 0; border-radius: 6px; color: var(--dim); display: grid; place-items: center; }
-  .add:hover { background: var(--hover); color: var(--text); }
-  .tab { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: default; }
-  .tab:hover { background: var(--hover); }
-  .tab.active { background: color-mix(in srgb, var(--text) 10%, transparent); }
-  /* Each tab's blob (blob.js) shows its state: ready, running, failed, finished while away, dozing. */
-  .tblob { display: grid; place-items: center; flex: none; width: 16px; height: 16px; }
-  .tblob > * { margin: -3px; } /* 22px blob, 16px slot: the blob fills it without making the row taller */
-  .tname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tcount { font-size: 11px; color: var(--dim); white-space: nowrap; }
-  .tclose { opacity: 0; color: var(--dim); padding: 2px; border-radius: 4px; }
+  /* Workspaces (one per tab): a coloured square and the name; under it the branch, what changed and the
+     running app, each only when there is one. The open workspace is bright, the others dimmed. */
+  .sec { display: flex; align-items: center; justify-content: space-between; height: 14px; margin: 20px 0 12px; }
+  .add { width: 20px; height: 20px; margin-right: -4px; padding: 0; border-radius: 5px; color: var(--text-4); display: grid; place-items: center;
+    opacity: 0; transition: opacity .12s; }
+  .side:hover .add, .add:focus-visible { opacity: 1; }
+  .add:hover { background: var(--field); color: var(--text-1); }
+  #tabs { display: flex; flex-direction: column; gap: 20px; }
+  .tab { display: flex; flex-direction: column; gap: 8px; cursor: default; opacity: .5; transition: opacity .12s; }
+  .tab:hover { opacity: .75; }
+  .tab.active { opacity: 1; }
+  .ws-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ws-sq { flex: none; width: 16px; height: 16px; display: grid; place-items: center; }
+  .ws-sq::before { content: ''; width: 12px; height: 12px; background: var(--sq, var(--ws-1)); }
+  .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 500 13px/1.2 var(--ui); color: var(--text-1); }
+  .tclose { flex: none; display: grid; place-items: center; width: 16px; height: 16px; padding: 0; opacity: 0; color: var(--text-4); border-radius: 4px; }
   .tab:hover .tclose { opacity: 1; }
-  .tclose:hover { color: var(--text); }
+  .tclose:hover { color: var(--text-1); }
+  .ws-info { display: flex; flex-direction: column; gap: 4px; }
+  .ws-info:empty { display: none; }
+  .ws-line { display: flex; align-items: center; gap: 8px; min-width: 0; font: 450 13px/1.2 var(--ui); color: var(--text-3); white-space: nowrap; }
+  .ws-line span { overflow: hidden; text-overflow: ellipsis; }
+  .ws-line span:last-child { flex: 1; min-width: 0; }
+  .ws-line .plus { color: var(--plus-dim); } .ws-line .minus { color: var(--minus-dim); }
+  .tab.active .ws-line { color: var(--text-2); }
+  .tab.active .ws-line .plus { color: var(--plus); } .tab.active .ws-line .minus { color: var(--minus); }
 
   /* Panes: the active tab's split tree. */
-  .term { grid-area: 2 / 2; background: var(--bg); min-width: 0; min-height: 0; display: flex; }
+  .term { grid-area: 1 / 2; min-width: 0; min-height: 0; display: flex; }
   .term > *, .split > * { flex: 1 1 0; min-width: 0; min-height: 0; }
   .split { display: flex; }
   .split.col { flex-direction: column; }
-  .split > .divider { flex: 0 0 1px; background: var(--line); position: relative; z-index: 1; transition: background .15s; }
+  .split > .divider { flex: 0 0 .5px; background: var(--card-line); position: relative; z-index: 1; transition: background .15s; }
   .divider::before { content: ''; position: absolute; inset: 0 -3px; }
   .split.col > .divider::before { inset: -3px 0; }
   .split.row > .divider { cursor: col-resize; }
   .split.col > .divider { cursor: row-resize; }
   .divider:hover, .divider.dragging { background: var(--accent); }
   .pane { position: relative; transition: opacity .15s; }
-  .pane-inner { position: absolute; inset: 10px 4px 0 14px; }
+  .pane-inner { position: absolute; inset: 60px 4px 4px 8px; }
   .term.multi .pane:not(.active) { opacity: .5; }
-  .term.multi .pane.active { box-shadow: inset 0 2px 0 var(--accent); }
+  /* Each terminal's name, top left. The open one sits on a chip with a ×; double-click to rename. */
+  .pane-title { position: absolute; top: 0; left: 0; right: 0; display: flex; padding: 8px; }
+  .pane-chip { display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 8px 6px; border-radius: 8px;
+    font: 500 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-1); }
+  .pane-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pane-chip .x { display: none; place-items: center; padding: 0; color: var(--text-4); border-radius: 4px; }
+  .pane-chip .x:hover { color: var(--text-1); }
+  .pane.active .pane-chip { background: var(--chip); padding: 8px 10px; }
+  .pane.active .pane-chip .x { display: grid; }
+  .pane-chip input { width: 160px; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: inherit; color: inherit; }
   /* Dragging a file over a pane: dropping types its path at the cursor. */
   .pane.drop { opacity: 1 !important; box-shadow: inset 0 0 0 2px var(--accent) !important; }
   #hidden { display: none; }
   /* ⌘F: find in the active pane, floating over the terminal's top-right corner. */
-  .find { grid-area: 2 / 2; justify-self: end; align-self: start; z-index: 5; margin: 10px 14px; display: none; align-items: center;
+  .find { grid-area: 1 / 2; justify-self: end; align-self: start; z-index: 5; margin: 10px 14px; display: none; align-items: center;
     gap: 2px; padding: 3px 3px 3px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
     box-shadow: var(--shadow-pop); }
   .find.show { display: flex; }
@@ -175,18 +249,18 @@
     background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-key); pointer-events: none;
     opacity: 0; transform: scale(.85); transition: opacity .12s, transform .12s var(--ease); }
   .show-keys [data-key]::after { opacity: 1; transform: none; }
-  .tab[data-key]::after { top: 50%; right: 6px; transform: translateY(-50%) scale(.85); }
-  .show-keys .tab[data-key]::after { transform: translateY(-50%); }
-  .show-keys .tab .tclose, .show-keys .tab .tcount { visibility: hidden; }
-  .ibtn[data-key]::after { top: calc(100% + 4px); right: 50%; transform: translateX(50%) scale(.85); }
-  .show-keys .ibtn[data-key]::after { transform: translateX(50%); }
+  .tab[data-key]::after { top: -1px; right: 0; }
+  .show-keys .tab { opacity: 1; }
+  .show-keys .tab .tclose { visibility: hidden; }
+  .tbtn[data-key]::after { top: calc(100% + 4px); right: 50%; transform: translateX(50%) scale(.85); }
+  .show-keys .tbtn[data-key]::after { transform: translateX(50%); }
   .keys-legend { display: none; gap: 16px; color: var(--dim); flex-wrap: wrap; }
   .keys-legend b { color: var(--text); font-weight: 600; }
   .show-keys .keys-legend { display: flex; }
   .show-keys .hint { display: none; }
 
   /* Dock: what can I do here. */
-  .dock { grid-area: 3 / 2; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 14px 12px; gap: 8px; }
+  .dock { grid-area: 2 / 2; border-top: .5px solid var(--card-line); padding: 10px 14px 12px; gap: 8px; }
   /* Only takes space when it has something to say, so the terminal gets the full height otherwise. */
   .dock { display: none; }
   .dock:has(.show), .working .dock, .show-keys .dock { display: grid; }
@@ -233,14 +307,13 @@
   .has-pv .pv { display: flex; }
   .has-pv .pv-grip { display: block; }
   .in-settings .pv { visibility: hidden; } /* not display:none: the app view would reload */
-  .pv { grid-row: 1 / 4; grid-column: 3; min-width: 0; min-height: 0; flex-direction: column;
-    background: var(--bg); border-left: 1px solid var(--line); }
-  .pv-grip { grid-row: 1 / 4; grid-column: 3; justify-self: start; width: 6px; margin-left: -3px;
+  .pv { grid-row: 1 / 3; grid-column: 3; min-width: 0; min-height: 0; flex-direction: column;
+    border-left: .5px solid var(--card-line); }
+  .pv-grip { grid-row: 1 / 3; grid-column: 3; justify-self: start; width: 6px; margin-left: -3px;
     cursor: col-resize; z-index: 2; }
   .in-settings .pv-grip { display: none; }
-  .pv-head { height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 10px;
-    border-bottom: 1px solid var(--line); -webkit-app-region: drag; min-width: 0; }
-  .pv-head button, .pv-head input, .pv-head .seg { -webkit-app-region: no-drag; }
+  .pv-head { height: 48px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 10px;
+    border-bottom: .5px solid var(--card-line); min-width: 0; }
   .pv-head .seg { width: auto; flex: none; margin-right: 6px; }
   .pv-head .seg button { padding: 3px 10px; font-size: 12px; }
   .pv-bar { display: none; flex: 1; align-items: center; gap: 4px; min-width: 0; }
@@ -478,11 +551,11 @@
 
   /* Settings mode: the sidebar lists sections, the main area shows the page. Terminals keep running, hidden. */
   .set-nav, .set-page { display: none; }
-  .in-settings .side-scroll, .in-settings .top, .in-settings .term, .in-settings .dock { display: none; }
+  .in-settings .side-scroll, .in-settings .term, .in-settings .dock, .in-settings .top > :not(.spacer) { display: none; }
   .in-settings .set-nav { display: block; flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
-  .in-settings .set-page { display: block; grid-row: 1 / 4; grid-column: 2; min-width: 0; overflow-y: auto;
-    background: var(--bg); padding: 0 32px 40px; }
-  .set-drag { height: 44px; -webkit-app-region: drag; }
+  .in-settings .set-page { display: block; grid-row: 1 / 3; grid-column: 2; min-width: 0; overflow-y: auto;
+    padding: 0 32px 40px; }
+  .set-drag { height: 24px; }
   .set-page h1, .set-page h4, .set-list, .sample { max-width: 620px; margin-left: auto; margin-right: auto; }
   .set-page h1 { margin-top: 8px; margin-bottom: 20px; font-size: 22px; }
   .set-page h4 { margin-top: 28px; margin-bottom: 8px; font-size: 11px; font-weight: 600; color: var(--dim);
@@ -514,8 +587,7 @@
   /* Font smoothing Off: panes switch from WebGL back to DOM text (renderer.js useGpu), so plain CSS reaches it. */
   [data-smooth="off"] .xterm, [data-smooth="off"] .sample { -webkit-font-smoothing: none; }
 
-  /* Settings → Translucent sidebar: Off. visualEffectState can't change at runtime, so paint over the glass. */
-  :root[data-translucent="off"] .side { background: var(--panel); }
+  /* Settings → Translucent: Off paints the frame (.app, above), since the window's glass can't be switched off at runtime. */
   .switch { appearance: none; flex: none; position: relative; width: 36px; height: 22px; margin: 0; padding: 0; border: 0;
     border-radius: 999px; background: var(--active); cursor: pointer; transition: background .15s; }
   .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
@@ -531,30 +603,47 @@
 <div class="app" id="app">
   <header class="top">
     <button class="ibtn" id="sideShow" title="Show sidebar (⌘B)" aria-label="Show sidebar"><i data-icon="panel-left"></i></button>
-    <nav id="crumbs" style="display:flex;align-items:center;gap:2px;overflow:hidden"></nav>
+    <nav id="crumbs"></nav>
     <div class="spacer"></div>
     <button class="upd" id="updPill" hidden title="A new version of Fork"><i data-icon="download"></i><span id="updPillV"></span></button>
-    <button class="ibtn" id="splitR" data-key="⌘D" title="Split right (⌘D)"><i data-icon="columns-2"></i></button>
-    <button class="ibtn" id="splitD" data-key="⌘⇧D" title="Split down (⌘⇧D)"><i data-icon="rows-2"></i></button>
-    <button class="ibtn" id="pvToggle" data-key="⌘P" title="Preview (⌘P)"><i data-icon="panel-right"></i></button>
+    <button class="tbtn" id="splitR" data-key="⌘D" title="Split right (⌘D)" aria-label="Split right"><i class="ph" data-ph="square-split-vertical"></i></button>
+    <button class="tbtn" id="splitD" data-key="⌘⇧D" title="Split down (⌘⇧D)" aria-label="Split down"><i class="ph" data-ph="square-split-horizontal"></i></button>
+    <button class="tbtn" id="pvToggle" data-key="⌘P" title="Preview (⌘P)" aria-label="Preview"><i class="ph" data-ph="sidebar-simple"></i></button>
   </header>
 
+  <nav class="rail">
+    <div class="rail-top">
+      <button class="rbtn on" id="railWs" title="Workspaces" aria-label="Workspaces"><i class="ph big" data-ph="terminal-window"></i></button>
+      <button class="rbtn" id="railFiles" title="In this folder" aria-label="In this folder"><i class="ph big" data-ph="folders"></i></button>
+    </div>
+    <div class="rail-bottom">
+      <button class="rsm" id="railNew" title="What's new" aria-label="What's new"><i class="ph" data-ph="gift"></i></button>
+      <button class="rsm" id="openSettings" title="Settings (⌘,)" aria-label="Settings"><i class="ph" data-ph="gear"></i></button>
+      <button class="rsm" id="railHelp" title="Welcome tour" aria-label="Welcome tour"><i class="ph" data-ph="question"></i></button>
+    </div>
+  </nav>
+
+  <div class="stage">
   <aside class="side">
     <div class="side-top">
-      <button class="ibtn" id="sideToggle" data-key="⌘B" title="Hide sidebar (⌘B)" aria-label="Hide sidebar"><i data-icon="panel-left"></i></button>
-      <button class="ibtn" id="back" data-key="⌘[" title="Back (⌘[)" aria-label="Back" disabled><i data-icon="arrow-left"></i></button>
-      <button class="ibtn" id="fwd" data-key="⌘]" title="Forward (⌘])" aria-label="Forward" disabled><i data-icon="arrow-right"></i></button>
+      <div class="brand" aria-label="Fork">F0RK</div>
+      <button class="tbtn" id="sideToggle" data-key="⌘B" title="Hide sidebar (⌘B)" aria-label="Hide sidebar"><i class="ph" data-ph="sidebar-simple"></i></button>
     </div>
     <div class="side-scroll">
-      <div class="brand">Fork</div>
-      <button class="srow" id="openPal"><i data-icon="search"></i><span>Search</span><kbd><span>⌘</span><span>K</span></kbd></button>
-      <button class="srow" id="openSettings"><i data-icon="settings"></i><span>Settings</span><kbd><span>⌘</span><span>,</span></kbd></button>
-      <div class="side-div"></div>
-      <div class="chips" id="chips"></div>
-      <div class="sec"><h3>Terminals</h3><button class="add" id="newTab" data-key="⌘T" title="New tab (⌘T)" aria-label="New tab"><i data-icon="plus"></i></button></div>
-      <div id="tabs"></div>
-      <h3 class="folder">In this folder</h3>
-      <div id="entries"></div>
+      <div class="parked">
+        <button class="ibtn" id="back" data-key="⌘[" title="Back (⌘[)" aria-label="Back" disabled><i data-icon="arrow-left"></i></button>
+        <button class="ibtn" id="fwd" data-key="⌘]" title="Forward (⌘])" aria-label="Forward" disabled><i data-icon="arrow-right"></i></button>
+        <div class="chips" id="chips"></div>
+      </div>
+      <button class="search" id="openPal"><i class="ph" data-ph="magnifying-glass"></i><span>Search...</span><kbd><span>⌘</span><span>K</span></kbd></button>
+      <div class="side-ws">
+        <div class="sec"><h3>Workspaces</h3><button class="add" id="newTab" data-key="⌘T" title="New workspace (⌘T)" aria-label="New workspace"><i data-icon="plus"></i></button></div>
+        <div id="tabs"></div>
+      </div>
+      <div class="side-files">
+        <h3 class="folder">In this folder</h3>
+        <div id="entries"></div>
+      </div>
     </div>
     <nav class="set-nav">
       <button class="nav-back" id="closeSettings"><i data-icon="chevron-left"></i>Back to terminal</button>
@@ -631,9 +720,9 @@
       <label class="set-row"><span>Font smoothing<small>Off draws sharp, unsmoothed text</small></span>
         <input type="checkbox" class="switch" id="setSmooth"></label>
     </div>
-    <h4>Sidebar</h4>
+    <h4>Window</h4>
     <div class="set-list">
-      <label class="set-row"><span>Translucent sidebar<small>See your desktop through the sidebar</small></span>
+      <label class="set-row"><span>Translucent frame<small>See your desktop through the top bar and the icon rail</small></span>
         <input type="checkbox" class="switch" id="setTranslucent"></label>
     </div>
     <h4>Links &amp; files</h4>
@@ -683,8 +772,9 @@
       <button class="go" id="readyShow">Show it</button><button class="x" id="readyClose" aria-label="Dismiss"><i data-icon="x"></i></button></div>
     <div class="hint" id="hint"></div>
     <div class="running"><span class="blob" id="runBlob"></span><span id="runText">Something is running.</span> <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button><button class="play" id="playGame"><i data-icon="gamepad-2"></i>Play a game while you wait</button></div>
-    <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next tab</span><span><b>⌘F</b> find</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
+    <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next workspace</span><span><b>⌘F</b> find</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
   </footer>
+  </div>
 </div>
 
 <div class="overlay" id="welcomeOv">

@@ -323,7 +323,7 @@ const { CARDS, STEPS } = ob.window.Onboarding;
 const page = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 assert.equal(CARDS.length, 3);
 for (const c of CARDS) assert.ok(c.title && c.text && c.expression, c.title);
-assert.equal(STEPS.length, 6);
+assert.equal(STEPS.length, 5);
 for (const s of STEPS) {
   assert.ok(s.title && s.text && ['inside', 'right', 'below'].includes(s.place), s.title);
   for (const sel of s.targets) {
@@ -410,6 +410,26 @@ const long = 'line\n'.repeat(MAX_SCREEN / 4);
 const trimmed = clean({ v: 1, windows: [{ tabs: [{ root: { cwd: here, screen: long } }] }] }, ctx).windows[0].tabs[0].root.screen;
 assert.ok(trimmed.length <= MAX_SCREEN && trimmed.startsWith('line\n'));   // keeps the end, cut at a line
 assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 50 }, tabs: [{ root: { cwd: here } }] }] }, ctx).windows[0].bounds, undefined);
+// Terminal names and each workspace's colour come back; anything odd is dropped, never an error.
+const named = clean({ v: 1, windows: [{ tabs: [
+  { color: 2, root: { dir: 'row', a: { cwd: here, name: '  Dev server  ' }, b: { cwd: here, name: 'x'.repeat(99) } } },
+  { color: 7, root: { cwd: here, name: 42 } }, { color: '1', root: { cwd: here, name: '   ' } }] }] }, ctx).windows[0];
+assert.equal(named.tabs[0].color, 2);
+assert.equal(named.tabs[0].root.a.name, 'Dev server');              // trimmed
+assert.equal(named.tabs[0].root.b.name.length, 60);                 // capped
+assert.ok(!('color' in named.tabs[1]) && !('name' in named.tabs[1].root)); // out of range, not text
+assert.ok(!('color' in named.tabs[2]) && !('name' in named.tabs[2].root)); // not a number, blank
+
+// --- Workspace details (git.mjs): branch, files changed, lines added and removed ---
+{
+  const { gitInfo } = await import('./git.mjs');
+  assert.deepEqual(gitInfo('## feat/checkout-v2...origin/feat/checkout-v2 [ahead 1]\n M a.ts\n?? b.ts\n', ' 1 file changed, 8 insertions(+), 1 deletion(-)\n'),
+    { branch: 'feat/checkout-v2', files: 2, add: 8, del: 1 });
+  assert.deepEqual(gitInfo('## main\n', ''), { branch: 'main', files: 0, add: 0, del: 0 });        // clean
+  assert.deepEqual(gitInfo('## No commits yet on main\n?? x\n', null), { branch: 'main', files: 1, add: 0, del: 0 }); // new repo: no HEAD to diff
+  assert.equal(gitInfo('## HEAD (no branch)\n', '').branch, 'no branch');
+  assert.deepEqual(gitInfo('## main\n M a\n', ' 1 file changed, 3 deletions(-)\n'), { branch: 'main', files: 1, add: 0, del: 3 });
+}
 
 }
 

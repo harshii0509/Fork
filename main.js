@@ -14,6 +14,7 @@ import { judge, commandQuestion, errorQuestion } from './jev.mjs';
 import { list, readPreview, readBook, findEditor } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
+import { gitInfo } from './git.mjs';
 import * as ai from './claude.mjs';
 import { clean, VERSION as SESSION_VERSION } from './session.mjs';
 
@@ -60,7 +61,7 @@ function createWindow(restore) {
   const win = new BrowserWindow({
     width: 1200, height: 760, ...(restore?.bounds && onScreen(restore.bounds) ? restore.bounds : {}),
     minWidth: 760, minHeight: 480,
-    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 15 }, // centred in the 44px top row
+    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 11 }, // centred in the 36px top strip
     backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'active',
     webPreferences: { preload: join(HERE, 'preload.cjs'), webviewTag: true }, // <webview> = the preview panel's app view
   });
@@ -162,6 +163,15 @@ ipcMain.on('pty:kill', (_, id) => { ptys.get(id)?.pty.kill(); ptys.delete(id); }
 
 ipcMain.handle('dir', (_, dir) => ({ entries: list(dir), suggestions: suggest(dir), home: homedir() }));
 ipcMain.handle('ls', (_, dir) => list(dir)); // an expanded folder in the sidebar tree
+// A workspace's branch and what's changed (git.mjs). null: not a git folder, or no git on this Mac.
+// --no-optional-locks: reading status never gets in the way of your own git commands.
+const git = (cwd, args) => new Promise((res) =>
+  execFile('git', ['--no-optional-locks', '-C', cwd, ...args], { timeout: 2000, maxBuffer: 8 << 20 }, (err, out) => res(err ? null : out)));
+ipcMain.handle('git:info', async (_, cwd) => {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return null;
+  const status = await git(cwd, ['status', '--porcelain', '--branch']);
+  return status == null ? null : gitInfo(status, await git(cwd, ['diff', 'HEAD', '--shortstat']));
+});
 
 // The sidebar and preview follow changes Claude makes, without waiting for a `cd`. Each window watches
 // the folders it shows. Never recursive: the folder can be ~, and node_modules churns during installs.
