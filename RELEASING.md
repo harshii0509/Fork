@@ -25,7 +25,16 @@ How the pieces work underneath (DMG, `install.sh`, the update pill, signing) is 
 - **Write the changelog as you go.** Every change people will notice gets a plain-English line under `### Unreleased` in [CHANGELOG.md](CHANGELOG.md), grouped as **New**, **Better** and **Fixed**. That text is exactly what people read in the update card and in What's new, so write it for them. Changes only developers see stay out of it; the git history has those.
 - **And on What's cooking.** Every change, big or small (developer-only ones too), also gets an entry on the website's changelog, [fork-terminal.vercel.app/whats-cooking](https://fork-terminal.vercel.app/whats-cooking): `app/whats-cooking/entries.ts` in the [fork-website](https://github.com/harshii0509/fork-website) repo, with when it landed, what changed and why. After a release, add its version to the entries it shipped and to `RELEASES` there.
 - **`install.sh` is live the moment it's pushed.** "Update and restart" downloads it straight from `main`, so a mistake there breaks updates for everyone. Run `bash install.sh` locally before pushing a change to it.
-- **Rhythm:** a patch whenever something's worth shipping. During the beta, a minor roughly every one to two weeks.
+- **Rhythm: ship once or twice a week, not after every fix.** Every release asks everyone to restart, so keep adding to **Unreleased** and ship them together. Ship straight away only when something's broken (Fork won't open, updating fails, data at risk). A minor roughly every one to two weeks when there are features.
+
+### Before every release (the checklist)
+Claude stops and says so if any of these is missing when you ask for a release:
+1. **Is it time?** Has it been a few days since the last release, or is something broken? If neither, wait and keep collecting.
+2. **Used in the real app, not just written.** The change has been run in the app (with `npm start`, a test copy, or Fork Dev once it exists, [#15](https://github.com/harshii0509/Fork/issues/15)), not just tested by `npm run check`.
+3. **Unreleased reads right.** Plain words, for the people updating, and it says **Fork**, never the old package name.
+4. **From `main`, committed.** Never from a branch or worktree such as `ui-redesign`.
+5. **Dry run first.** `npm run release -- patch --dry-run`, and read the notes it shows.
+6. **After it's out:** mark the shipped entries on What's cooking with the version, and add it to `RELEASES` there.
 
 ## 3. Shipping a release
 
