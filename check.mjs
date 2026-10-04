@@ -259,6 +259,19 @@ assert.equal(shelf.filter((b) => b.path === '/b/10.pdf').length, 1); // reopenin
 assert.equal(remember('broken', { path: '/x.pdf' }).map((b) => b.path).join(), '/x.pdf'); // damaged storage
 assert.deepEqual([percent(0.123), percent(undefined), percent(2)], ['12%', '0%', '100%']);
 
+// --- Sounds (sounds.js, browser script): few, soft and short ---
+{
+  const sc = { window: {} };
+  runInNewContext(readFileSync(new URL('./sounds.js', import.meta.url), 'utf8'), sc);
+  const { done, length } = sc.window.Sounds;
+  assert.ok(done.layers.reduce((n, l) => n + l.gain, 0) <= 0.6);                     // gain budget
+  for (const l of done.layers) {
+    const f = l.source.frequency, fs = typeof f === 'number' ? [f] : [f.start, f.end];
+    assert.ok(fs.every((x) => x >= 20 && x <= 20000) && l.envelope.decay > 0 && l.envelope.attack > 0); // audible; never clicks
+  }
+  assert.ok(length(done) <= 3);
+}
+
 // --- Games (games.js, browser script): the rules of Snake, Stack and Space Run ---
 const gm = { window: {} };
 runInNewContext(readFileSync(new URL('./games.js', import.meta.url), 'utf8'), gm);

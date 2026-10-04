@@ -231,14 +231,14 @@ ipcMain.on('clip:write', (_, text) => { if (typeof text === 'string' && text.len
 let unread = 0;
 const shown = new Set(); // a notification that's garbage-collected forgets its click
 const KINDS = ['done', 'failed', 'app'];
-ipcMain.on('notify', (e, { kind, title, body, pane, url, alerts = true } = {}) => {
+ipcMain.on('notify', (e, { kind, title, body, pane, url, alerts = true, silent = false } = {}) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (!win || win.isFocused()) return;
   const m = { kind: KINDS.includes(kind) ? kind : 'done', title: String(title || 'Fork').slice(0, 120), body: String(body || '').slice(0, 300),
     pane, url: typeof url === 'string' ? url.slice(0, 300) : undefined, win: e.sender.id };
   if (notchShowing()) notchWin.webContents.send('notch:moment', m);
   else if (alerts && Notification.isSupported()) {
-    const n = new Notification({ title: m.title, body: m.body });
+    const n = new Notification({ title: m.title, body: m.body, silent: !!silent }); // silent: Fork chimed itself
     shown.add(n);
     n.on('click', () => { shown.delete(n); goTo(m); });
     n.on('close', () => shown.delete(n));

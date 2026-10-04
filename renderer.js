@@ -182,6 +182,7 @@ async function newPane(cwd, { screen, when } = {}) {
       if (pane.failed) nudge(pane, `${pane.tool || 'Your command'} failed`, `in ${folderOf(pane)}`, 'failed');
       else if (pane.lastUsed - pane.startedAt >= 10e3) { // long enough that you may have gone to do something else
         nudge(pane, 'Your command finished', pane.tool ? `${pane.tool} · ${folderOf(pane)}` : `In ${folderOf(pane)}`);
+        chime(pane);
       }
     }
     syncBusy();
@@ -558,7 +559,7 @@ function setThinking(pane, on) {
     if (tabOf(pane.id) !== tab()) pane.unseen = true; // it finished while you were elsewhere
     pane.lastUsed = Date.now();
     workDone(pane);
-    if (was) nudge(pane, doneText(pane), `In ${folderOf(pane)}`);
+    if (was) { nudge(pane, doneText(pane), `In ${folderOf(pane)}`); chime(pane); }
   }
   syncBusy();
   renderTabs();
@@ -580,11 +581,19 @@ function toolNotified(pane, { title, body }) {
 // Only while you're in another app: in the notch on a Mac that has one, otherwise a Mac notification,
 // plus a dock badge (Settings → Notifications). kind: done, failed or app (your app is ready, at url).
 // The tool's own notification and Fork's noticing it's done arrive close together: show one.
+// Something you were waiting on finished (an agent's turn, a command of 10s or more): a soft chime
+// (sounds.js), in Fork or not. Settings → Notifications turns it off. One per pane at a time.
+function chime(pane) {
+  if (settings.sounds !== 'on' || Date.now() - (pane.chimedAt || 0) < 2000) return;
+  pane.chimedAt = Date.now();
+  Sounds.play(Sounds.done);
+}
 function nudge(pane, title, body, kind = 'done', url) {
   if (document.hasFocus()) return;
   if (Date.now() - (pane.nudgedAt || 0) < 2000) return;
   pane.nudgedAt = Date.now();
-  dt.notify({ kind, title, body, pane: pane.id, url, alerts: settings.alerts !== 'off' });
+  dt.notify({ kind, title, body, pane: pane.id, url, alerts: settings.alerts !== 'off',
+    silent: kind === 'done' && settings.sounds === 'on' }); // Fork's own chime plays instead of the Mac's ping
   dt.track('notification_shown', { tool: pane.tool, kind });
 }
 dt.onGoPane((id, action) => { // clicked a notification or the notch
@@ -1500,7 +1509,7 @@ function installed(font) {
 // Appearance is Light, Dark or System (follows the Mac); each has one look while the UI is redesigned (themes.js).
 // Theme picks saved before the redesign (darkTheme, lightTheme) are left alone, unused.
 const DEFAULTS = { mode: 'system',
-  font: 'IBM Plex Mono', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', showNotch: 'off', smart: 'on' };
+  font: 'IBM Plex Mono', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', sounds: 'on', showNotch: 'off', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
@@ -1557,7 +1566,7 @@ const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
 const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
-const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setSounds', 'sounds'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;
@@ -1602,6 +1611,7 @@ $('setSize').onchange = () => setSize(+$('setSize').value);
 $('sizeUp').onclick = () => setSize(settings.size + 1);
 $('sizeDown').onclick = () => setSize(settings.size - 1);
 for (const [id, key] of SWITCHES) $(id).onchange = () => save({ [key]: $(id).checked ? 'on' : 'off' });
+$('setSounds').addEventListener('change', () => { if ($('setSounds').checked) Sounds.play(Sounds.done); }); // hear what you turned on
 // Anonymous usage lives in the main process (analytics.mjs), not in settings: main is what sends it.
 $('setUsage').onchange = () => dt.analytics($('setUsage').checked);
 // So does reopening your tabs: main needs to know before any window exists.
