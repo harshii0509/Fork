@@ -1,3 +1,7 @@
-// Fork's one look while the UI is being redesigned: the terminal's colours plus the accent, and the app UI
-// derives its colours from it (see index.html :root). Themes come back later, rebuilt from the ground up.
-window.LOOK = {name: "Designer", dark: true, accent: "#7c6cff", background: "#141416", foreground: "#ececf1", cursor: "#7c6cff", selectionBackground: "#7c6cff55", black: "#2a2a2f", red: "#ff6b6b", green: "#4ade80", yellow: "#ffb454", blue: "#6c9cff", magenta: "#b18cff", cyan: "#5ad4e6", white: "#c9c9d1", brightBlack: "#5c5c66", brightRed: "#ff8a8a", brightGreen: "#6ee7a0", brightYellow: "#ffc97a", brightBlue: "#8fb4ff", brightMagenta: "#c7a8ff", brightCyan: "#7fe0ee", brightWhite: "#ececf1", onAccent: "#ffffff"};
+// Fork's two looks while the UI is redesigned: the terminal's colours plus the accent. The app UI takes its
+// colours from the chosen one (renderer.js applySettings → index.html :root). The redesign's palette is in colors.css.
+// Dark is today's look. Light is a first pass made only from the redesign's colours, until each colour gets its role.
+window.THEMES = {
+  dark: {name: "Designer", dark: true, accent: "#7c6cff", background: "#141416", foreground: "#ececf1", cursor: "#7c6cff", selectionBackground: "#7c6cff55", black: "#2a2a2f", red: "#ff6b6b", green: "#4ade80", yellow: "#ffb454", blue: "#6c9cff", magenta: "#b18cff", cyan: "#5ad4e6", white: "#c9c9d1", brightBlack: "#5c5c66", brightRed: "#ff8a8a", brightGreen: "#6ee7a0", brightYellow: "#ffc97a", brightBlue: "#8fb4ff", brightMagenta: "#c7a8ff", brightCyan: "#7fe0ee", brightWhite: "#ececf1", onAccent: "#ffffff"},
+  light: {name: "Light (first pass)", dark: false, accent: "#0561e2", onAccent: "#ffffff", background: "#ffffff", foreground: "#1d1d1f", cursor: "#0561e2", selectionBackground: "#a6d7f8", black: "#1d1d1f", red: "#eb5757", green: "#19c332", yellow: "#b6764d", blue: "#0561e2", magenta: "#bf3dea", cyan: "#26b5ce", white: "#919193", brightBlack: "#6f6f6f", brightRed: "#ff736a", brightGreen: "#4cb782", brightYellow: "#ea883d", brightBlue: "#2b8eff", brightMagenta: "#bf3dea", brightCyan: "#3d9cea", brightWhite: "#5b5b59"},
+};

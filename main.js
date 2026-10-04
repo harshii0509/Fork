@@ -542,7 +542,7 @@ app.on('will-quit', ai.stop); // never leave a Claude running after Fork quits
 
 app.whenReady().then(async () => {
   app.setAboutPanelOptions({ applicationName: 'Fork', applicationVersion: app.getVersion(), version: '' });
-  nativeTheme.themeSource = 'dark'; // Fork's one look is dark while themes are paused (themes.js)
+  nativeTheme.themeSource = 'system'; // until the window applies its saved appearance
   buildMenu();
   const saved = await readSession();
   sessionOn = saved.enabled;

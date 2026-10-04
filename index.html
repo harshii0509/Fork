@@ -5,6 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' file: data: https: blob:; media-src 'self' file:; font-src 'self' data: blob:; frame-src 'self' blob:; worker-src 'self' blob:">
 <title>Fork</title>
 <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+<link rel="stylesheet" href="colors.css"> <!-- the redesign's palette: every colour by its hex -->
 <link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/400.css">
 <link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/700.css">
 <link rel="stylesheet" href="node_modules/@fontsource/geist-mono/400.css">
@@ -15,7 +16,7 @@
 <link rel="stylesheet" href="node_modules/@fontsource/fira-code/700.css">
 <style>
   :root {
-    /* Set from the look (themes.js, via renderer.js applySettings). These defaults are the same values. */
+    /* Set from the chosen look (themes.js, via renderer.js applySettings). These defaults are the dark look's values. */
     --bg: #141416; --text: #ececf1; --accent: #7c6cff; --on-accent: #fff;
     --tree: #e6e6e6; /* files and folders: one gray, icon and name alike */
     --warn: #ffb454; --bad: #ff6b6b; --ok: #4ade80;
@@ -621,6 +622,8 @@
     <div class="set-drag"></div>
     <h1>Appearance</h1>
     <div class="set-list">
+      <div class="set-row"><span>Appearance<small>System follows your Mac's light or dark setting</small></span>
+        <span class="seg" id="setMode"><button data-v="light">Light</button><button data-v="dark">Dark</button><button data-v="system">System</button></span></div>
       <label class="set-row"><span>Font</span><select id="setFont"></select></label>
       <div class="set-row"><span>Font size</span>
         <span class="stepper"><input type="number" id="setSize" min="8" max="32" aria-label="Font size">

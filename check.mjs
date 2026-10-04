@@ -61,13 +61,17 @@ assert.equal(neighbor(rects, 1, 'ArrowLeft'), null);
 assert.equal(neighbor(rects, 2, 'ArrowDown'), '3');
 assert.equal(neighbor(rects, 3, 'ArrowLeft'), '1');
 
-// --- The look (themes.js): one full terminal palette while themes are paused ---
+// --- The looks (themes.js): a full terminal palette each, dark and light ---
 runInNewContext(readFileSync(new URL('./themes.js', import.meta.url), 'utf8'), ctx);
-const { LOOK } = ctx.window;
+const { THEMES } = ctx.window;
 const COLORS = ['background', 'foreground', 'cursor', 'accent', 'onAccent', ...['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
   .flatMap((k) => [k, 'bright' + k[0].toUpperCase() + k.slice(1)])];
-for (const k of COLORS) assert.match(LOOK[k], /^#[0-9a-f]{6}$/, k);
-assert.match(LOOK.selectionBackground, /^#[0-9a-f]{6}([0-9a-f]{2})?$/);
+assert.equal(THEMES.dark.dark, true);
+assert.equal(THEMES.light.dark, false);
+for (const [name, look] of Object.entries(THEMES)) {
+  for (const k of COLORS) assert.match(look[k], /^#[0-9a-f]{6}$/, `${name}.${k}`);
+  assert.match(look.selectionBackground, /^#[0-9a-f]{6}([0-9a-f]{2})?$/, name);
+}
 
 // --- Preview helpers (preview.js, browser script) ---
 runInNewContext(readFileSync(new URL('./preview.js', import.meta.url), 'utf8'), ctx);

@@ -1324,8 +1324,9 @@ function installed(font) {
   const w = (f) => { c.font = `20px ${f}`; return c.measureText('mmmwwwiiil10O').width; };
   return w(`"${font}", monospace`) !== w('monospace') || w(`"${font}", serif`) !== w('serif');
 }
-// One look while the UI is redesigned (themes.js). Saved theme choices (mode, darkTheme, lightTheme) are left alone, unused.
-const DEFAULTS = {
+// Appearance is Light, Dark or System (follows the Mac); each has one look while the UI is redesigned (themes.js).
+// Theme picks saved before the redesign (darkTheme, lightTheme) are left alone, unused.
+const DEFAULTS = { mode: 'system',
   font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', showNotch: 'off', smart: 'on' };
 function load() {
   let s;
@@ -1336,7 +1337,9 @@ function load() {
 }
 let settings = load();
 
-const currentTheme = () => LOOK;
+const sysDark = matchMedia('(prefers-color-scheme: dark)'); // macOS's own, while themeSource is 'system'
+const isDark = (s) => (s.mode === 'system' ? sysDark.matches : s.mode === 'dark');
+const currentTheme = (s) => THEMES[isDark(s) ? 'dark' : 'light'];
 const fontStack = (f) => `"${f}", Menlo, monospace`;
 const xtermOpts = (s) => ({ theme: currentTheme(s), fontFamily: fontStack(s.font), fontSize: s.size });
 
@@ -1349,10 +1352,10 @@ async function applySettings(s) {
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(`--${k}`, v);
   Blobs.setColor(t.accent, t.red);
   Games.setColors({ bg: t.background, ink: t.foreground, accent: t.accent, fontSize: s.size }); // its pixels follow the font
-  root.style.colorScheme = t.dark ? 'dark' : 'light'; // native bits (dropdowns, spinners) match the theme
+  root.style.colorScheme = root.dataset.mode = t.dark ? 'dark' : 'light'; // native bits match; CSS can say :root[data-mode=light]
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
-  dt.appearance(t.dark ? 'dark' : 'light'); // the frosted sidebar matches the look, not macOS
+  dt.appearance(s.mode); // the frosted sidebar follows too
   dt.notchSetting(s.showNotch === 'on').then((n) => { $('notchRow').hidden = !n?.has; }); // its switch only on a Mac with a notch
   const run = ++applying;
   await document.fonts.load(`${s.size}px "${s.font}"`).catch(() => {}); // else xterm measures the fallback font
@@ -1377,6 +1380,7 @@ function save(patch) {
 const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
+const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
 const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
@@ -1387,6 +1391,7 @@ function renderSettings() {
   $('setFont').value = settings.font;
   $('setSize').value = settings.size;
   for (const [id, key] of SWITCHES) $(id).checked = settings[key] === 'on';
+  for (const [id, key] of SEGS) for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === settings[key]);
 
   // The terminal is hidden here, so show what the choice looks like on a fake one.
   const t = currentTheme(settings), c = (k, s) => `<span style="color:${t[k]}">${s}</span>`;
@@ -1426,6 +1431,12 @@ $('setUsage').onchange = () => dt.analytics($('setUsage').checked);
 // So does reopening your tabs: main needs to know before any window exists.
 $('setRestore').onchange = () => { dt.sessionEnabled($('setRestore').checked); dt.track('setting_changed', { setting: 'restore', value: $('setRestore').checked ? 'on' : 'off' }); };
 $('usageOff').onclick = () => { dt.analytics(false); $('usageNote').hidden = true; };
+for (const [id, key] of SEGS) $(id).onclick = (e) => { const b = e.target.closest('button'); if (b) save({ [key]: b.dataset.v }); };
+sysDark.addEventListener('change', () => {
+  if (settings.mode !== 'system') return;
+  applySettings(settings);
+  if (inSettings()) renderSettings();
+});
 $('openSettings').onclick = () => (inSettings() ? closeSettings() : openSettings());
 $('closeSettings').onclick = closeSettings;
 window.addEventListener('storage', (e) => {

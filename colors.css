@@ -1,0 +1,103 @@
+/* Fork's palette for the redesign: every colour from the Figma file, named by its hex.
+   Roles come later: each theme in index.html points at these (e.g. --sidebar: var(--c-1d1d1f)).
+   #RRGGBBAA colours keep their alpha in the name: --c-ffffff-14 is #FFFFFF14. */
+:root {
+  /* Dark greys */
+  --c-070707: #070707;
+  --c-070709: #070709;
+  --c-0f1010: #0F1010;
+  --c-0f0f10: #0F0F10;
+  --c-111110: #111110;
+  --c-121212: #121212;
+  --c-131316: #131316;
+  --c-161616: #161616;
+  --c-171716: #171716;
+  --c-171718: #171718;
+  --c-1d1d1b: #1D1D1B;
+  --c-1c1c1c: #1C1C1C;
+  --c-1d1d1f: #1D1D1F;
+  --c-1e1e1e: #1E1E1E;
+  --c-1f2022: #1F2022;
+  --c-242422: #242422;
+  --c-26262c: #26262C;
+  --c-2c2c2a: #2C2C2A;
+  --c-343330: #343330;
+  --c-303038: #303038;
+  --c-383836: #383836;
+  --c-3a3a3a: #3A3A3A;
+  --c-39393b: #39393B;
+  --c-444444: #444444;
+  --c-40404a: #40404A;
+  --c-525252: #525252;
+  --c-5b5b59: #5B5B59;
+  /* Mid greys */
+  --c-6f6f6f: #6F6F6F;
+  --c-6f7074: #6F7074;
+  --c-737371: #737371;
+  --c-858585: #858585;
+  --c-8a8a8c: #8A8A8C;
+  --c-919193: #919193;
+  --c-9e9e9e: #9E9E9E;
+  --c-95a2b3: #95A2B3;
+  --c-a8aaab: #A8AAAB;
+  --c-b8b8b8: #B8B8B8;
+  /* Light greys */
+  --c-cbcbcb: #CBCBCB;
+  --c-d1d1d1: #D1D1D1;
+  --c-d5d5d5: #D5D5D5;
+  --c-dddddd: #DDDDDD;
+  --c-dedede: #DEDEDE;
+  --c-e6e6e6: #E6E6E6;
+  --c-eeeeee: #EEEEEE;
+  --c-f1f1f0: #F1F1F0;
+  --c-f2f2f3: #F2F2F3;
+  --c-f3f3f6: #F3F3F6;
+  --c-f5f5f5: #F5F5F5;
+  --c-f8f8f7: #F8F8F7;
+  --c-f9f8f8: #F9F8F8;
+  --c-ffffff: #FFFFFF;
+  /* See-through, white-based (for dark surfaces) */
+  --c-e8e8ed-2e: #E8E8ED2E;
+  --c-f5f5f5-1a: #F5F5F51A;
+  --c-fafafb-1a: #FAFAFB1A;
+  --c-ffffff-14: #FFFFFF14;
+  --c-ffffff-26: #FFFFFF26;
+  --c-ffffff-06: #FFFFFF06;
+  --c-ffffff-33: #FFFFFF33;
+  --c-ffffff-1a: #FFFFFF1A;
+  /* See-through, dark-based (for light surfaces) */
+  --c-000000-1a: #0000001A;
+  --c-111111-38: #11111138;
+  --c-1c1c1c-00: #1C1C1C00;
+  --c-1c1c1c-cc: #1C1C1CCC;
+  /* Blues */
+  --c-162934: #162934;
+  --c-3d5f74: #3D5F74;
+  --c-0561e2: #0561E2;
+  --c-628ca9: #628CA9;
+  --c-3d9cea: #3D9CEA;
+  --c-2b8eff: #2B8EFF;
+  --c-a6d7f8: #A6D7F8;
+  /* Greens */
+  --c-15341b: #15341B;
+  --c-3d6247: #3D6247;
+  --c-19c332: #19C332;
+  --c-41ba56-40: #41BA5640;
+  --c-4cb782: #4CB782;
+  /* Reds and oranges */
+  --c-744a32: #744A32;
+  --c-b6764d: #B6764D;
+  --c-ea773d: #EA773D;
+  --c-ea883d: #EA883D;
+  --c-eb5757: #EB5757;
+  --c-ff736a: #FF736A;
+  --c-fac4b8: #FAC4B8;
+  /* Yellows */
+  --c-febc2e: #FEBC2E;
+  --c-f0bf00: #F0BF00;
+  /* Purples */
+  --c-bf3dea: #BF3DEA;
+  --c-a6a6f8: #A6A6F8;
+  /* Cyans */
+  --c-26b5ce: #26B5CE;
+}
