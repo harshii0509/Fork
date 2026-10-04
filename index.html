@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="node_modules/@fontsource/fira-code/700.css">
 <style>
   :root {
-    /* Set from the theme (renderer.js applySettings). Defaults = the Designer theme. */
+    /* Set from the look (themes.js, via renderer.js applySettings). These defaults are the same values. */
     --bg: #141416; --text: #ececf1; --accent: #7c6cff; --on-accent: #fff;
     --tree: #e6e6e6; /* files and folders: one gray, icon and name alike */
     --warn: #ffb454; --bad: #ff6b6b; --ok: #4ade80;
@@ -27,6 +27,19 @@
     --hover: color-mix(in srgb, var(--text) 8%, transparent);
     --active: color-mix(in srgb, var(--text) 14%, transparent);
     --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+    --blue: #6c9cff; --magenta: #b18cff; --cyan: #5ad4e6; /* code previews (Shiki), also set from the look */
+    /* Fixed, whatever the look: white "paper" (your app, book pages, switch knobs), the tour's dimming, shadows. */
+    --paper: #fff;
+    --scrim: #0000008c;
+    --shadow-1: 0 1px 3px #0003;       /* the selected segment */
+    --shadow-2: 0 1px 4px #0003;       /* page-turn buttons */
+    --shadow-knob: 0 1px 3px #0004;    /* switch knobs */
+    --shadow-page: 0 1px 8px #0004;    /* PDF pages */
+    --shadow-media: 0 2px 12px #0003;  /* images and videos in the preview */
+    --shadow-float: 0 2px 10px #0005;  /* the reader's "done" pill */
+    --shadow-key: 0 2px 8px #0008;     /* hold-⌘ key hints */
+    --shadow-pop: 0 8px 24px rgb(0 0 0 / .25); /* the find bar */
+    --shadow-card: 0 24px 60px #0008;  /* cards: ⌘K, welcome, updates */
     --radius: 10px; --ease: cubic-bezier(.2, .8, .2, 1);
   }
   * { box-sizing: border-box; }
@@ -145,7 +158,7 @@
   /* ⌘F: find in the active pane, floating over the terminal's top-right corner. */
   .find { grid-area: 2 / 2; justify-self: end; align-self: start; z-index: 5; margin: 10px 14px; display: none; align-items: center;
     gap: 2px; padding: 3px 3px 3px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    box-shadow: 0 8px 24px rgb(0 0 0 / .25); }
+    box-shadow: var(--shadow-pop); }
   .find.show { display: flex; }
   .find input { width: 180px; padding: 4px 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; }
   .find-count { min-width: 64px; padding-right: 6px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -158,7 +171,7 @@
   [data-key] { position: relative; }
   [data-key]::after { content: attr(data-key); position: absolute; top: -6px; right: -6px; z-index: 5;
     font: 600 10px/1 -apple-system, sans-serif; padding: 3px 5px; border-radius: 5px; white-space: nowrap;
-    background: var(--accent); color: var(--on-accent); box-shadow: 0 2px 8px #0008; pointer-events: none;
+    background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-key); pointer-events: none;
     opacity: 0; transform: scale(.85); transition: opacity .12s, transform .12s var(--ease); }
   .show-keys [data-key]::after { opacity: 1; transform: none; }
   .tab[data-key]::after { top: 50%; right: 6px; transform: translateY(-50%) scale(.85); }
@@ -243,7 +256,7 @@
   /* The hidden view keeps its size, so the app keeps its state and hot reload while a file is shown. */
   .pv:not([data-mode="app"]) #pvApp, .pv:not([data-mode="app"]) .pv-appmsg, .pv:not([data-mode="file"]) #pvFile,
   .pv:not([data-mode="read"]) #pvRead { visibility: hidden; pointer-events: none; }
-  #pvApp { position: absolute; inset: 0; background: #fff; }
+  #pvApp { position: absolute; inset: 0; background: var(--paper); }
   #pvApp.blank { visibility: hidden; }
   .pv-appmsg { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 12px; padding: 24px;
     color: var(--dim); background: var(--bg); }
@@ -256,23 +269,23 @@
   #pvRead { overflow: hidden; outline: none; }
   .rd-stage { position: absolute; inset: 0; }
   .rd:not(.has-book) .rd-stage, .rd.has-book .rd-empty { display: none; }
-  .rd-epub { position: absolute; inset: 0; background: #fff; padding: 28px 44px 32px; }
+  .rd-epub { position: absolute; inset: 0; background: var(--paper); padding: 28px 44px 32px; }
   .rd.scroll .rd-epub { padding: 0 0 0 28px; }
   .rd-pdf { position: absolute; inset: 0; overflow: auto; outline: none; padding: 16px 0; }
-  .rd-page { margin: 0 auto 16px; background: #fff; box-shadow: 0 1px 8px #0004; }
+  .rd-page { margin: 0 auto 16px; background: var(--paper); box-shadow: var(--shadow-page); }
   .rd-page canvas { display: block; width: 100%; height: 100%; }
   .rd.pages .rd-pdf { overflow: hidden; display: grid; place-items: center; padding: 0; }
   .rd.pages .rd-page:not(.on) { display: none; }
   .rd.pages .rd-page { margin: 0; }
   .rd-turn { position: absolute; top: 50%; margin-top: -16px; width: 32px; height: 32px; border-radius: 50%; display: none;
     place-items: center; background: var(--panel); color: var(--text); border: 1px solid var(--line); opacity: 0;
-    box-shadow: 0 1px 4px #0003; transition: opacity .15s; }
+    box-shadow: var(--shadow-2); transition: opacity .15s; }
   .rd-turn.prev { left: 6px; } .rd-turn.next { right: 6px; }
   .rd.pages.has-book .rd-turn { display: grid; }
   .rd:hover .rd-turn { opacity: .75; } .rd .rd-turn:hover { opacity: 1; }
   .rd-done { position: absolute; top: 10px; left: 50%; z-index: 1; transform: translate(-50%, -6px); opacity: 0; pointer-events: none;
     padding: 6px 13px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; white-space: nowrap;
-    box-shadow: 0 2px 10px #0005; transition: opacity .2s, transform .2s; }
+    box-shadow: var(--shadow-float); transition: opacity .2s, transform .2s; }
   .rd-done.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
   .rd-done u { text-underline-offset: 2px; }
   .rd.loading .rd-stage { opacity: 0; }
@@ -294,7 +307,7 @@
   .pv-msg b { display: block; color: var(--text); margin-bottom: 6px; font-weight: 600; }
   .pv-media { min-height: 100%; display: grid; place-items: center; padding: 24px;
     background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 16px 16px; } /* shows transparency */
-  .pv-media img, .pv-media video { max-width: 100%; max-height: calc(100vh - 100px); box-shadow: 0 2px 12px #0003; }
+  .pv-media img, .pv-media video { max-width: 100%; max-height: calc(100vh - 100px); box-shadow: var(--shadow-media); }
   .pv-code { display: flex; min-width: min-content; font: var(--mono-size, 13px)/1.5 var(--mono, Menlo, monospace); }
   .pv-code pre { margin: 0; padding: 12px 0; }
   .pv-code .gutter { flex: none; padding: 12px 12px 12px 16px; text-align: right; color: var(--faint); user-select: none;
@@ -324,7 +337,7 @@
   /* Dialogs sit in the middle. ⌘K stays near the top: its list changes height as you type. */
   #welcomeOv, #startOv, #updOv { align-items: center; padding: 24px 0; }
   .card { width: min(560px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 14px; box-shadow: 0 24px 60px #0008; transform: scale(.98); transition: transform .16s var(--ease); }
+    border-radius: 14px; box-shadow: var(--shadow-card); transform: scale(.98); transition: transform .16s var(--ease); }
   .overlay.show .card { transform: none; }
 
   .start { padding: 28px; }
@@ -362,7 +375,7 @@
   .tour { position: fixed; inset: 0; z-index: 20; opacity: 0; transition: opacity .2s var(--ease); }
   .tour.show { opacity: 1; }
   .tour-block { position: absolute; inset: 0; -webkit-app-region: no-drag; } /* nothing underneath is clickable mid-tour */
-  .spot { position: absolute; border-radius: 10px; pointer-events: none; box-shadow: 0 0 0 9999px #0000008c;
+  .spot { position: absolute; border-radius: 10px; pointer-events: none; box-shadow: 0 0 0 9999px var(--scrim);
     outline: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 0;
     transition: top .25s var(--ease), left .25s var(--ease), width .25s var(--ease), height .25s var(--ease); }
   .tour-tip { position: absolute; width: 300px; padding: 16px 16px 12px; transform: none;
@@ -491,7 +504,7 @@
   .arrows button:hover { color: var(--text); background: var(--hover); }
   .seg { display: flex; width: 220px; padding: 2px; border-radius: 8px; background: var(--hover); }
   .seg button { flex: 1; padding: 5px; border-radius: 6px; color: var(--dim); }
-  .seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px #0003; }
+  .seg button.on { background: var(--bg); color: var(--text); box-shadow: var(--shadow-1); }
   .sample { padding: 16px 18px; border-radius: var(--radius); border: 1px solid var(--line); line-height: 1.25;
     white-space: pre; overflow: hidden; }
   .sample .dots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
@@ -505,7 +518,7 @@
   .switch { appearance: none; flex: none; position: relative; width: 36px; height: 22px; margin: 0; padding: 0; border: 0;
     border-radius: 999px; background: var(--active); cursor: pointer; transition: background .15s; }
   .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
-    background: #fff; box-shadow: 0 1px 3px #0004; transition: transform .15s var(--ease); }
+    background: var(--paper); box-shadow: var(--shadow-knob); transition: transform .15s var(--ease); }
   .switch:checked { background: var(--accent); }
   .switch:checked::after { transform: translateX(14px); }
   .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -608,10 +621,6 @@
     <div class="set-drag"></div>
     <h1>Appearance</h1>
     <div class="set-list">
-      <div class="set-row"><span>Appearance<small>System follows your Mac's light or dark setting</small></span>
-        <span class="seg" id="setMode"><button data-v="light">Light</button><button data-v="dark">Dark</button><button data-v="system">System</button></span></div>
-      <label class="set-row" id="lightRow"><span><span class="theme-label">Light theme</span><small>Colours for the terminal and the whole app</small></span><select id="setLight"></select></label>
-      <label class="set-row" id="darkRow"><span><span class="theme-label">Dark theme</span><small>Colours for the terminal and the whole app</small></span><select id="setDark"></select></label>
       <label class="set-row"><span>Font</span><select id="setFont"></select></label>
       <div class="set-row"><span>Font size</span>
         <span class="stepper"><input type="number" id="setSize" min="8" max="32" aria-label="Font size">

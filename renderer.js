@@ -1324,29 +1324,19 @@ function installed(font) {
   const w = (f) => { c.font = `20px ${f}`; return c.measureText('mmmwwwiiil10O').width; };
   return w(`"${font}", monospace`) !== w('monospace') || w(`"${font}", serif`) !== w('serif');
 }
-// Appearance is Light, Dark or System; each side keeps its own theme, and System swaps them with macOS.
-const DEFAULTS = { mode: 'system', darkTheme: 'Designer', lightTheme: 'Catppuccin Latte',
+// One look while the UI is redesigned (themes.js). Saved theme choices (mode, darkTheme, lightTheme) are left alone, unused.
+const DEFAULTS = {
   font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', showNotch: 'off', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
-  // Settings saved before Light/Dark/System had one `theme`: keep it, on its own side.
-  if (s.theme && !s.mode) {
-    const dark = THEMES.find((t) => t.name === s.theme)?.dark ?? true;
-    s.mode = dark ? 'dark' : 'light';
-    s[dark ? 'darkTheme' : 'lightTheme'] = s.theme;
-  }
   if (s.smoothing && s.smoothing !== 'off') s.smoothing = 'on'; // was Default / Thin / Off
   delete s.theme; delete s.frost; delete s.notch; // the notch was on for everyone before; now it's off until you turn it on
   return { ...DEFAULTS, ...s };
 }
 let settings = load();
 
-const sysDark = matchMedia('(prefers-color-scheme: dark)'); // macOS's own, while themeSource is 'system'
-const isDark = (s) => (s.mode === 'system' ? sysDark.matches : s.mode === 'dark');
-const themeOf = (name, dark) => THEMES.find((t) => t.name === name && t.dark === dark)
-  || themeOf(dark ? DEFAULTS.darkTheme : DEFAULTS.lightTheme, dark);
-const currentTheme = (s) => (isDark(s) ? themeOf(s.darkTheme, true) : themeOf(s.lightTheme, false));
+const currentTheme = () => LOOK;
 const fontStack = (f) => `"${f}", Menlo, monospace`;
 const xtermOpts = (s) => ({ theme: currentTheme(s), fontFamily: fontStack(s.font), fontSize: s.size });
 
@@ -1362,7 +1352,7 @@ async function applySettings(s) {
   root.style.colorScheme = t.dark ? 'dark' : 'light'; // native bits (dropdowns, spinners) match the theme
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
-  dt.appearance(s.mode); // the frosted sidebar follows too
+  dt.appearance(t.dark ? 'dark' : 'light'); // the frosted sidebar matches the look, not macOS
   dt.notchSetting(s.showNotch === 'on').then((n) => { $('notchRow').hidden = !n?.has; }); // its switch only on a Mac with a notch
   const run = ++applying;
   await document.fonts.load(`${s.size}px "${s.font}"`).catch(() => {}); // else xterm measures the fallback font
@@ -1387,28 +1377,16 @@ function save(patch) {
 const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
-const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
 const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;
-    $('setLight').innerHTML = opts(THEMES.filter((t) => !t.dark).map((t) => t.name));
-    $('setDark').innerHTML = opts(THEMES.filter((t) => t.dark).map((t) => t.name));
     $('setFont').innerHTML = `<optgroup label="Included">${opts(BUNDLED)}</optgroup>
       <optgroup label="On your Mac">${opts(SYSTEM.filter(installed))}</optgroup>`;
   }
-  // Light or Dark: one "Theme" picker for that side. System: both, since macOS decides which shows.
-  const both = settings.mode === 'system';
-  $('lightRow').hidden = settings.mode === 'dark';
-  $('darkRow').hidden = settings.mode === 'light';
-  for (const [row, name] of [['lightRow', 'Light theme'], ['darkRow', 'Dark theme']])
-    $(row).querySelector('.theme-label').textContent = both ? name : 'Theme';
-  $('setLight').value = themeOf(settings.lightTheme, false).name;
-  $('setDark').value = themeOf(settings.darkTheme, true).name;
   $('setFont').value = settings.font;
   $('setSize').value = settings.size;
   for (const [id, key] of SWITCHES) $(id).checked = settings[key] === 'on';
-  for (const [id, key] of SEGS) for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === settings[key]);
 
   // The terminal is hidden here, so show what the choice looks like on a fake one.
   const t = currentTheme(settings), c = (k, s) => `<span style="color:${t[k]}">${s}</span>`;
@@ -1437,8 +1415,6 @@ function closeSettings() {
 
 const SIZE = [8, 32];
 const setSize = (n) => save({ size: clamp(Math.round(n) || settings.size, ...SIZE) });
-$('setLight').onchange = () => save({ lightTheme: $('setLight').value });
-$('setDark').onchange = () => save({ darkTheme: $('setDark').value });
 $('setFont').onchange = () => save({ font: $('setFont').value });
 $('setSize').oninput = () => { const n = +$('setSize').value; if (Number.isInteger(n) && n >= SIZE[0] && n <= SIZE[1]) save({ size: n }); }; // "1" on the way to "14" waits
 $('setSize').onchange = () => setSize(+$('setSize').value);
@@ -1450,14 +1426,8 @@ $('setUsage').onchange = () => dt.analytics($('setUsage').checked);
 // So does reopening your tabs: main needs to know before any window exists.
 $('setRestore').onchange = () => { dt.sessionEnabled($('setRestore').checked); dt.track('setting_changed', { setting: 'restore', value: $('setRestore').checked ? 'on' : 'off' }); };
 $('usageOff').onclick = () => { dt.analytics(false); $('usageNote').hidden = true; };
-for (const [id, key] of SEGS) $(id).onclick = (e) => { const b = e.target.closest('button'); if (b) save({ [key]: b.dataset.v }); };
 $('openSettings').onclick = () => (inSettings() ? closeSettings() : openSettings());
 $('closeSettings').onclick = closeSettings;
-sysDark.addEventListener('change', () => {
-  if (settings.mode !== 'system') return;
-  applySettings(settings);
-  if (inSettings()) renderSettings();
-});
 window.addEventListener('storage', (e) => {
   if (e.key !== 'dt-settings') return;
   settings = load();

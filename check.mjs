@@ -61,19 +61,13 @@ assert.equal(neighbor(rects, 1, 'ArrowLeft'), null);
 assert.equal(neighbor(rects, 2, 'ArrowDown'), '3');
 assert.equal(neighbor(rects, 3, 'ArrowLeft'), '1');
 
-// --- Themes (generated data: catch a bad conversion) ---
+// --- The look (themes.js): one full terminal palette while themes are paused ---
 runInNewContext(readFileSync(new URL('./themes.js', import.meta.url), 'utf8'), ctx);
-const { THEMES } = ctx.window;
+const { LOOK } = ctx.window;
 const COLORS = ['background', 'foreground', 'cursor', 'accent', 'onAccent', ...['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
   .flatMap((k) => [k, 'bright' + k[0].toUpperCase() + k.slice(1)])];
-assert.ok(THEMES.length >= 20);
-assert.equal(THEMES[0].name, 'Designer'); // the default
-assert.equal(new Set(THEMES.map((t) => t.name)).size, THEMES.length);
-assert.ok(THEMES.filter((t) => !t.dark).length >= 6);
-for (const t of THEMES) {
-  for (const k of COLORS) assert.match(t[k], /^#[0-9a-f]{6}$/, `${t.name}.${k}`);
-  assert.match(t.selectionBackground, /^#[0-9a-f]{6}([0-9a-f]{2})?$/, t.name);
-}
+for (const k of COLORS) assert.match(LOOK[k], /^#[0-9a-f]{6}$/, k);
+assert.match(LOOK.selectionBackground, /^#[0-9a-f]{6}([0-9a-f]{2})?$/);
 
 // --- Preview helpers (preview.js, browser script) ---
 runInNewContext(readFileSync(new URL('./preview.js', import.meta.url), 'utf8'), ctx);
