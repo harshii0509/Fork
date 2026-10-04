@@ -83,6 +83,10 @@
     font: 13px/1.4 var(--ui); overflow: hidden; }
   /* Thinner, grayscale-smoothed text everywhere, as Figma draws it (Settings → Font smoothing Off still sharpens the terminal). */
   html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  /* A Mac app: labels, rows and buttons can't be selected like a web page. Selection stays where people
+     copy things: the terminal, the preview, error explanations, ⌘K's command, release notes, text fields. */
+  body { user-select: none; }
+  .xterm, .pv-body, .oops p, .pal .answer, .upd-card .pv-md, input, textarea, [contenteditable] { user-select: text; }
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
   /* Shortcut hints: a soft pill, readable but never louder than the label beside it. Each key is its
      own span, so ⌘ and the key get a little room between them. */
