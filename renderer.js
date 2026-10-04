@@ -1308,7 +1308,7 @@ function installed(font) {
 }
 // Appearance is Light, Dark or System; each side keeps its own theme, and System swaps them with macOS.
 const DEFAULTS = { mode: 'system', darkTheme: 'Designer', lightTheme: 'Catppuccin Latte',
-  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', notch: 'on', smart: 'on' };
+  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', showNotch: 'off', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
@@ -1319,7 +1319,7 @@ function load() {
     s[dark ? 'darkTheme' : 'lightTheme'] = s.theme;
   }
   if (s.smoothing && s.smoothing !== 'off') s.smoothing = 'on'; // was Default / Thin / Off
-  delete s.theme; delete s.frost;
+  delete s.theme; delete s.frost; delete s.notch; // the notch was on for everyone before; now it's off until you turn it on
   return { ...DEFAULTS, ...s };
 }
 let settings = load();
@@ -1345,7 +1345,7 @@ async function applySettings(s) {
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
   dt.appearance(s.mode); // the frosted sidebar follows too
-  dt.notchSetting(s.notch !== 'off').then((n) => { $('notchRow').hidden = !n?.has; }); // its switch only on a Mac with a notch
+  dt.notchSetting(s.showNotch === 'on').then((n) => { $('notchRow').hidden = !n?.has; }); // its switch only on a Mac with a notch
   const run = ++applying;
   await document.fonts.load(`${s.size}px "${s.font}"`).catch(() => {}); // else xterm measures the fallback font
   if (run !== applying) return; // a newer change (e.g. hovering the next swatch) already won
@@ -1370,7 +1370,7 @@ const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
 const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
-const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setNotch', 'notch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;

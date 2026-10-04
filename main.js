@@ -238,7 +238,7 @@ app.on('browser-window-focus', () => { unread = 0; app.dock?.setBadge(''); });
 // `notify` above. Settings → Notifications turns it off (notch:setting).
 const NOTCH_W = 185; // Electron can't read the notch's width; it's about this on every MacBook that has one
 const NOTCH_BOX = { width: 420, height: 380 }; // room for the biggest shape: the list of tabs
-let notchWin = null, notchOn = true, forkActive = true;
+let notchWin = null, notchOn = false, forkActive = true; // off until the window says you turned it on
 const notchTabs = new Map(); // webContents id -> that window's tabs
 const forkWindows = () => BrowserWindow.getAllWindows().filter((w) => w !== notchWin);
 // The built-in screen, if it has a notch: the menu bar there is taller (about 32pt, against 24).
