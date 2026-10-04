@@ -203,17 +203,22 @@
     animation-delay: calc(var(--phase) + var(--c) * 233ms + var(--r) * 117ms); }
   @keyframes ws-lattice { 0%, 50%, 100% { opacity: .3; } 25% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .ws-cubes i, .ws-cubes.working i { transition: none; animation: none; opacity: 1; } }
-  /* The corner badge, notched into the square on a card-coloured backing: yellow when it needs you or
-     finished while you were away, red when it failed. */
-  .ws-badge { position: absolute; top: -1px; right: -1px; display: grid; padding: 1px; border-radius: 2px; background: var(--card); }
+  /* The end of the name row: a badge, yellow when it needs you or finished while you were away, red when it
+     failed. It shares its spot with the close ×, which takes over on hover. The badge pulses: a copy of it
+     grows and fades (ease-out, 2s with a rest), so the square itself stays solid. Without ::after it's plain. */
+  .ws-end { position: relative; flex: none; width: 16px; height: 16px; }
+  .ws-slot, .ws-end .tclose { position: absolute; inset: 0; display: grid; place-items: center; transition: opacity .12s ease; }
+  .tab:hover .ws-slot { opacity: 0; }
+  .ws-badge { position: relative; width: 6px; height: 6px; background: var(--needs); }
+  .ws-badge[data-s="failed"] { background: var(--failed); }
   .ws-badge.enter { animation: ws-badge-in 150ms var(--ease-out-quart); }
   @keyframes ws-badge-in { from { opacity: 0; transform: scale(.6); } }
-  .ws-badge[data-s="done"]::before, .ws-badge[data-s="failed"]::before { content: ''; width: 5.5px; height: 5.5px; background: var(--needs); }
-  .ws-badge[data-s="failed"]::before { background: var(--failed); }
-  @media (prefers-reduced-motion: reduce) { .ws-badge.enter { animation: none; } }
+  .ws-badge::after { content: ''; position: absolute; inset: 0; background: inherit; animation: ws-pulse 2s var(--ease-out-quart) infinite; }
+  @keyframes ws-pulse { 0% { transform: scale(1); opacity: .55; } 70%, 100% { transform: scale(2.6); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .ws-badge.enter { animation: none; } .ws-badge::after { display: none; } }
   .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     font: 500 13px/1.2 var(--ui); color: var(--text-1); }
-  .tclose { flex: none; display: grid; place-items: center; width: 16px; height: 16px; padding: 0; opacity: 0; color: var(--text-4); border-radius: 4px; }
+  .tclose { padding: 0; opacity: 0; color: var(--text-4); border-radius: 4px; }
   .tab:hover .tclose { opacity: 1; }
   .tclose:hover { color: var(--text-1); }
   .ws-info { display: flex; flex-direction: column; gap: 4px; }

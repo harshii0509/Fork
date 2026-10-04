@@ -334,8 +334,8 @@ function renderTabs() {
     if (!row) {
       row = document.createElement('div');
       row.className = 'tab';
-      row.innerHTML = `<div class="ws-head"><span class="ws-sq"><span class="ws-cubes">${CELLS}</span><span class="ws-slot"></span></span>`
-        + `<span class="tname"></span><button class="tclose" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button></div>`
+      row.innerHTML = `<div class="ws-head"><span class="ws-sq"><span class="ws-cubes">${CELLS}</span></span><span class="tname"></span>`
+        + `<span class="ws-end"><span class="ws-slot"></span><button class="tclose" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button></span></div>`
         + '<div class="ws-info"></div>';
       rowOf.set(t, row);
     }
@@ -369,7 +369,7 @@ function renderTabs() {
   saveSoon(); // tabs, splits, folders and busy states all pass through here
 }
 
-// The corner badge (index.html .ws-badge): needs you (or finished while you were away), or failed.
+// The badge at the end of the name (index.html .ws-badge): needs you (or finished while you were away), or failed.
 // It pops in when it changes; renderTabs only replaces it then.
 const BADGES = { done: ['done', 'Needs you'], failed: ['failed', 'Failed'] };
 function badge(key) {
