@@ -87,7 +87,7 @@
      screen pixels, not Lucide's 24px grid, so the line is the same weight at any icon size. */
   .ic { width: 14px; height: 14px; flex: none; display: block; stroke-width: 1.5; }
   .ic * { vector-effect: non-scaling-stroke; }
-  .twisty .ic, .tclose .ic { width: 12px; height: 12px; }
+  .tclose .ic { width: 12px; height: 12px; }
   .arrows .ic { width: 10px; height: 10px; }
   /* The redesign's icons (Phosphor, from the Figma file, icons/ph): each SVG is a mask over currentColor,
      so the files stay as exported and any state can recolour them. */
@@ -159,21 +159,21 @@
   .side h3 { margin: 0; font: 600 12px/1.2 var(--ui-mono); letter-spacing: .48px; text-transform: uppercase; color: var(--text-4); }
   .side-files, .view-files .side-ws { display: none; }
   .view-files .side-files { display: block; }
-  .side h3.folder { margin: 20px 0 8px; }
-  /* The folder tree: ▸ expands in place, the name moves there (folders) or previews it (files). */
-  .entry { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px 5px calc(2px + var(--depth, 0) * 14px);
-    border-radius: 6px; cursor: default; white-space: nowrap; overflow: hidden; color: var(--tree); }
-  .entry:hover { background: var(--hover); }
-  .entry.on { background: color-mix(in srgb, var(--text) 10%, transparent); }
-  .entry.noise { opacity: .45; }
-  .entry svg { flex: none; }
+  /* Files: the folder the open terminal is in, as a tree. A folder opens in place; a file previews; drag
+     either into a terminal to type its path; right-click for the rest (renderer.js entryMenu). */
+  .files-head { display: flex; align-items: center; justify-content: space-between; height: 14px; margin: 20px 0 12px; }
+  .files-head span { display: flex; gap: 6px; }
+  .hbtn { display: grid; place-items: center; width: 14px; height: 14px; padding: 0; color: var(--text-4); }
+  .hbtn:hover { color: var(--text-1); }
+  #entries { display: flex; flex-direction: column; gap: 12px; }
+  .entry { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 16px; padding-left: calc(var(--depth, 0) * 20px);
+    cursor: default; white-space: nowrap; overflow: hidden; font: 450 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-2); }
+  .entry.deep { gap: 4px; } /* inside an open folder: 20px in, names line up 16px past their folder's */
+  .entry:hover, .entry.on { color: var(--text-1); }
   .entry span { overflow: hidden; text-overflow: ellipsis; }
-  .twisty { flex: none; width: 16px; height: 16px; padding: 0; display: grid; place-items: center; border-radius: 4px; color: var(--dim); }
-  button.twisty:hover { background: var(--active); color: var(--text); }
-  .twisty svg { transition: transform .12s var(--ease); }
-  .twisty.open svg { transform: rotate(90deg); }
-  .empty { color: var(--dim); padding: 4px 8px; }
-  .entries-empty { padding: 3px 8px 3px calc(24px + var(--depth, 0) * 14px); color: var(--faint); }
+  .entry input { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--text-1); }
+  .empty, .entries-empty { color: var(--text-4); font: 450 13px/1.2 var(--ui); }
+  .entries-empty { padding-left: calc(var(--depth, 0) * 20px + 20px); }
 
   /* Workspaces (one per tab): a coloured square and the name; under it the branch, what changed and the
      running app, each only when there is one. The open workspace is bright, the others dimmed. */
@@ -641,7 +641,8 @@
         <div id="tabs"></div>
       </div>
       <div class="side-files">
-        <h3 class="folder">In this folder</h3>
+        <div class="files-head"><h3 class="folder">Files</h3>
+          <span><button class="hbtn" id="collapseAll" title="Collapse all folders" aria-label="Collapse all folders"><i class="ph small" data-ph="arrows-in-line-vertical"></i></button><button class="hbtn" id="newFile" title="New file" aria-label="New file"><i class="ph small" data-ph="plus"></i></button></span></div>
         <div id="entries"></div>
       </div>
     </div>

@@ -17,7 +17,7 @@ window.Onboarding = (() => {
     { targets: ['#term'], place: 'inside', title: 'This is the terminal',
       text: 'Commands show up here, and so does whatever they print. You can type here too, then press Enter.' },
     { targets: ['#railFiles'], place: 'right', title: 'What’s in this folder',
-      text: 'This shows the files in the folder you’re in. Click a folder to go into it, or a file to preview it.' },
+      text: 'The files in the folder you’re in. Open folders in place, click a file to preview it, or drag one into the terminal to use its path. Right-click for more.' },
     { targets: ['#openPal'], place: 'right', title: 'Search for anything (⌘K)',
       text: 'Say what you want in plain words, like “go back a folder”. Fork finds the command, or asks Claude.' },
     { targets: ['#pvToggle'], place: 'below', title: 'Preview (⌘P)',

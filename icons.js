@@ -70,3 +70,18 @@ window.fileIcon = (() => {
     return (dot > 0 && BY_EXT[name.slice(dot + 1).toLowerCase()]) || { icon: 'file' };
   };
 })();
+
+// The redesign's file icons (Phosphor, icons/ph): FileMd and FileCode are the Figma file's, the rest the same set's
+// regular weight. Built on fileIcon's kinds, which the preview and analytics still use.
+window.phFile = (() => {
+  const BY_KIND = { 'file-image': 'file-image', 'file-video': 'file-video', 'file-audio': 'file-audio', 'pen-tool': 'pen-nib',
+    'file-code': 'file-code', 'file-braces': 'file-code', 'file-cog': 'file', 'file-text': 'file-text', 'book-open': 'book-open',
+    'file-type': 'text-aa', 'file-archive': 'file-zip', file: 'file' };
+  const BY_EXT = { md: 'file-md', mdx: 'file-md', markdown: 'file-md', pdf: 'file-pdf' };
+  const ph = (name) => {
+    const dot = name.lastIndexOf('.');
+    return (dot > 0 && BY_EXT[name.slice(dot + 1).toLowerCase()]) || BY_KIND[fileIcon(name).icon] || 'file';
+  };
+  ph.ALL = [...new Set([...Object.values(BY_KIND), ...Object.values(BY_EXT)])];
+  return ph;
+})();

@@ -663,7 +663,8 @@ let treeDirs = [], refreshing = 0;
 // A file's type icon in the theme colour for its kind (icons.js).
 const fileIconHtml = (name) => `<span class="fi">${icon(fileIcon(name).icon)}</span>`;
 
-// One row per file or folder; open folders list their contents underneath, indented.
+// One row per file or folder; open folders list their contents underneath, indented. A folder has a caret,
+// a file its kind's icon (icons.js phFile).
 async function rows(dir, entries, depth, dirs) {
   return (await Promise.all(entries.map(async (e) => {
     const path = join(dir, e.name), open = e.folder && expanded.has(path);
@@ -673,10 +674,9 @@ async function rows(dir, entries, depth, dirs) {
       const list = await dt.ls(path);
       kids = list.length ? await rows(path, list, depth + 1, dirs) : `<div class="entries-empty" style="--depth:${depth + 1}">Empty</div>`;
     }
-    return `<div class="entry${e.noise ? ' noise' : ''}${path === shownFile() ? ' on' : ''}" draggable="true" style="--depth:${depth}"
-        data-path="${esc(path)}" data-folder="${e.folder}" title="${esc(e.name)}">
-      ${e.folder ? `<button class="twisty${open ? ' open' : ''}" aria-label="${open ? 'Collapse' : 'Expand'}">${icon("chevron-right")}</button>` : '<span class="twisty"></span>'}
-      ${e.folder ? `<span class="fi">${icon(open ? "folder-open" : "folder")}</span>` : fileIconHtml(e.name)}<span>${esc(e.name)}</span></div>${kids}`;
+    return `<div class="entry${depth ? ' deep' : ''}${path === shownFile() ? ' on' : ''}" draggable="true" style="--depth:${depth}"
+        data-path="${esc(path)}" data-folder="${e.folder}" title="${esc(e.name)}"${e.folder ? ` aria-expanded="${open}"` : ''}>
+      ${e.folder ? ph(open ? 'caret-down' : 'caret-right') : ph(phFile(e.name))}<span>${esc(e.name)}</span></div>${kids}`;
   }))).join('');
 }
 
@@ -703,7 +703,7 @@ async function refresh() {
   $('crumbs').innerHTML = parts.map(([name, path], i) =>
     `${i ? '<span class="sep">›</span>' : ''}<button class="crumb" data-path="${esc(path)}">${esc(name)}</button>`).join('');
 
-  $('entries').innerHTML = tree;
+  if (!$('entries').querySelector('.entry.new')) $('entries').innerHTML = tree; // not while you're naming a new file
 
   chips = suggestions;
   $('chips').innerHTML = suggestions.map((s, i) => `<button class="chip" data-i="${i}" title="${esc(s.cmd)}">${esc(s.label)}</button>`).join('');
@@ -714,20 +714,62 @@ $('crumbs').onclick = (e) => {
   const b = e.target.closest('.crumb');
   if (b) { send(`cd ${q(b.dataset.path)}`, '', true); dt.track('folder_opened', { via: 'crumb' }); }
 };
-// ▸ opens a folder in place; its name moves there; a file opens in the preview panel
-// (or, with Settings → Links & files off, in whatever app the Mac uses for it).
-$('entries').onclick = (e) => {
-  const row = e.target.closest('.entry'); if (!row) return;
-  const { path } = row.dataset;
-  if (row.dataset.folder !== 'true') {
-    if (inFork()) return openFile(path);
-    dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon, where: 'app' }); // the type, never the name
-    return dt.openDefault(path);
-  }
-  if (e.target.closest('.twisty')) { expanded.has(path) ? expanded.delete(path) : expanded.add(path); return refresh(); }
+// A folder opens and closes in place; a file opens in the preview panel (or, with Settings → Links & files
+// off, in whatever app the Mac uses for it). Going into a folder in the terminal is on the right-click menu.
+const showFile = (path) => {
+  if (inFork()) return openFile(path);
+  dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon, where: 'app' }); // the type, never the name
+  dt.openDefault(path);
+};
+const cdTo = (path) => {
   const cwd = active()?.cwd || '';
   send(`cd ${q(path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path)}`, '', true); // relative reads better
   dt.track('folder_opened', { via: 'sidebar' });
+};
+$('entries').onclick = (e) => {
+  const row = e.target.closest('.entry:not(.new)'); if (!row) return;
+  const { path } = row.dataset;
+  if (row.dataset.folder !== 'true') return showFile(path);
+  expanded.has(path) ? expanded.delete(path) : expanded.add(path);
+  refresh();
+};
+// Right-click: everything else you can do with it (main.js entry:menu draws the Mac menu).
+$('entries').oncontextmenu = async (e) => {
+  const row = e.target.closest('.entry:not(.new)'); if (!row) return;
+  e.preventDefault();
+  const { path } = row.dataset, folder = row.dataset.folder === 'true', ed = await dt.editor();
+  const pick = await dt.entryMenu({ folder, editor: ed?.label });
+  ({
+    cd: () => cdTo(path),
+    preview: () => showFile(path),
+    default: () => dt.openDefault(path),
+    editor: () => dt.openIn(path),
+    reveal: () => dt.reveal(path),
+    copy: () => dt.clipWrite(path),
+    type: () => { const p = activeTerm(); if (p) { dt.write(p.id, Preview.dropText([path])); p.term.focus(); } },
+  })[pick]?.();
+};
+$('collapseAll').onclick = () => { expanded.clear(); refresh(); };
+// + : name a new file, and Fork types `touch` for it in the folder you're in (so you see how it's done).
+$('newFile').onclick = () => {
+  if (!active()?.cwd || $('entries').querySelector('.entry.new')) return;
+  const row = document.createElement('div');
+  row.className = 'entry new';
+  row.innerHTML = `${ph('file')}<input placeholder="New file name" aria-label="New file name" spellcheck="false">`;
+  $('entries').prepend(row);
+  const input = row.querySelector('input');
+  input.focus();
+  let over = false;
+  const done = (make) => {
+    if (over) return;
+    over = true;
+    const name = input.value.trim();
+    row.remove();
+    if (make && name && !name.includes('/')) send(`touch ${q(name)}`, '', true);
+    refresh();
+  };
+  input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); };
+  input.onblur = () => done(false);
 };
 $('entries').ondragstart = (e) => {
   const row = e.target.closest('.entry'); if (!row) return;

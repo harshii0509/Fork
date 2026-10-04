@@ -180,6 +180,16 @@ for (const [name, icon] of Object.entries(kinds)) {
   assert.deepEqual({ ...ic.fileIcon(name) }, { icon }, name);
   assert.ok(ic.ICONS[icon], icon);
 }
+// The redesign's Phosphor icons: every one named in the page, the renderer or phFile has its SVG in icons/ph.
+const phs = [
+  ...[...src('./index.html').matchAll(/data-ph="([\w-]+)"/g)].map((m) => m[1]),
+  ...[...src('./renderer.js').matchAll(/ph\('([\w-]+)'/g)].map((m) => m[1]),
+  ...ic.phFile.ALL,
+];
+assert.ok(phs.length > 20);
+for (const name of phs) assert.ok(existsSync(new URL(`./icons/ph/${name}.svg`, import.meta.url)), `icons/ph/${name}.svg is missing`);
+for (const [name, ph] of Object.entries({ 'README.md': 'file-md', 'package.json': 'file-code', 'App.tsx': 'file-code', 'hero.png': 'file-image',
+  'spec.PDF': 'file-pdf', '.env': 'file', 'Makefile': 'file', 'site.zip': 'file-zip', 'md': 'file' })) assert.equal(ic.phFile(name), ph, name);
 
 // --- Files: tree listing and what the preview shows (files.mjs) ---
 const { list, readPreview, readBook } = await import('./files.mjs');

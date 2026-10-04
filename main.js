@@ -204,6 +204,18 @@ let editor; // looked up once
 ipcMain.handle('editor', () => (editor ??= findEditor()));
 ipcMain.on('open-in', (_, path) => { const ed = editor ?? findEditor(); execFile('open', ed ? ['-a', ed.app, path] : [path]); });
 ipcMain.on('reveal', (_, path) => shell.showItemInFolder(path));
+// Right-click a file or folder in the sidebar. Resolves with the picked item's id (renderer.js acts on it), or null.
+ipcMain.handle('entry:menu', (e, { folder, editor: ed } = {}) => new Promise((res) => {
+  const item = (label, id) => ({ label, click: () => res(id) });
+  Menu.buildFromTemplate([
+    ...(folder ? [item('Open in terminal', 'cd')] : [item('Preview', 'preview'), item('Open with default app', 'default')]),
+    ...(ed ? [item(`Open in ${ed}`, 'editor')] : []),
+    item('Show in Finder', 'reveal'),
+    { type: 'separator' },
+    item('Copy path', 'copy'),
+    item('Put path in terminal', 'type'),
+  ]).popup({ window: BrowserWindow.fromWebContents(e.sender), callback: () => setTimeout(() => res(null), 200) }); // closed without a pick
+}));
 // FORK_NO_OPEN=1 npm start: print what would open instead of opening it (for testing without a browser popping up).
 const opens = (fn) => (process.env.FORK_NO_OPEN ? (x) => console.log('[open]', x) : fn);
 const openUrl = opens((url) => shell.openExternal(url)), openPath = opens((path) => shell.openPath(path));
