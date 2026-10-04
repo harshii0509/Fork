@@ -37,6 +37,8 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+### 1.0.1 — 2026-10-04
+
 **Better**
 - **The notch is off until you turn it on.** Fork no longer shows up in your notch on its own. To see what your terminals are doing from any app, turn on **Show what's happening in the notch** in Settings → Notifications. With it off, you get the usual Mac notifications.
 
