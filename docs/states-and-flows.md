@@ -2,6 +2,8 @@
 
 The working list for the UI redesign. The same content lives in Figma, on the **States & Flows** page of the [Fork file](https://www.figma.com/design/tye8q3pJnMryvznnylAujR/Fork). The Figma page is for designing; this copy is for building.
 
+The page also has **screens**. Section 06 shows each state as Fork looks today, as a real screenshot, next to a first pass in the new Workspaces design. Section 07 does the same for the first-launch flow.
+
 Each item says where it lives in the code today, using the file and the function or constant name. Names move less than line numbers.
 
 **Status:** ✓ Today (works, may only need a new look) · ◐ Needs design (exists but unclear or misleading) · ✕ Missing (not built).
