@@ -5,3 +5,5 @@ shell/.zsh_history
 .claude/
 typesafe.json
 vendor/diffs/
+# Central Icons are paid: drawn on your Mac by `npm run icons`, packaged into the app, never committed.
+icons/central/

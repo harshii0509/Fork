@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -190,6 +191,14 @@ assert.ok(phs.length > 20);
 for (const name of phs) assert.ok(existsSync(new URL(`./icons/ph/${name}.svg`, import.meta.url)), `icons/ph/${name}.svg is missing`);
 for (const [name, ph] of Object.entries({ 'README.md': 'file-md', 'package.json': 'file-code', 'App.tsx': 'file-code', 'hero.png': 'file-image',
   'spec.PDF': 'file-pdf', '.env': 'file', 'Makefile': 'file', 'site.zip': 'file-zip', 'md': 'file' })) assert.equal(ic.phFile(name), ph, name);
+// Central Icons (paid, scripts/icons.mjs): every icon name has a Central match, within the licence's 300 per style,
+// and none of the drawn SVGs is ever committed (the repo is public).
+const central = JSON.parse(src('./icons/central.json'));
+for (const name of new Set([...used, ...phs, ...Object.keys(ic.ICONS)])) assert.ok(central.icons[name], `icon "${name}" has no Central match in icons/central.json`);
+assert.ok(Object.keys(central.icons).length <= 300);
+assert.equal(execFileSync('git', ['ls-files', 'icons/central'], { encoding: 'utf8' }), '', 'Central Icons SVGs must never be committed');
+if (existsSync(new URL('./icons/central/ready.js', import.meta.url)))
+  for (const name of Object.keys(central.icons)) assert.ok(existsSync(new URL(`./icons/central/${name}.svg`, import.meta.url)), `icons/central/${name}.svg: run npm run icons`);
 
 // --- Files: tree listing and what the preview shows (files.mjs) ---
 const { list, readPreview, readBook } = await import('./files.mjs');

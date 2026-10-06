@@ -96,6 +96,7 @@
      screen pixels, not Lucide's 24px grid, so the line is the same weight at any icon size. */
   .ic { width: 14px; height: 14px; flex: none; display: block; stroke-width: 1.5; }
   .ic * { vector-effect: non-scaling-stroke; }
+  .ph.ic { width: 14px; height: 14px; } /* a Lucide name drawn from Central keeps .ic's sizes (before the overrides below) */
   .tclose .ic { width: 12px; height: 12px; }
   .arrows .ic { width: 10px; height: 10px; }
   /* The redesign's icons (Phosphor, from the Figma file, icons/ph): each SVG is a mask over currentColor,
@@ -531,7 +532,7 @@
   .upd { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; margin-right: 6px; border-radius: 999px;
     background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; white-space: nowrap; }
   .upd[hidden] { display: none; }
-  .upd svg { width: 14px; height: 14px; }
+  .upd .ic { width: 14px; height: 14px; }
   .upd:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
   #updOv { z-index: 11; } /* above the start screen */
   .upd-card { padding: 24px 28px; }
@@ -874,6 +875,9 @@
 <script src="node_modules/dompurify/dist/purify.min.js"></script>
 <script src="vendor/trees.js"></script>
 <script src="panes.js"></script>
+<!-- Central Icons, drawn by `npm run icons` and never committed (paid set). Missing in a clone without the
+     licence key, which is fine: the open icons draw instead. -->
+<script src="icons/central/ready.js"></script>
 <script src="icons.js"></script>
 <script src="preview.js"></script>
 <script src="protocols.js"></script>

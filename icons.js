@@ -41,7 +41,10 @@ window.ICONS = {
   "file-archive": '<path d="M13.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v11.5"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 12v-1"/><path d="M8 18v-2"/><path d="M8 7V6"/><circle cx="8" cy="20" r="2"/>',
   "pen-tool": '<path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/><path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"/><path d="m2.3 2.3 7.286 7.286"/><circle cx="11" cy="11" r="2"/>',};
 
-window.icon = (name, cls = '') =>
+// With Central Icons on this Mac (window.CENTRAL, npm run icons) every name draws as its Central SVG,
+// a mask over the text colour like .ph; without them, Lucide as before.
+window.icon = (name, cls = '') => window.CENTRAL
+  ? `<i class="ph ic${cls ? ' ' + cls : ''}" style="--ph:url(icons/central/${name}.svg)" aria-hidden="true"></i>` :
   `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" ` +
   `stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 

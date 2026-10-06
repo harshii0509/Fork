@@ -4,8 +4,10 @@ const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>'
 // Icons in index.html are <i data-icon="name"> placeholders; draw them (icons.js, Lucide).
 for (const el of document.querySelectorAll("[data-icon]")) el.outerHTML = icon(el.dataset.icon);
 // The redesign's icons (Phosphor, exported from the Figma file into icons/ph) are <i class="ph" data-ph="name">.
-const ph = (name, cls = '') => `<i class="ph ${cls}" style="--ph:url(icons/ph/${name}.svg)"></i>`;
-for (const el of document.querySelectorAll("[data-ph]")) el.style.setProperty('--ph', `url(icons/ph/${el.dataset.ph}.svg)`);
+// Central Icons replace them when drawn on this Mac (npm run icons; icons/central.json maps the same names).
+const PH_DIR = window.CENTRAL ? 'icons/central' : 'icons/ph';
+const ph = (name, cls = '') => `<i class="ph ${cls}" style="--ph:url(${PH_DIR}/${name}.svg)"></i>`;
+for (const el of document.querySelectorAll("[data-ph]")) el.style.setProperty('--ph', `url(${PH_DIR}/${el.dataset.ph}.svg)`);
 
 // --- Tabs and panes -------------------------------------------------------------
 // Window -> tabs (listed in the sidebar) -> panes (split tree, see panes.js). Each pane is

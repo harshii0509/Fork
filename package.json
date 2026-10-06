@@ -9,6 +9,7 @@
     "ui": "FORK_DATA_DIR=$HOME/.fork-ui-dev electron .",
     "check": "node check.mjs",
     "vendor": "node scripts/vendor.mjs",
+    "icons": "node scripts/icons.mjs",
     "release": "node scripts/release.mjs",
     "dashboard": "node scripts/posthog-dashboard.mjs",
     "dmg:background": "electron build/render-dmg-background.mjs",
