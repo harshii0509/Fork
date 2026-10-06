@@ -84,7 +84,7 @@ function createWindow(restore) {
     collect([wc]).then(() => win.close());
   });
   win.on('closed', () => {
-    for (const [id, t] of ptys) if (t.wc === wc) { t.pty.kill(); ptys.delete(id); }
+    killPtys(wc);
     // One of several windows closed: that one's done. The last one is kept (see 'close' above), even
     // when it closes some other way, since closing the last window quits Fork.
     const others = forkWindows().some((w) => w !== win && !w.isDestroyed());
@@ -94,6 +94,20 @@ function createWindow(restore) {
   });
   win.loadFile(join(HERE, 'index.html'));
   return win;
+}
+
+const killPtys = (wc) => { for (const [id, t] of ptys) if (t.wc === wc) { t.pty.kill(); ptys.delete(id); } };
+// Reload Fork (⌘⇧R): save the window's tabs, splits and screens, end its shells, reload, and hand the page
+// that state back, like quitting and reopening. Claude resumes; anything still running stops. Restores even
+// with "Reopen your tabs" off: that's about launching Fork, not this.
+async function reloadWindow(win) {
+  if (!win || win.isDestroyed() || win === notchWin) return;
+  const wc = win.webContents;
+  await collect([wc]);
+  killPtys(wc);
+  const saved = sessions.get(wc.id);
+  if (saved) startWith.set(wc.id, saved);
+  wc.reload();
 }
 
 // Shortcuts live in the real menu bar, so every one is discoverable by browsing menus.
@@ -143,7 +157,8 @@ function buildMenu() {
       { label: 'Toggle Sidebar', accelerator: 'Cmd+B', click: toRenderer('toggle-sidebar') },
       { label: 'Toggle Preview', accelerator: 'Cmd+P', click: toRenderer('toggle-preview') },
       { type: 'separator' },
-      { role: 'reload' }, { role: 'toggleDevTools' },
+      { id: 'reload-fork', label: 'Reload Fork', accelerator: 'Cmd+Shift+R', click: () => reloadWindow(BrowserWindow.getFocusedWindow() || forkWindows()[0]) },
+      { role: 'toggleDevTools' },
     ] },
     { role: 'windowMenu' },
     { role: 'help', submenu: [
