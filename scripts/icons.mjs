@@ -38,6 +38,7 @@ const names = Object.entries(MAP.icons);
 if (names.length > 300) throw new Error(`${names.length} icons: the licence allows 300 per style in one app`);
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT);
+const symbols = [];
 for (const [fork, central] of names) {
   let Icon;
   try { Icon = require(`${MAP.package}/${central}`)[central]; } catch {}
@@ -49,6 +50,9 @@ for (const [fork, central] of names) {
     ?? html.replace(/^<svg[^>]*>|<\/svg>$/g, '');
   writeFileSync(join(OUT, `${fork}.svg`),
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" style="color:#000">${lines}</svg>\n`);
+  symbols.push(`<symbol id="central-${fork}" viewBox="0 0 24 24" fill="none">${lines}</symbol>`);
 }
-writeFileSync(join(OUT, 'ready.js'), 'window.CENTRAL = true;\n');
+// The same icons as a sprite, for places that take <symbol>s instead of files (the Files tree's shadow DOM).
+const sprite = `<svg data-icon-sprite aria-hidden="true" width="0" height="0">${symbols.join('')}</svg>`;
+writeFileSync(join(OUT, 'ready.js'), `window.CENTRAL = true;\nwindow.CENTRAL_SPRITE = ${JSON.stringify(sprite)};\n`);
 console.log(`Drew ${names.length} Central icons into icons/central/ (git ignores them).`);

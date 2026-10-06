@@ -714,7 +714,10 @@ const noisy = new Set(); // node_modules, dist…: sorted last
 const relOf = (path) => path.slice(treeRoot.length + 1);
 const absOf = (id) => join(treeRoot, id.replace(/\/$/, ''));
 const tree = new Trees.FileTree({
-  paths: [], itemHeight: 28, icons: { set: 'minimal', colored: false },
+  paths: [], itemHeight: 28, icons: { set: 'minimal', colored: false,
+    // Folder arrows are Central's chevron when it's drawn on this Mac (the tree still turns it for closed folders).
+    ...(window.CENTRAL_SPRITE && { spriteSheet: window.CENTRAL_SPRITE,
+      remap: { 'file-tree-icon-chevron': { name: 'central-chevron-down', viewBox: '0 0 24 24' } } }) },
   sort: (a, b) => b.isDirectory - a.isDirectory || noisy.has(a.path) - noisy.has(b.path) || a.basename.localeCompare(b.basename),
   dragAndDrop: { canDrop: () => false }, // rows drag out to a terminal (below); nothing moves on disk
 });
