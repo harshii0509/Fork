@@ -74,11 +74,9 @@
     --needs: var(--c-f0bf00); --failed: var(--c-eb5757);
   }
   * { box-sizing: border-box; }
-  /* Thin scrollbars on a clear track, so a long file list doesn't paint a white strip over the glass. */
-  ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--active); border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
-  ::-webkit-scrollbar-thumb:hover { background-color: var(--faint); }
-  ::-webkit-scrollbar-corner { background: transparent; }
+  /* No scrollbars: lists, the Files tree, settings and the preview scroll by trackpad or wheel without a bar.
+     The terminal keeps its own (xterm draws it, not a native bar). */
+  ::-webkit-scrollbar { display: none; }
   html, body { margin: 0; height: 100%; background: transparent; color: var(--text);
     font: 13px/1.4 var(--ui); overflow: hidden; }
   /* Thinner, grayscale-smoothed text everywhere, as Figma draws it (Settings → Font smoothing Off still sharpens the terminal). */
@@ -188,7 +186,7 @@
     --trees-font-family-override: var(--ui); --trees-font-size-override: 13px; --trees-border-radius-override: 8px;
     --trees-selected-bg-override: var(--hover); --trees-selected-fg-override: var(--text-1);
     --trees-selected-focused-border-color-override: transparent; --trees-focus-ring-color-override: var(--text-4);
-    --trees-indent-guide-bg-override: transparent; --trees-scrollbar-thumb-override: var(--hover);
+    --trees-indent-guide-bg-override: transparent; --trees-scrollbar-thumb-override: transparent;
     --trees-git-added-color-override: var(--plus); --trees-git-untracked-color-override: var(--plus);
     --trees-git-modified-color-override: var(--warn); --trees-git-renamed-color-override: var(--warn);
     --trees-git-deleted-color-override: var(--minus); --trees-git-ignored-color-override: var(--text-4); }
@@ -596,6 +594,8 @@
   .in-settings .set-page { display: block; grid-row: 1 / 3; grid-column: 2; min-width: 0; overflow-y: auto;
     padding: 0 32px 40px; }
   .set-drag { height: 24px; }
+  .set-sec:not(.on) { display: none; }
+  .set-sec > :first-child + h4, .set-sec > h1 + .set-list { margin-top: 0; }
   .set-page h1, .set-page h4, .set-list, .sample { max-width: 620px; margin-left: auto; margin-right: auto; }
   .set-page h1 { margin-top: 8px; margin-bottom: 20px; font-size: 22px; }
   .set-page h4 { margin-top: 28px; margin-bottom: 8px; font-size: 11px; font-weight: 600; color: var(--dim);
@@ -691,7 +691,10 @@
     <nav class="set-nav">
       <button class="nav-back" id="closeSettings"><i data-icon="chevron-left"></i>Back to terminal</button>
       <h3>Settings</h3>
-      <button class="nav-item on"><i data-icon="sun"></i>Appearance</button>
+      <button class="nav-item on" data-sec="appearance"><i data-icon="sun"></i>Appearance</button>
+      <button class="nav-item" data-sec="general"><i data-icon="settings"></i>General</button>
+      <button class="nav-item" data-sec="notifications"><i data-icon="bell"></i>Notifications</button>
+      <button class="nav-item" data-sec="privacy"><i data-icon="lock"></i>Privacy</button>
     </nav>
   </aside>
   <div class="side-grip" id="sideGrip"></div>
@@ -753,54 +756,64 @@
 
   <section class="set-page">
     <div class="set-drag"></div>
-    <h1>Appearance</h1>
-    <div class="set-list">
-      <div class="set-row"><span>Appearance<small>System follows your Mac's light or dark setting</small></span>
-        <span class="seg" id="setMode"><button data-v="light">Light</button><button data-v="dark">Dark</button><button data-v="system">System</button></span></div>
-      <label class="set-row"><span>Font</span><select id="setFont"></select></label>
-      <div class="set-row"><span>Font size</span>
-        <span class="stepper"><input type="number" id="setSize" min="8" max="32" aria-label="Font size">
-          <span class="arrows"><button id="sizeUp" aria-label="Bigger"><i data-icon="chevron-up"></i></button><button id="sizeDown" aria-label="Smaller"><i data-icon="chevron-down"></i></button></span>px</span></div>
-      <label class="set-row"><span>Font smoothing<small>Off draws sharp, unsmoothed text</small></span>
-        <input type="checkbox" class="switch" id="setSmooth"></label>
+    <!-- One page per tab in the settings sidebar (renderer.js showSettingsSec). -->
+    <div class="set-sec on" data-sec="appearance">
+      <h1>Appearance</h1>
+      <div class="set-list">
+        <div class="set-row"><span>Appearance<small>System follows your Mac's light or dark setting</small></span>
+          <span class="seg" id="setMode"><button data-v="light">Light</button><button data-v="dark">Dark</button><button data-v="system">System</button></span></div>
+        <label class="set-row"><span>Font</span><select id="setFont"></select></label>
+        <div class="set-row"><span>Font size</span>
+          <span class="stepper"><input type="number" id="setSize" min="8" max="32" aria-label="Font size">
+            <span class="arrows"><button id="sizeUp" aria-label="Bigger"><i data-icon="chevron-up"></i></button><button id="sizeDown" aria-label="Smaller"><i data-icon="chevron-down"></i></button></span>px</span></div>
+        <label class="set-row"><span>Font smoothing<small>Off draws sharp, unsmoothed text</small></span>
+          <input type="checkbox" class="switch" id="setSmooth"></label>
+      </div>
+      <h4>Window</h4>
+      <div class="set-list">
+        <label class="set-row"><span>Translucent frame<small>See your desktop through the top bar and the icon rail</small></span>
+          <input type="checkbox" class="switch" id="setTranslucent"></label>
+      </div>
+      <h4>Preview</h4>
+      <div class="sample" id="preview"></div>
     </div>
-    <h4>Window</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Translucent frame<small>See your desktop through the top bar and the icon rail</small></span>
-        <input type="checkbox" class="switch" id="setTranslucent"></label>
+    <div class="set-sec" data-sec="general">
+      <h1>General</h1>
+      <h4>Links &amp; files</h4>
+      <div class="set-list">
+        <label class="set-row"><span>Open links and files inside Fork<small>Off: websites and your app open in your browser, files open in their own app</small></span>
+          <input type="checkbox" class="switch" id="setInFork"></label>
+      </div>
+      <h4>Startup</h4>
+      <div class="set-list">
+        <label class="set-row"><span>Reopen your tabs when Fork starts<small>Tabs, splits, folders and what was on screen. Claude picks up where it left off</small></span>
+          <input type="checkbox" class="switch" id="setRestore"></label>
+      </div>
+      <h4>Help</h4>
+      <div class="set-list">
+        <div class="set-row"><span>Welcome tour<small>The intro cards and a quick look around the app</small></span>
+          <button class="set-btn" id="replayTour">Show again</button></div>
+      </div>
     </div>
-    <h4>Links &amp; files</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Open links and files inside Fork<small>Off: websites and your app open in your browser, files open in their own app</small></span>
-        <input type="checkbox" class="switch" id="setInFork"></label>
+    <div class="set-sec" data-sec="notifications">
+      <h1>Notifications</h1>
+      <div class="set-list">
+        <label class="set-row"><span>Tell me when something's done<small>While you're in another app: when Claude, OpenCode or another tool finishes or needs you, or a long command ends</small></span>
+          <input type="checkbox" class="switch" id="setAlerts"></label>
+        <label class="set-row"><span>Play a sound when something finishes<small>A soft chime when Claude or a long command is done, in Fork or not</small></span>
+          <input type="checkbox" class="switch" id="setSounds"></label>
+        <label class="set-row" id="notchRow" hidden><span>Show what's happening in the notch<small>While you're in another app, the notch grows to show what's working, what's done and what failed. Hover it to see every tab</small></span>
+          <input type="checkbox" class="switch" id="setNotch"></label>
+      </div>
     </div>
-    <h4>Preview</h4>
-    <div class="sample" id="preview"></div>
-    <h4>Startup</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Reopen your tabs when Fork starts<small>Tabs, splits, folders and what was on screen. Claude picks up where it left off</small></span>
-        <input type="checkbox" class="switch" id="setRestore"></label>
-    </div>
-    <h4>Notifications</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Tell me when something's done<small>While you're in another app: when Claude, OpenCode or another tool finishes or needs you, or a long command ends</small></span>
-        <input type="checkbox" class="switch" id="setAlerts"></label>
-      <label class="set-row"><span>Play a sound when something finishes<small>A soft chime when Claude or a long command is done, in Fork or not</small></span>
-        <input type="checkbox" class="switch" id="setSounds"></label>
-      <label class="set-row" id="notchRow" hidden><span>Show what's happening in the notch<small>While you're in another app, the notch grows to show what's working, what's done and what failed. Hover it to see every tab</small></span>
-        <input type="checkbox" class="switch" id="setNotch"></label>
-    </div>
-    <h4>Privacy</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Share anonymous usage<small>Which features get used, never your files, commands or names</small></span>
-        <input type="checkbox" class="switch" id="setUsage"></label>
-      <label class="set-row"><span>Smarter matching<small>Sends what you type in ⌘K, and errors Fork doesn't recognise, to TypeSafe to find the right answer. Never in the background</small></span>
-        <input type="checkbox" class="switch" id="setSmart"></label>
-    </div>
-    <h4>Help</h4>
-    <div class="set-list">
-      <div class="set-row"><span>Welcome tour<small>The intro cards and a quick look around the app</small></span>
-        <button class="set-btn" id="replayTour">Show again</button></div>
+    <div class="set-sec" data-sec="privacy">
+      <h1>Privacy</h1>
+      <div class="set-list">
+        <label class="set-row"><span>Share anonymous usage<small>Which features get used, never your files, commands or names</small></span>
+          <input type="checkbox" class="switch" id="setUsage"></label>
+        <label class="set-row"><span>Smarter matching<small>Sends what you type in ⌘K, and errors Fork doesn't recognise, to TypeSafe to find the right answer. Never in the background</small></span>
+          <input type="checkbox" class="switch" id="setSmart"></label>
+      </div>
     </div>
   </section>
   <div id="hidden"></div>

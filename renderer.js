@@ -1675,7 +1675,16 @@ function renderSettings() {
   ].join('\n') + `<div class="dots">${['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
     .flatMap((k) => [k, 'bright' + k[0].toUpperCase() + k.slice(1)]).map((k) => `<i style="background:${t[k]}"></i>`).join('')}</div>`;
 }
+// Settings has a tab per category (index.html .set-nav / .set-sec); it reopens on the last one you used.
+let settingsSec = 'appearance';
+function showSettingsSec(sec) {
+  settingsSec = sec;
+  for (const el of document.querySelectorAll('.set-nav .nav-item, .set-sec')) el.classList.toggle('on', el.dataset.sec === sec);
+  document.querySelector('.set-page').scrollTop = 0;
+}
+for (const b of document.querySelectorAll('.set-nav .nav-item')) b.onclick = () => showSettingsSec(b.dataset.sec);
 function openSettings() {
+  showSettingsSec(settingsSec);
   renderSettings();
   $('app').classList.add('in-settings');
   dt.analytics().then((on) => { $('setUsage').checked = on; });
