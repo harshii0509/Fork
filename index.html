@@ -174,15 +174,31 @@
   .files-head span { display: flex; gap: 6px; }
   .hbtn { display: grid; place-items: center; width: 14px; height: 14px; padding: 0; color: var(--text-4); }
   .hbtn:hover { color: var(--text-1); }
-  #entries { display: flex; flex-direction: column; gap: 12px; }
+  /* The tree itself is @pierre/trees in a shadow root: only its --trees-* variables reach in. They take Fork's
+     tokens, so Light and Dark follow. It scrolls itself (virtual rows), so it fills what's left of the sidebar. */
+  .view-files .side-scroll { display: flex; flex-direction: column; overflow: hidden; }
+  .view-files .side-files { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  /* Rows bleed 4px past the sidebar's padding, like workspace rows; the background is the card's, solid, because
+     a long name's "…" covers the cut text with it. */
+  #entries { flex: 1; min-height: 0; margin: 0 -4px;
+    --trees-padding-inline-override: 0px; --trees-item-margin-x-override: 0px; --trees-item-padding-x-override: 4px;
+    --trees-scrollbar-gutter-override: 0px;
+    --trees-bg-override: var(--card); --trees-fg-override: var(--text-2); --trees-fg-muted-override: var(--text-4);
+    --trees-font-family-override: var(--ui); --trees-font-size-override: 13px; --trees-border-radius-override: 8px;
+    --trees-selected-bg-override: var(--hover); --trees-selected-fg-override: var(--text-1);
+    --trees-selected-focused-border-color-override: transparent; --trees-focus-ring-color-override: var(--text-4);
+    --trees-indent-guide-bg-override: transparent; --trees-scrollbar-thumb-override: var(--hover);
+    --trees-git-added-color-override: var(--plus); --trees-git-untracked-color-override: var(--plus);
+    --trees-git-modified-color-override: var(--warn); --trees-git-renamed-color-override: var(--warn);
+    --trees-git-deleted-color-override: var(--minus); --trees-git-ignored-color-override: var(--text-4); }
+  #entries[hidden] { display: none; }
+  #newEntry .entry { margin-bottom: 12px; }
   .entry { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 16px; padding-left: calc(var(--depth, 0) * 20px);
     cursor: default; white-space: nowrap; overflow: hidden; font: 450 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-2); }
-  .entry.deep { gap: 4px; } /* inside an open folder: 20px in, names line up 16px past their folder's */
   .entry:hover, .entry.on { color: var(--text-1); }
   .entry span { overflow: hidden; text-overflow: ellipsis; }
   .entry input { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--text-1); }
-  .empty, .entries-empty { color: var(--text-4); font: 450 13px/1.2 var(--ui); }
-  .entries-empty { padding-left: calc(var(--depth, 0) * 20px + 20px); }
+  .empty { color: var(--text-4); font: 450 13px/1.2 var(--ui); }
 
   /* Workspaces (one per tab): a coloured square and the name; under it the branch, what changed and the
      running app, each only when there is one. The open workspace is bright, the others dimmed. */
@@ -672,7 +688,9 @@
       <div class="side-files">
         <div class="files-head"><h3 class="folder">Files</h3>
           <span><button class="hbtn" id="collapseAll" title="Collapse all folders" aria-label="Collapse all folders"><i class="ph small" data-ph="arrows-in-line-vertical"></i></button><button class="hbtn" id="newFile" title="New file" aria-label="New file"><i class="ph small" data-ph="plus"></i></button></span></div>
+        <div id="newEntry"></div>
         <div id="entries"></div>
+        <div class="empty" id="treeEmpty" hidden>This folder is empty.</div>
       </div>
     </div>
     <nav class="set-nav">
@@ -859,6 +877,7 @@
 <script src="node_modules/@xterm/addon-webgl/lib/addon-webgl.js"></script>
 <script src="node_modules/@xterm/addon-image/lib/addon-image.js"></script>
 <script src="node_modules/dompurify/dist/purify.min.js"></script>
+<script src="vendor/trees.js"></script>
 <script src="panes.js"></script>
 <script src="icons.js"></script>
 <script src="preview.js"></script>

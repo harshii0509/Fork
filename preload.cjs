@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('dt', {
   ls: (path) => ipcRenderer.invoke('ls', path),
   entryMenu: (o) => ipcRenderer.invoke('entry:menu', o), // right-click a file or folder: the picked item's id, or null
   gitInfo: (cwd) => ipcRenderer.invoke('git:info', cwd), // { branch, files, add, del } or null (git.mjs)
+  gitFiles: (cwd) => ipcRenderer.invoke('git:files', cwd), // [{ path, status }] for the Files tree's badges (git.mjs)
   watch: (dirs) => ipcRenderer.send('watch', dirs),
   onFsChanged: (fn) => ipcRenderer.on('fs:changed', (_, paths) => fn(paths)),
   preview: (path) => ipcRenderer.invoke('preview', path),

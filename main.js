@@ -14,7 +14,7 @@ import { judge, commandQuestion, errorQuestion } from './jev.mjs';
 import { list, readPreview, readBook, findEditor } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
-import { gitInfo } from './git.mjs';
+import { gitFiles, gitInfo } from './git.mjs';
 import * as ai from './claude.mjs';
 import { clean, VERSION as SESSION_VERSION } from './session.mjs';
 
@@ -171,6 +171,13 @@ ipcMain.handle('git:info', async (_, cwd) => {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) return null;
   const status = await git(cwd, ['status', '--porcelain', '--branch']);
   return status == null ? null : gitInfo(status, await git(cwd, ['diff', 'HEAD', '--shortstat']));
+});
+// The Files tree's badges (git.mjs gitFiles): each changed file under cwd, or [] outside a repo.
+ipcMain.handle('git:files', async (_, cwd) => {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return [];
+  const [status, prefix] = await Promise.all([git(cwd, ['status', '--porcelain', '-z', '--untracked-files=all']),
+    git(cwd, ['rev-parse', '--show-prefix'])]);
+  return status == null ? [] : gitFiles(status, (prefix || '').trim());
 });
 
 // The sidebar and preview follow changes Claude makes, without waiting for a `cd`. Each window watches

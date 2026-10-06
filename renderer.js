@@ -700,42 +700,82 @@ function setHint(text, warn) {
 
 // --- Where am I + what can I do here -------------------------------------------
 const join = (dir, name) => (dir === '/' ? '' : dir) + '/' + name;
-const expanded = new Set(); // folders opened with ▸ (full paths), remembered across cds
-let treeDirs = [], refreshing = 0;
-
-// A file's type icon in the theme colour for its kind (icons.js).
+// The tree is @pierre/trees (vendor/trees.js: virtual rows, arrow keys, screen readers, git badges). It reads
+// lazily like before: the folder you're in, plus each folder you open. Its paths are relative to that folder,
+// a folder's ends in "/".
+const expanded = new Set(); // open folders (full paths), remembered across cds
+let treeDirs = [], refreshing = 0, treeRoot = '', treePaths = new Set();
+// A file's type icon in the theme colour for its kind (icons.js): the preview's title.
 const fileIconHtml = (name) => `<span class="fi">${icon(fileIcon(name).icon)}</span>`;
+const loaded = new Map(); // folder read so far (full path) -> its entries (files.mjs list)
+const noisy = new Set(); // node_modules, dist…: sorted last
+const relOf = (path) => path.slice(treeRoot.length + 1);
+const absOf = (id) => join(treeRoot, id.replace(/\/$/, ''));
+const tree = new Trees.FileTree({
+  paths: [], itemHeight: 28, icons: { set: 'minimal', colored: false },
+  sort: (a, b) => b.isDirectory - a.isDirectory || noisy.has(a.path) - noisy.has(b.path) || a.basename.localeCompare(b.basename),
+  dragAndDrop: { canDrop: () => false }, // rows drag out to a terminal (below); nothing moves on disk
+});
+tree.render({ fileTreeContainer: $('entries') });
 
-// One row per file or folder; open folders list their contents underneath, indented. A folder has a caret,
-// a file its kind's icon (icons.js phFile).
-async function rows(dir, entries, depth, dirs) {
-  return (await Promise.all(entries.map(async (e) => {
-    const path = join(dir, e.name), open = e.folder && expanded.has(path);
-    let kids = '';
-    if (open) {
-      dirs.push(path);
-      const list = await dt.ls(path);
-      kids = list.length ? await rows(path, list, depth + 1, dirs) : `<div class="entries-empty" style="--depth:${depth + 1}">Empty</div>`;
+// Every path the tree should hold: what's in each folder read so far, plus changed files deeper down
+// (so a closed folder still shows it has changes inside).
+function treeList(changed) {
+  const out = new Set();
+  noisy.clear();
+  for (const [dir, entries] of loaded) {
+    const pre = dir === treeRoot ? '' : relOf(dir) + '/';
+    for (const e of entries) {
+      const id = pre + e.name + (e.folder ? '/' : '');
+      out.add(id);
+      if (e.noise) noisy.add(pre + e.name);
     }
-    return `<div class="entry${depth ? ' deep' : ''}${path === shownFile() ? ' on' : ''}" draggable="true" style="--depth:${depth}"
-        data-path="${esc(path)}" data-folder="${e.folder}" title="${esc(e.name)}"${e.folder ? ` aria-expanded="${open}"` : ''}>
-      ${e.folder ? ph(open ? 'caret-down' : 'caret-right') : ph(phFile(e.name))}<span>${esc(e.name)}</span></div>${kids}`;
-  }))).join('');
+  }
+  for (const c of changed) out.add(c.path);
+  return out;
 }
+const readDir = async (dir) => loaded.set(dir, await dt.ls(dir));
+// A folder you open that hasn't been read yet: read it, add what's in it.
+tree.subscribe(() => {
+  if (!treeRoot) return;
+  const open = tree.getVisibleRows(0, tree.getVisibleCount() - 1).filter((r) => r.kind === 'directory' && r.isExpanded).map((r) => absOf(r.path));
+  for (const p of [...expanded]) if (p.startsWith(treeRoot + '/') && !open.includes(p) && tree.getItem(relOf(p) + '/')) expanded.delete(p);
+  const fresh = open.filter((p) => !expanded.has(p));
+  for (const p of fresh) expanded.add(p);
+  if (fresh.some((p) => !loaded.has(p))) refresh();
+  else if (fresh.length) { treeDirs = [treeRoot, ...expanded].filter((d) => d === treeRoot || d.startsWith(treeRoot + '/')); syncWatch(); }
+});
 
 async function refresh() {
   syncArrows();
   const cwd = active()?.cwd;
   if (!cwd) return;
-  const run = ++refreshing;
-  const r = await dt.dir(cwd);
-  const dirs = [cwd];
-  const tree = r.entries.length ? await rows(cwd, r.entries, 0, dirs) : '<div class="empty">This folder is empty.</div>';
+  const run = ++refreshing, moved = cwd !== treeRoot;
+  const inside = [...expanded].filter((p) => p.startsWith(cwd + '/'));
+  const fresh = new Map();
+  const [r, changed] = await Promise.all([dt.dir(cwd), dt.gitFiles(cwd),
+    ...inside.map(async (p) => fresh.set(p, await dt.ls(p)))]);
   if (run !== refreshing || cwd !== active()?.cwd) return; // switched panes, or a newer refresh, while reading
   const { suggestions } = r;
   home = r.home;
-  treeDirs = dirs;
+  if (moved) loaded.clear();
+  treeRoot = cwd;
+  loaded.set(cwd, r.entries);
+  for (const [p, list] of fresh) loaded.set(p, list);
+  const next = treeList(changed);
+  if (moved) tree.resetPaths([...next], { initialExpandedPaths: inside.map((p) => relOf(p) + '/') });
+  else {
+    const ops = [...treePaths].filter((p) => !next.has(p)).map((path) => ({ type: 'remove', path, recursive: true }))
+      .concat([...next].filter((p) => !treePaths.has(p)).map((path) => ({ type: 'add', path })));
+    if (ops.length) tree.batch(ops);
+  }
+  treePaths = next;
+  tree.setGitStatus(changed);
+  $('entries').hidden = !r.entries.length;
+  $('treeEmpty').hidden = !!r.entries.length;
+  treeDirs = [cwd, ...inside];
   syncWatch();
+  markShown();
 
   const parts = [];
   let base = '/', rest = cwd;
@@ -745,8 +785,6 @@ async function refresh() {
   for (const seg of rest.split('/').filter(Boolean)) { acc = acc.replace(/\/$/, '') + '/' + seg; parts.push([seg, acc]); }
   $('crumbs').innerHTML = parts.map(([name, path], i) =>
     `${i ? '<span class="sep">›</span>' : ''}<button class="crumb" data-path="${esc(path)}">${esc(name)}</button>`).join('');
-
-  if (!$('entries').querySelector('.entry.new')) $('entries').innerHTML = tree; // not while you're naming a new file
 
   chips = suggestions;
   $('chips').innerHTML = suggestions.map((s, i) => `<button class="chip" data-i="${i}" title="${esc(s.cmd)}">${esc(s.label)}</button>`).join('');
@@ -769,18 +807,21 @@ const cdTo = (path) => {
   send(`cd ${q(path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path)}`, '', true); // relative reads better
   dt.track('folder_opened', { via: 'sidebar' });
 };
-$('entries').onclick = (e) => {
-  const row = e.target.closest('.entry:not(.new)'); if (!row) return;
-  const { path } = row.dataset;
-  if (row.dataset.folder !== 'true') return showFile(path);
-  expanded.has(path) ? expanded.delete(path) : expanded.add(path);
-  refresh();
-};
+// The row under a mouse event: Trees draws its rows in a shadow root, each with data-item-path.
+const rowAt = (e) => e.composedPath().find((n) => n.dataset?.itemPath != null);
+$('entries').addEventListener('click', (e) => { // a folder opens and closes by itself (Trees)
+  const row = rowAt(e);
+  if (row?.dataset.itemType === 'file') showFile(absOf(row.dataset.itemPath));
+});
+$('entries').addEventListener('keydown', (e) => { // Return on a file previews it, like a click
+  const id = tree.getFocusedPath();
+  if (e.key === 'Enter' && id && !id.endsWith('/')) showFile(absOf(id));
+});
 // Right-click: everything else you can do with it (main.js entry:menu draws the Mac menu).
 $('entries').oncontextmenu = async (e) => {
-  const row = e.target.closest('.entry:not(.new)'); if (!row) return;
+  const row = rowAt(e); if (!row) return;
   e.preventDefault();
-  const { path } = row.dataset, folder = row.dataset.folder === 'true', ed = await dt.editor();
+  const path = absOf(row.dataset.itemPath), folder = row.dataset.itemType === 'folder', ed = await dt.editor();
   const pick = await dt.entryMenu({ folder, editor: ed?.label });
   ({
     cd: () => cdTo(path),
@@ -792,14 +833,14 @@ $('entries').oncontextmenu = async (e) => {
     type: () => { const p = activeTerm(); if (p) { dt.write(p.id, Preview.dropText([path])); p.term.focus(); } },
   })[pick]?.();
 };
-$('collapseAll').onclick = () => { expanded.clear(); refresh(); };
+$('collapseAll').onclick = () => { for (const p of expanded) tree.getItem(relOf(p) + '/')?.collapse(); expanded.clear(); };
 // + : name a new file, and Fork types `touch` for it in the folder you're in (so you see how it's done).
 $('newFile').onclick = () => {
-  if (!active()?.cwd || $('entries').querySelector('.entry.new')) return;
+  if (!active()?.cwd || $('newEntry').firstChild) return;
   const row = document.createElement('div');
   row.className = 'entry new';
   row.innerHTML = `${ph('file')}<input placeholder="New file name" aria-label="New file name" spellcheck="false">`;
-  $('entries').prepend(row);
+  $('newEntry').append(row);
   const input = row.querySelector('input');
   input.focus();
   let over = false;
@@ -814,11 +855,12 @@ $('newFile').onclick = () => {
   input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); };
   input.onblur = () => done(false);
 };
-$('entries').ondragstart = (e) => {
-  const row = e.target.closest('.entry'); if (!row) return;
-  e.dataTransfer.setData('text/x-dt-path', row.dataset.path);
+// Drag a row onto a terminal to type its path (Trees starts the drag; it never moves anything, canDrop above).
+$('entries').addEventListener('dragstart', (e) => {
+  const row = rowAt(e); if (!row) return;
+  e.dataTransfer.setData('text/x-dt-path', absOf(row.dataset.itemPath));
   e.dataTransfer.effectAllowed = 'copy';
-};
+});
 // Something changed on disk (usually Claude at work): update the tree, and the file being previewed.
 dt.onFsChanged((paths) => {
   refresh();
@@ -850,7 +892,11 @@ function showPv(mode) {
 }
 function hidePv() { $('app').classList.remove('has-pv'); markShown(); focusActive(); }
 function togglePv() { pvOpen() ? hidePv() : showPv(); dt.track('preview_toggled'); }
-function markShown() { for (const r of $('entries').querySelectorAll('.entry')) r.classList.toggle('on', r.dataset.path === shownFile()); }
+function markShown() { // the previewed file is the tree's selected row
+  const f = shownFile(), id = f?.startsWith(treeRoot + '/') ? relOf(f) : null;
+  for (const p of tree.getSelectedPaths()) if (p !== id) tree.getItem(p)?.deselect();
+  if (id) tree.getItem(id)?.select();
+}
 function syncWatch() { dt.watch([...new Set([...treeDirs, ...(pv.file ? [dirOf(pv.file)] : [])])]); }
 
 // Line numbers in their own column, so "line 42" is easy to tell Claude.

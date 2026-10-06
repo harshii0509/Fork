@@ -442,6 +442,16 @@ assert.ok(!('color' in named.tabs[2]) && !('name' in named.tabs[2].root)); // no
   assert.deepEqual(gitInfo('## No commits yet on main\n?? x\n', null), { branch: 'main', files: 1, add: 0, del: 0 }); // new repo: no HEAD to diff
   assert.equal(gitInfo('## HEAD (no branch)\n', '').branch, 'no branch');
   assert.deepEqual(gitInfo('## main\n M a\n', ' 1 file changed, 3 deletions(-)\n'), { branch: 'main', files: 1, add: 0, del: 3 });
+
+  // The Files tree's badges: relative to the tree's folder, renames skip their old name, hidden names left out.
+  const { gitFiles } = await import('./git.mjs');
+  const st = [' M web/a.ts', '?? web/new/b.ts', 'A  web/c.ts', ' D web/d.ts', 'R  web/e.ts', 'web/old-e.ts', 'MM web/f.ts',
+    ' M api/x.ts', '?? web/.env', ''].join('\0');
+  assert.deepEqual(gitFiles(st, 'web/'), [
+    { path: 'a.ts', status: 'modified' }, { path: 'new/b.ts', status: 'untracked' }, { path: 'c.ts', status: 'added' },
+    { path: 'd.ts', status: 'deleted' }, { path: 'e.ts', status: 'renamed' }, { path: 'f.ts', status: 'modified' }]);
+  assert.equal(gitFiles(st).length, 7); // at the repo's top: everything but .env
+  assert.deepEqual(gitFiles(''), []);
 }
 
 }

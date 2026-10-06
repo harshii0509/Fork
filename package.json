@@ -8,6 +8,7 @@
     "start": "electron .",
     "ui": "FORK_DATA_DIR=$HOME/.fork-ui-dev electron .",
     "check": "node check.mjs",
+    "vendor": "node scripts/vendor-trees.mjs",
     "release": "node scripts/release.mjs",
     "dashboard": "node scripts/posthog-dashboard.mjs",
     "dmg:background": "electron build/render-dmg-background.mjs",
@@ -42,8 +43,10 @@
     "electron@41.10.7": true
   },
   "devDependencies": {
+    "@pierre/trees": "1.0.0-beta.6",
     "electron": "^41.10.7",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "motion": "^13.4.0"
   },
   "build": {
