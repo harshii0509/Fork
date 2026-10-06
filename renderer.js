@@ -915,7 +915,8 @@ async function showCode(view, path, r) {
     poolOptions: { workerFactory: () => new Worker('vendor/diffs/worker.js', { type: 'module' }), poolSize: 2 },
     highlighterOptions: { theme: { dark: 'pierre-dark', light: 'pierre-light' } } });
   codeFile = new D.File({ themeType: codeTheme(), disableFileHeader: true, tokenizeMaxLength: 1024 * 1024, // files.mjs MAX
-    enableLineSelection: true, onLineSelected: pickLines }, pool);
+    enableLineSelection: true, onLineSelected: pickLines,
+    unsafeCSS: ':host { --diffs-dark-bg: var(--card); --diffs-light-bg: var(--card); }' }, pool); // the panel's colour, not Pierre's black
   codeFile.render({ file: { name: path.split('/').pop(), contents: r.text, lang: r.lang }, containerWrapper: view.firstChild });
   return true;
 }
