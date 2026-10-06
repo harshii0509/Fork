@@ -213,13 +213,12 @@ assert.equal(md.kind, 'markdown');
 assert.match(md.html, /<h1>Hello<\/h1>/);
 const ts = await readPreview(join(proj, 'app.ts'));
 assert.equal(ts.kind, 'code');
-assert.match(ts.html, /^<span class="line"><span style="color:var\(--code-token-keyword\)">const<\/span>/);
+assert.equal(ts.text, 'const x: number = 1;\n'); // the window colours it (@pierre/diffs)
 assert.equal(ts.lines, 1);
-// The line that made highlight.js colour the rest of a file as one long string.
-const tricky = join(proj, 'esc.js');
-writeFileSync(tricky, `const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '<': '&lt;', '"': '&quot;' }[c]));\nconst next = 1;\n`);
-assert.match((await readPreview(tricky)).html.split('\n')[1], /--code-token-keyword\)">const</);
-assert.equal((await readPreview(join(proj, 'notes'))).html, 'plain &lt;b&gt;text&lt;/b&gt;\n'); // unknown type: escaped, not rendered
+assert.equal(ts.lang, undefined); // known from the name
+writeFileSync(join(proj, 'Dockerfile'), 'FROM node\n');
+assert.equal((await readPreview(join(proj, 'Dockerfile'))).lang, 'dockerfile');
+assert.equal((await readPreview(join(proj, 'notes'))).text, 'plain <b>text</b>\n'); // the window escapes it
 assert.equal((await readPreview(join(proj, 'data.bin'))).kind, 'other');
 assert.equal((await readPreview(join(proj, 'huge.json'))).why, 'big');
 assert.equal((await readPreview(join(proj, 'gone.txt'))).kind, 'missing');

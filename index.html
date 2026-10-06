@@ -429,11 +429,10 @@
   .pv-media { min-height: 100%; display: grid; place-items: center; padding: 24px;
     background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 16px 16px; } /* shows transparency */
   .pv-media img, .pv-media video { max-width: 100%; max-height: calc(100vh - 100px); box-shadow: var(--shadow-media); }
-  .pv-code { display: flex; min-width: min-content; font: var(--mono-size, 13px)/1.5 var(--mono, Menlo, monospace); }
-  .pv-code pre { margin: 0; padding: 12px 0; }
-  .pv-code .gutter { flex: none; padding: 12px 12px 12px 16px; text-align: right; color: var(--faint); user-select: none;
-    position: sticky; left: 0; background: var(--bg); }
-  .pv-code .src { padding-right: 24px; tab-size: 2; }
+  /* Code is @pierre/diffs in a shadow root (renderer.js showCode): Pierre's theme, Fork's font and size. */
+  .pv-code { --diffs-font-family: var(--mono, Menlo, monospace); --diffs-font-size: var(--mono-size, 13px);
+    --diffs-line-height: 1.6; --diffs-bg: transparent; }
+  #pvLine:not([hidden]) { white-space: nowrap; }
   .pv-md { max-width: 720px; margin: 0 auto; padding: 20px 28px 48px; line-height: 1.6; font-size: 14px; }
   .pv-md h1, .pv-md h2 { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .pv-md a { color: var(--accent); }
@@ -444,11 +443,6 @@
   .pv-md blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--line); color: var(--dim); }
   .pv-md table { border-collapse: collapse; }
   .pv-md th, .pv-md td { border: 1px solid var(--line); padding: 5px 10px; }
-  /* Syntax colours (Shiki's css-variables theme, files.mjs) come from the terminal theme, so every theme works. */
-  .pv-code { --code-foreground: var(--text); --code-token-comment: var(--dim); --code-token-keyword: var(--magenta);
-    --code-token-string: var(--ok); --code-token-string-expression: var(--ok); --code-token-constant: var(--warn);
-    --code-token-function: var(--blue); --code-token-parameter: var(--cyan); --code-token-punctuation: var(--dim);
-    --code-token-link: var(--accent); color: var(--text); }
 
   /* Overlays: start screen + palette. */
   .overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 70%, transparent);
@@ -716,6 +710,7 @@
       <span class="seg" id="pvSeg"><button data-v="file">File</button><button data-v="app">App</button><button data-v="read">Read</button></span>
       <div class="pv-bar file">
         <span class="pv-name" id="pvName"></span>
+        <button class="pv-act" id="pvLine" hidden></button>
         <button class="pv-act" id="pvPage" style="display:none">View as page</button>
         <button class="pv-act" id="pvOpen"></button>
         <button class="pv-act" id="pvReveal" title="Show in Finder" aria-label="Show in Finder"><i data-icon="folder-search"></i></button>

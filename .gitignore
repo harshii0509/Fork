@@ -4,3 +4,4 @@ shell/.zsh_history
 .DS_Store
 .claude/
 typesafe.json
+vendor/diffs/

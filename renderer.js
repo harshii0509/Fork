@@ -899,9 +899,37 @@ function markShown() { // the previewed file is the tree's selected row
 }
 function syncWatch() { dt.watch([...new Set([...treeDirs, ...(pv.file ? [dirOf(pv.file)] : [])])]); }
 
-// Line numbers in their own column, so "line 42" is easy to tell Claude.
-const codeView = (r) => `<div class="pv-code"><pre class="gutter">${Array.from({ length: r.lines }, (_, i) => i + 1).join('\n')}</pre>` +
-  `<pre class="src"><code>${r.html}</code></pre></div>`;
+// Code: @pierre/diffs (vendor/diffs, loaded the first time a file needs it). Shiki's VS Code grammars, Pierre's
+// themes, its own line numbers. Click a line number (shift-click for a range) and "Put in terminal" types
+// file:line, so "line 42" is easy to tell Claude.
+let diffsLib, codeFile, picked = null;
+const codeTheme = () => (document.documentElement.dataset.mode === 'light' ? 'light' : 'dark');
+async function showCode(view, path, r) {
+  const D = await (diffsLib ??= import('./vendor/diffs/diffs.js'));
+  if (pv.file !== path) return false; // another file was clicked while it loaded
+  codeFile?.cleanUp();
+  view.innerHTML = '<div class="pv-code"></div>';
+  pickLines(null);
+  // Colouring happens in workers (vendor/diffs/worker.js): the plain text shows at once, colours follow.
+  const pool = D.getOrCreateWorkerPoolSingleton({
+    poolOptions: { workerFactory: () => new Worker('vendor/diffs/worker.js', { type: 'module' }), poolSize: 2 },
+    highlighterOptions: { theme: { dark: 'pierre-dark', light: 'pierre-light' } } });
+  codeFile = new D.File({ themeType: codeTheme(), disableFileHeader: true, tokenizeMaxLength: 1024 * 1024, // files.mjs MAX
+    enableLineSelection: true, onLineSelected: pickLines }, pool);
+  codeFile.render({ file: { name: path.split('/').pop(), contents: r.text, lang: r.lang }, containerWrapper: view.firstChild });
+  return true;
+}
+function pickLines(range) {
+  picked = range && pv.file ? { path: pv.file, a: Math.min(range.start, range.end), b: Math.max(range.start, range.end) } : null;
+  $('pvLine').hidden = !picked;
+  if (picked) $('pvLine').textContent = `Put ${pv.file.split('/').pop()}:${picked.a}${picked.b > picked.a ? '-' + picked.b : ''} in terminal`;
+}
+$('pvLine').onclick = () => {
+  const p = activeTerm(); if (!p || !picked) return;
+  const rel = picked.path.startsWith(p.cwd + '/') ? picked.path.slice(p.cwd.length + 1) : picked.path; // relative reads better
+  dt.write(p.id, Preview.dropText([rel]).trimEnd() + `:${picked.a}${picked.b > picked.a ? '-' + picked.b : ''} `);
+  p.term.focus();
+};
 
 async function openFile(path, changed) {
   if (Reader.kindOf(path)) return openBook(path, 'tree'); // a PDF or EPUB opens in Read
@@ -917,12 +945,15 @@ async function openFile(path, changed) {
   $('pvName').title = path;
   $('pvPage').style.display = r.kind === 'html' ? '' : 'none';
   const src = fileUrl(path) + (changed ? `?v=${Date.now()}` : ''); // skip the image cache after an edit
+  if (r.kind === 'code' || r.kind === 'html') {
+    if (await showCode(view, path, r)) view.scrollTop = top;
+    return;
+  }
+  codeFile?.cleanUp(); codeFile = null; pickLines(null);
   view.innerHTML = {
     image: () => `<div class="pv-media"><img src="${src}" alt=""></div>`,
     video: () => `<div class="pv-media"><video src="${src}" controls loop></video></div>`,
     markdown: () => `<article class="pv-md">${DOMPurify.sanitize(r.html)}</article>`,
-    code: () => codeView(r),
-    html: () => codeView(r),
     other: () => `<div class="pv-msg"><b>${r.why === 'big' ? 'Too big to preview' : "Can't preview this kind of file"}</b>Open it with the button above.</div>`,
     missing: () => '<div class="pv-msg"><b>This file is gone</b>It was moved, renamed or deleted.</div>',
   }[r.kind]();
@@ -1583,6 +1614,7 @@ async function applySettings(s) {
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(`--${k}`, v);
   Games.setColors({ bg: t.background, ink: t.foreground, accent: t.accent, fontSize: s.size }); // its pixels follow the font
   root.style.colorScheme = root.dataset.mode = t.dark ? 'dark' : 'light'; // native bits match; CSS can say :root[data-mode=light]
+  codeFile?.setThemeType(codeTheme()); // the code preview: Pierre Light or Dark
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
   dt.appearance(s.mode); // the frosted frame follows too
