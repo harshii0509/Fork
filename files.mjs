@@ -1,6 +1,6 @@
 // The sidebar's file tree and what the preview panel shows. Main process only; check.mjs tests it.
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, extname, join } from 'node:path';
@@ -146,4 +146,19 @@ export async function searchFiles(root, query, { names = 30, hits = 80, signal }
   }
   if (signal?.aborted) return null;
   return { names: named.slice(0, names).map((x) => x.path), hits: found, git };
+}
+
+// "New folder" in the workspace picker: make <parent>/<name> and hand it back. A folder that's already there
+// just opens; a name with a / (or . / ..) is refused, so it always lands right inside parent.
+export function makeFolder(parent, name) {
+  const n = String(name ?? '').trim();
+  if (!n || n === '.' || n === '..' || n.includes('/') || n.includes('\0')) return { error: 'name' };
+  const path = join(String(parent || ''), n);
+  try {
+    mkdirSync(path);
+    return { path };
+  } catch (e) {
+    if (e.code !== 'EEXIST') return { error: 'failed' };
+    try { return statSync(path).isDirectory() ? { path } : { error: 'exists-file' }; } catch { return { error: 'failed' }; }
+  }
 }

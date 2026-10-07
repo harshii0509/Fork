@@ -11,7 +11,7 @@ import { marked } from 'marked';
 import { suggest, PALETTE, shape, pm, scripts } from './suggest.mjs';
 import { diagnose, explainEntry, looksLikeCommand, ERRORS } from './errors.mjs';
 import { judge, commandQuestion, errorQuestion } from './jev.mjs';
-import { list, readPreview, readBook, findEditor, searchFiles } from './files.mjs';
+import { list, readPreview, readBook, findEditor, searchFiles, makeFolder } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
 import { gitFiles, gitInfo } from './git.mjs';
@@ -370,9 +370,11 @@ ipcMain.handle('pick-folder', async (e) => {
   return r.canceled ? null : r.filePaths[0];
 });
 
+ipcMain.handle('folder:create', (_, parent, name) => makeFolder(parent, name)); // the picker's New folder
+ipcMain.handle('home', () => homedir());
 ipcMain.handle('recents', (_, add) => {
   let list = [];
-  try { list = JSON.parse(readFileSync(RECENTS(), 'utf8')); } catch {}
+  try { list = JSON.parse(readFileSync(RECENTS(), 'utf8')).filter((p) => existsSync(p)); } catch {} // moved or deleted ones drop off
   if (add) {
     list = [add, ...list.filter((p) => p !== add)].slice(0, 6);
     writeFileSync(RECENTS(), JSON.stringify(list));

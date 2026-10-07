@@ -485,7 +485,8 @@
   .start > p { margin: 0 0 20px; color: var(--dim); }
   .opt { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 12px; border-radius: var(--radius); text-align: left; color: var(--tree); }
   .opt:hover { background: var(--line); }
-  .opt small { display: block; color: var(--dim); }
+  .opt small { display: block; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opt > span:last-child { min-width: 0; } /* a long path ends in … instead of wrapping */
   .opt .ico { width: 32px; height: 32px; border-radius: 8px; background: var(--hover); color: var(--tree);
     display: grid; place-items: center; flex: none; }
   .label { margin: 16px 12px 6px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
@@ -495,6 +496,13 @@
     border-radius: 8px; padding: 8px 10px; outline: none; }
   input:focus { border-color: var(--accent); }
   .go { padding: 8px 14px; border-radius: 8px; background: var(--accent); color: var(--on-accent); }
+  /* New folder, under its row: a name, where it goes (click to change), Create. Opens without motion: you're typing. */
+  .newf { display: none; flex-direction: column; gap: 8px; margin: 4px 12px 8px 56px; }
+  .newf.show { display: flex; }
+  .newf-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .newf-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 0; color: var(--dim); font-size: 12px; }
+  .newf-where:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+  .newf-err { color: var(--bad); font-size: 12px; }
   .skip { margin-top: 16px; color: var(--dim); padding: 6px 12px; }
   .skip:hover { color: var(--text); }
   .usage-note { margin: 14px 12px 0; font-size: 11px; color: var(--faint); }
@@ -872,14 +880,20 @@
 </div>
 <div class="overlay" id="startOv">
   <div class="card start">
-    <h1>Where do you want to work?</h1>
-    <p>Pick a folder. You can always move around later from the sidebar.</p>
+    <h1 id="startTitle">Where do you want to work?</h1>
+    <p>A workspace is a folder: its files, its branch, its terminals.</p>
     <div id="recents"></div>
     <div class="label">Or</div>
-    <button class="opt" id="pick"><span class="ico"><i data-icon="folder-plus"></i></span><span>Choose a folder…<small>Any folder on your Mac</small></span></button>
+    <button class="opt" id="newFolderOpt"><span class="ico"><i data-icon="folder-plus"></i></span><span>New folder<small>Start something fresh</small></span></button>
+    <div class="newf" id="newFolder">
+      <input id="newFolderName" placeholder="Name it, e.g. my-site" spellcheck="false" autocomplete="off" aria-label="Folder name">
+      <div class="newf-row"><button class="newf-where" id="newFolderWhere" title="Change where it goes"></button><button class="go" id="newFolderGo">Create</button></div>
+      <div class="newf-err" id="newFolderErr" role="alert" hidden></div>
+    </div>
+    <button class="opt" id="pick"><span class="ico"><i data-icon="folder-search"></i></span><span>Choose a folder…<small>Any folder on your Mac</small></span></button>
     <button class="opt" id="cloneOpt"><span class="ico"><i data-icon="download"></i></span><span>Get a project from GitHub<small>Paste the link, pick where it goes</small></span></button>
     <div class="clone" id="clone"><input id="cloneUrl" placeholder="https://github.com/team/project"><button class="go" id="cloneGo">Next</button></div>
-    <button class="skip" id="skip">Just open the terminal →</button>
+    <button class="skip" id="skip">Cancel</button>
     <p class="usage-note" id="usageNote" hidden>Fork shares anonymous usage (never your files, commands or names) so it can get better. <button id="usageOff">Turn off</button></p>
   </div>
 </div>

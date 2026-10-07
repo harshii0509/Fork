@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('dt', {
   palette: () => ipcRenderer.invoke('palette'),
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
   recents: (add) => ipcRenderer.invoke('recents', add),
+  makeFolder: (parent, name) => ipcRenderer.invoke('folder:create', parent, name), // { path } or { error: 'name' | 'exists-file' | 'failed' }
+  home: () => ipcRenderer.invoke('home'),
   ask: (request, cwd) => ipcRenderer.invoke('ask', request, cwd),
   aiWarm: () => ipcRenderer.send('ai:warm'), // get Claude ready for Ask AI (nothing is sent)
   appearance: (dark) => ipcRenderer.send('appearance', dark),

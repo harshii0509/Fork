@@ -283,17 +283,20 @@ function focusPane(id) {
   focusActive();
 }
 
-async function newTab(cwd) {
-  const p = await newPane(cwd);
+// A workspace is a folder (dir): its name, info, files and search are that folder's, wherever its terminals
+// go. Its first terminal starts there (or in start: a clone starts in the folder it downloads into).
+async function newTab(dir, { start } = {}) {
+  const p = await newPane(start ?? dir);
   nameTerminal(p, null);
-  tabs.push({ root: { id: p.id }, activeId: null, color: nextColor() });
+  tabs.push({ root: { id: p.id }, activeId: null, color: nextColor(), dir });
   focusPane(p.id);
+  return p;
 }
 
 async function split(dir) {
   const cur = active();
   if (!cur) return;
-  const p = await newPane(cur.cwd); // a split opens in the same folder
+  const p = await newPane(tab().dir || cur.cwd); // a split opens in the workspace's folder
   dt.track('pane_split', { dir });
   nameTerminal(p, tab());
   tab().root = Panes.split(tab().root, cur.id, p.id, dir);
@@ -312,7 +315,7 @@ function closePane(id, { exited = false, force = false } = {}) {
   t.root = Panes.remove(t.root, id);
   if (!t.root) {
     tabs.splice(tabs.indexOf(t), 1);
-    if (!tabs.length) return forgetAndClose(); // last tab closes the window, and it won't come back
+    if (!tabs.length) return noWorkspace(); // the last one closed: pick a folder to work in
     tabIx = t === cur ? Math.min(tabIx, tabs.length - 1) : tabs.indexOf(cur);
   } else if (t.activeId === id) {
     t.activeId = Panes.leaves(t.root)[0];
@@ -360,12 +363,12 @@ function renderTabs() {
       rowOf.set(t, row);
     }
     if (box.children[i] !== row) box.insertBefore(row, box.children[i] || null);
-    const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], key = tabKey(t);
+    const ps = panesOf(t), key = tabKey(t);
     row.classList.toggle('active', i === tabIx);
     row.setAttribute('aria-selected', String(i === tabIx));
     row.dataset.i = i;
     if (i < 9) row.dataset.key = `⌘${i + 1}`; else delete row.dataset.key;
-    put(row, 'title', LOOKS[key].label + (p?.cwd ? ` · ${p.cwd}` : ''));
+    put(row, 'title', LOOKS[key].label + (dirOfTab(t) ? ` · ${dirOfTab(t)}` : ''));
     row.style.setProperty('--tab-c', `var(--ws-${(t.color ?? 0) + 1})`);
     put(row.querySelector('.tname'), 'textContent', tabName(t));
     row.querySelector('.tclose').dataset.close = i;
@@ -393,8 +396,8 @@ function renderTabs() {
 // changed (gitSoon) and the app it's serving (appFound), each only when there is one.
 function renderInfo() {
   const t = tab();
-  if (!t) return;
-  const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], g = t.git, url = ps.find((x) => x.url)?.url, cwd = p?.cwd || '';
+  if (!t) return put($('wsInfo'), 'innerHTML', '');
+  const ps = panesOf(t), g = t.git, url = ps.find((x) => x.url)?.url, cwd = dirOfTab(t);
   const where = cwd === home ? '~' : cwd.startsWith(home + '/') ? '~' + cwd.slice(home.length) : cwd;
   put($('wsInfo'), 'innerHTML', [
     g?.branch ? `<div class="ws-line">${ph('git-branch')}<span>${esc(g.branch)}</span></div>`
@@ -433,7 +436,7 @@ function gitSoon(t) {
   if (!t) return;
   clearTimeout(t.gitTimer);
   t.gitTimer = setTimeout(async () => {
-    const cwd = (panes.get(t.activeId) || panesOf(t)[0])?.cwd;
+    const cwd = dirOfTab(t);
     const g = cwd ? await dt.gitInfo(cwd) : null;
     if (!tabs.includes(t) || JSON.stringify(g) === JSON.stringify(t.git ?? null)) return;
     t.git = g;
@@ -496,9 +499,10 @@ function tabKey(t) {
     : 'ready';
 }
 const tabState = (t) => LOOKS[tabKey(t)];
+const dirOfTab = (t) => t?.dir || (panes.get(t?.activeId) || (t && panesOf(t)[0]))?.cwd || ''; // dir; cwd only for a game tab
 function tabName(t) {
-  const ps = panesOf(t), p = panes.get(t.activeId) || ps[0];
-  return isGame(p) && ps.length === 1 ? 'Games' : !p?.cwd ? 'New tab' : p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/';
+  const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], d = dirOfTab(t);
+  return isGame(p) && ps.length === 1 ? 'Games' : !d ? 'New tab' : d === home ? 'Home' : d.split('/').pop() || '/';
 }
 
 // The notch (main.js, notch.js) mirrors every tab while you're in another app: what it's doing, which
@@ -526,7 +530,7 @@ $('tabs').onclick = (e) => {
   const t = e.target.closest('.tab');
   if (t) { closeSettings(); goTab(+t.dataset.i); }
 };
-$('newTab').onclick = () => { newTab(active()?.cwd); dt.track('tab_opened'); };
+$('newTab').onclick = () => openPicker();
 const toggleSide = () => { $('app').classList.toggle('no-side'); dt.track('sidebar_toggled'); saveSoon(); }; // panes refit via their ResizeObserver
 $('sideToggle').onclick = $('sideShow').onclick = toggleSide;
 
@@ -541,8 +545,8 @@ $('splitR').onclick = () => split('row');
 $('splitD').onclick = () => split('col');
 
 dt.onCmd((cmd) => ({
-  'new-tab': () => { newTab(active()?.cwd); dt.track('tab_opened'); },
-  close: () => active() && closePane(active().id),
+  'new-tab': () => openPicker(),
+  close: () => (active() ? closePane(active().id) : !tabs.length && forgetAndClose()), // no workspace left: ⌘W closes the window
   'split-right': () => split('row'),
   'split-down': () => split('col'),
   'next-tab': () => goTab(tabIx + 1),
@@ -657,7 +661,7 @@ function openGame(id) {
     const r = src?.el.getBoundingClientRect(), t = src && tabOf(src.id);
     const dir = !r ? null : r.width >= 640 && r.width >= r.height ? 'row' : r.height >= 400 ? 'col' : null;
     if (dir) t.root = Panes.split(t.root, src.id, g.id, dir); // the game half is at least 320 × 200
-    else tabs.push({ root: { id: g.id }, activeId: null, color: nextColor() });
+    else tabs.push({ root: { id: g.id }, activeId: null, color: nextColor(), dir: t?.dir || tab()?.dir });
   }
   focusPane(g.id);
   Games.open(id);
@@ -772,14 +776,14 @@ tree.subscribe(() => {
 
 async function refresh() {
   syncArrows();
-  const cwd = active()?.cwd;
+  const cwd = dirOfTab(tab()); // the workspace's folder, not wherever its terminal has gone
   if (!cwd) return;
   const run = ++refreshing, moved = cwd !== treeRoot;
   const inside = [...expanded].filter((p) => p.startsWith(cwd + '/'));
   const fresh = new Map();
   const [r, changed] = await Promise.all([dt.dir(cwd), dt.gitFiles(cwd),
     ...inside.map(async (p) => fresh.set(p, await dt.ls(p)))]);
-  if (run !== refreshing || cwd !== active()?.cwd) return; // switched panes, or a newer refresh, while reading
+  if (run !== refreshing || cwd !== dirOfTab(tab())) return; // switched workspaces, or a newer refresh, while reading
   const { suggestions } = r;
   home = r.home;
   if (moved) loaded.clear();
@@ -850,7 +854,7 @@ searchIn.oninput = () => {
   searchTimer = setTimeout(() => runSearch(q), 120);
 };
 async function runSearch(q) {
-  const run = ++searchRun, root = active()?.cwd || treeRoot;
+  const run = ++searchRun, root = dirOfTab(tab()) || treeRoot;
   if (!root) return;
   const r = await dt.searchFiles(root, q);
   if (!r || run !== searchRun) return; // a newer search took over
@@ -1378,7 +1382,7 @@ function snapshot(full) {
   return {
     tabIx: Math.max(0, kept.findIndex(({ t }) => t === tab())),
     side: { hidden: $('app').classList.contains('no-side'), ...(width ? { width } : {}) },
-    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)), color: t.color })),
+    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)), color: t.color, dir: t.dir })),
   };
 }
 function saveSoon() {
@@ -1412,7 +1416,8 @@ async function restore(saved) {
       return { id: p.id };
     };
     const root = await build(t.root);
-    const tb = { root, activeId: ids[t.active] ?? ids[0], color: t.color ?? nextColor() };
+    const tb = { root, activeId: ids[t.active] ?? ids[0], color: t.color ?? nextColor(),
+      dir: t.dir || panes.get(ids[t.active] ?? ids[0])?.cwd }; // saved before workspaces had a folder: where its terminal was
     tabs.push(tb);
     for (const id of ids) if (!panes.get(id).name) nameTerminal(panes.get(id), tb); // saved before terminals had names
   }
@@ -1425,38 +1430,98 @@ async function restore(saved) {
   dt.track('session_restored', { tabs: tabs.length, panes: panes.size });
 }
 
-// --- Start screen: never a blank prompt ------------------------------------------
-async function openStart() {
-  const list = await dt.recents();
-  $('recents').innerHTML = list.length ? '<div class="label" style="margin-top:0">Recent</div>' + list.map((p) =>
-    `<button class="opt" data-path="${esc(p)}"><span class="ico">${icon("folder")}</span>
-      <span>${esc(p.split('/').pop())}<small>${esc(p)}</small></span></button>`).join('') : '';
+// --- The workspace picker: every workspace is a folder ------------------------------------
+// A recent one, your home folder, a new folder (made right here), any folder on your Mac, or a project from
+// GitHub. With no workspace open it can't be closed: a window always has a folder to work in.
+let pickRequired = false, newParent = '';
+const tilde = (p) => (home && (p === home || p.startsWith(home + '/')) ? '~' + p.slice(home.length) : p);
+const parentOf = (p) => p.slice(0, p.lastIndexOf('/')) || '/';
+const whereLabel = (p) => `in ${p === home ? 'your home folder' : tilde(p)}`;
+async function openPicker({ required = !tabs.length } = {}) {
+  pickRequired = required;
+  home ||= await dt.home();
+  const list = (await dt.recents()).slice(0, 5);
+  const row = (path, label, choice) => `<button class="opt" data-path="${esc(path)}" data-choice="${choice}"><span class="ico">${icon('folder')}</span>`
+    + `<span>${esc(label)}<small>${esc(tilde(path))}</small></span></button>`;
+  $('recents').innerHTML = (list.length ? '<div class="label" style="margin-top:0">Recent</div>' : '')
+    + list.map((p) => row(p, p === home ? 'Home' : p.split('/').pop() || '/', 'recent')).join('')
+    + (list.includes(home) ? '' : row(home, 'Home', 'home'));
+  try { newParent = localStorage.getItem('dt-new-parent') || ''; } catch {}
+  newParent ||= list[0] && list[0] !== home ? parentOf(list[0]) : home;
+  $('startTitle').textContent = tabs.length ? 'New workspace' : 'Where do you want to work?';
+  $('skip').hidden = required;
+  for (const id of ['newFolder', 'clone']) $(id).classList.remove('show');
+  $('newFolderName').value = ''; $('cloneUrl').value = ''; $('newFolderErr').hidden = true;
   $('usageNote').hidden = !(await dt.analytics());
   $('startOv').classList.add('show');
 }
+const openStart = () => openPicker(); // after the welcome cards
 function closeStart() {
+  if (pickRequired && !tabs.length) return; // nothing to go back to
+  pickRequired = false;
   $('startOv').classList.remove('show');
   focusActive();
   if (tourNext) { tourNext = false; setTimeout(runTour, 400); } // after the folder list and suggestions load
 }
-async function workIn(path) { await dt.recents(path); send(`cd ${q(path)}`, '', true); closeStart(); }
+// The last workspace closed: an empty window that asks where to work next.
+function noWorkspace() {
+  tabIx = 0;
+  $('term').replaceChildren();
+  treeRoot = ''; treePaths = new Set(); tree.resetPaths([]);
+  renderTabs();
+  openPicker({ required: true });
+}
+// Open dir as a workspace (or switch to it, if it's one already), then close the picker.
+async function openWorkspace(dir, { choice, start, run } = {}) {
+  dt.track('start_choice', { choice });
+  dt.recents(dir);
+  const same = start ? -1 : tabs.findIndex((t) => t.dir === dir);
+  if (same >= 0) goTab(same);
+  else {
+    if (tabs.length) dt.track('tab_opened');
+    const p = await newTab(dir, { start });
+    run?.(p);
+  }
+  closeStart();
+}
 
-$('recents').onclick = (e) => { const b = e.target.closest('.opt'); if (b) { workIn(b.dataset.path); dt.track('start_choice', { choice: 'recent' }); } };
-$('pick').onclick = async () => { const p = await dt.pickFolder(); if (p) { workIn(p); dt.track('start_choice', { choice: 'pick' }); } };
-$('cloneOpt').onclick = () => { $('clone').classList.add('show'); $('cloneUrl').focus(); };
+$('recents').onclick = (e) => { const b = e.target.closest('.opt'); if (b) openWorkspace(b.dataset.path, { choice: b.dataset.choice }); };
+$('pick').onclick = async () => { const p = await dt.pickFolder(); if (p) openWorkspace(p, { choice: 'pick' }); };
+// New folder: a name, and where it goes (the last place you made one, or next to your latest workspace).
+$('newFolderOpt').onclick = () => {
+  $('clone').classList.remove('show');
+  $('newFolder').classList.add('show');
+  $('newFolderWhere').textContent = whereLabel(newParent);
+  $('newFolderName').focus();
+};
+$('newFolderWhere').onclick = async () => {
+  const p = await dt.pickFolder();
+  if (p) { newParent = p; $('newFolderWhere').textContent = whereLabel(p); }
+  $('newFolderName').focus();
+};
+const FOLDER_ERRORS = { name: 'Give it a name, without a / in it.', 'exists-file': 'There’s already a file with that name there.',
+  failed: 'Couldn’t make a folder there. Try another place.' };
+$('newFolderGo').onclick = async () => {
+  const r = await dt.makeFolder(newParent, $('newFolderName').value);
+  if (r.error) { $('newFolderErr').textContent = FOLDER_ERRORS[r.error]; $('newFolderErr').hidden = false; return; }
+  try { localStorage.setItem('dt-new-parent', newParent); } catch {}
+  openWorkspace(r.path, { choice: 'new_folder' });
+};
+$('newFolderName').onkeydown = (e) => { if (e.key === 'Enter') $('newFolderGo').click(); };
+$('newFolderName').oninput = () => { $('newFolderErr').hidden = true; };
+$('cloneOpt').onclick = () => { $('newFolder').classList.remove('show'); $('clone').classList.add('show'); $('cloneUrl').focus(); };
+// A project from GitHub: the workspace is the folder it downloads into; its terminal fetches it there.
 $('cloneGo').onclick = async () => {
   const url = $('cloneUrl').value.trim();
   if (!url) return;
   const dest = await dt.pickFolder(); // where should the project live?
   if (!dest) return;
-  dt.track('start_choice', { choice: 'clone' });
   const name = url.replace(/\/+$/, '').split('/').pop().replace(/\.git$/, '');
-  closeStart();
-  send(`cd ${q(dest)} && git clone ${q(url)} && cd ${q(name)}`,
-    `Downloads ${name} into ${dest.split('/').pop()}, then moves into it.`, false);
+  openWorkspace(`${dest === '/' ? '' : dest}/${name}`, { choice: 'clone', start: dest, run: () =>
+    send(`git clone ${q(url)} && cd ${q(name)}`, `Downloads ${name} into ${dest.split('/').pop()}, then moves into it.`, false) });
 };
 $('cloneUrl').onkeydown = (e) => { if (e.key === 'Enter') $('cloneGo').click(); };
-$('skip').onclick = () => { closeStart(); dt.track('start_choice', { choice: 'skip' }); };
+$('skip').onclick = () => closeStart();
 
 // --- First run: welcome cards, then once they've picked where to work, the spotlight tour ---------
 // (onboarding.js). Skipping the cards skips the tour too. Settings → Help and the Help menu replay it.
@@ -1861,7 +1926,7 @@ $('updOv').onclick = (e) => { if (e.target.id === 'updOv') closeUpdate(); };
 // Unless this window is reopening the way you left it: then it's straight back to work.
 applySettings(settings).then(async () => {
   const saved = await dt.sessionStart();
-  if (saved) return restore(saved);
-  await newTab();
-  firstRun ? runWelcome() : openStart();
+  home = await dt.home();
+  if (saved?.tabs?.length) return restore(saved);
+  firstRun ? runWelcome() : openPicker({ required: true }); // a window always works in a folder: pick one first
 });

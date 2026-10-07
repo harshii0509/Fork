@@ -264,6 +264,18 @@ assert.equal(readBook(undefined).error, 'kind');
   const ac = new AbortController(); ac.abort();
   assert.equal(await searchFiles(repo, 'pay', { signal: ac.signal }), null); // overtaken by a newer search
 }
+// The workspace picker's New folder: made right inside the parent; one that's there just opens.
+{
+  const { makeFolder } = await import('./files.mjs');
+  const parent = fresh();
+  assert.deepEqual(makeFolder(parent, '  my-site '), { path: join(parent, 'my-site') });
+  assert.ok(existsSync(join(parent, 'my-site')));
+  assert.deepEqual(makeFolder(parent, 'my-site'), { path: join(parent, 'my-site') }); // already there: open it
+  for (const bad of ['', '  ', '.', '..', 'a/b', '../up']) assert.deepEqual(makeFolder(parent, bad), { error: 'name' }, bad);
+  writeFileSync(join(parent, 'notes'), 'x');
+  assert.deepEqual(makeFolder(parent, 'notes'), { error: 'exists-file' });
+  assert.deepEqual(makeFolder(join(parent, 'missing', 'deeper'), 'x'), { error: 'failed' });
+}
 
 // --- Shell integration (shell/.zshrc): a command's first word, even when it's the only word ---
 {
