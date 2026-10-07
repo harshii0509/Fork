@@ -265,7 +265,7 @@ function drag(e, fn) {
 $('sideGrip').onpointerdown = (e) => drag(e, (x) => { $('app').style.setProperty('--side', `${clamp(x, 180, 420)}px`); saveSoon(); });
 
 function focusPane(id) {
-  $('app').classList.remove('in-settings'); // ⌘T, ⌘1–9, splits: back to the terminal
+  $('app').classList.remove('in-settings'); // ⌘N, ⌘T, ⌘1–9, splits: back to the terminal
   const t = tabOf(id);
   if (!t) return;
   if (t === tab() && t.activeId === id) return;
@@ -300,6 +300,16 @@ async function split(dir) {
   dt.track('pane_split', { dir });
   nameTerminal(p, tab());
   tab().root = Panes.split(tab().root, cur.id, p.id, dir);
+  focusPane(p.id);
+}
+
+// ⌘T: one more terminal in this workspace, side by side with the others.
+async function addTerminal() {
+  if (!tabs.length) return openPicker({ required: true });
+  const p = await newPane(tab().dir || active()?.cwd);
+  dt.track('pane_split', { dir: 'row' });
+  nameTerminal(p, tab());
+  tab().root = Panes.append(tab().root, p.id);
   focusPane(p.id);
 }
 
@@ -545,7 +555,8 @@ $('splitR').onclick = () => split('row');
 $('splitD').onclick = () => split('col');
 
 dt.onCmd((cmd) => ({
-  'new-tab': () => openPicker(),
+  'new-workspace': () => openPicker(),
+  'new-terminal': () => addTerminal(),
   close: () => (active() ? closePane(active().id) : !tabs.length && forgetAndClose()), // no workspace left: ⌘W closes the window
   'split-right': () => split('row'),
   'split-down': () => split('col'),
@@ -1889,7 +1900,7 @@ window.addEventListener('storage', (e) => {
 });
 
 // --- Keyboard: ⌘K, ⌘1–9, ⌘⌥ arrows, and hold ⌘ to reveal every shortcut ------------------
-// (⌘N/T/W/D and tab cycling live in the menu bar, see main.js.)
+// (⌘N workspace, ⌘T terminal, ⌘⇧N window, ⌘W/D and tab cycling live in the menu bar, see main.js.)
 let keysTimer;
 const hideKeys = () => { clearTimeout(keysTimer); document.body.classList.remove('show-keys'); };
 

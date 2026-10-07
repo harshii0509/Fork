@@ -127,8 +127,9 @@ function buildMenu() {
       { role: 'quit', label: 'Quit Fork' },
     ] },
     { label: 'File', submenu: [
-      { id: 'new-window', label: 'New Window', accelerator: 'Cmd+N', click: () => createWindow() },
-      { label: 'New Tab', accelerator: 'Cmd+T', click: toRenderer('new-tab') },
+      { label: 'New Workspace…', accelerator: 'Cmd+N', click: toRenderer('new-workspace') },
+      { label: 'New Terminal', accelerator: 'Cmd+T', click: toRenderer('new-terminal') },
+      { id: 'new-window', label: 'New Window', accelerator: 'Cmd+Shift+N', click: () => createWindow() },
       { type: 'separator' },
       { label: 'Close', accelerator: 'Cmd+W', click: toRenderer('close') },
     ] },

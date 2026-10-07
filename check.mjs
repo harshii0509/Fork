@@ -40,7 +40,7 @@ assert.ok(!labels('/').includes('Go up a folder'));
 // --- Split panes (panes.js is a browser script; run it with a window stub) ---
 const ctx = { window: {} };
 runInNewContext(readFileSync(new URL('./panes.js', import.meta.url), 'utf8'), ctx);
-const { split, remove, leaves, neighbor } = ctx.window.Panes;
+const { split, append, remove, leaves, neighbor } = ctx.window.Panes;
 
 let root = { id: 1 };
 root = split(root, 1, 2, 'row');      // [1 | 2]
@@ -55,6 +55,15 @@ assert.equal(remove(remove(root, 1), 3), null); // last pane gone -> empty tab
 const sized = { dir: 'row', ratio: 0.3, a: { id: 1 }, b: { id: 2 } };
 assert.equal(split(sized, 2, 3, 'col').ratio, 0.3);
 assert.equal(remove(split(sized, 2, 3, 'col'), 3).ratio, 0.3);
+
+// ⌘T adds a column on the right, every column an equal share; a stacked column counts as one.
+let cols = append({ id: 1 }, 2);
+assert.equal(cols.ratio, 1 / 2);
+cols = append(cols, 3);
+assert.equal(cols.ratio, 2 / 3);
+assert.deepEqual([...leaves(cols)], [1, 2, 3]);
+assert.equal(append({ dir: 'col', a: { id: 1 }, b: { id: 2 } }, 3).ratio, 1 / 2);
+assert.equal(append(append({ dir: 'col', a: { id: 1 }, b: { id: 2 } }, 3), 4).ratio, 2 / 3);
 
 const rects = { 1: { x: 0, y: 0, w: 50, h: 100 }, 2: { x: 50, y: 0, w: 50, h: 50 }, 3: { x: 50, y: 50, w: 50, h: 50 } };
 assert.equal(neighbor(rects, 1, 'ArrowRight'), '2'); // nearest center to the right

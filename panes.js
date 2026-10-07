@@ -6,6 +6,11 @@ window.Panes = (() => {
       : node.dir ? { ...node, a: split(node.a, targetId, newId, dir), b: split(node.b, targetId, newId, dir) }
         : node;
 
+  // A new terminal as one more column on the right. Columns already there keep their relative widths and
+  // the new one gets an equal share (1/2, then 1/3, 1/4…).
+  const cols = (node) => (node.dir === 'row' ? cols(node.a) + cols(node.b) : 1);
+  const append = (node, newId) => { const c = cols(node); return { dir: 'row', ratio: c / (c + 1), a: node, b: { id: newId } }; };
+
   // Remove a pane; its sibling takes the parent's place. Returns null when the tree is empty.
   const remove = (node, id) => {
     if (node.id === id) return null;
@@ -31,5 +36,5 @@ window.Panes = (() => {
     return best;
   };
 
-  return { split, remove, leaves, neighbor };
+  return { split, append, remove, leaves, neighbor };
 })();

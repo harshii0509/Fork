@@ -23,7 +23,7 @@ window.Onboarding = (() => {
     { targets: ['#pvToggle'], place: 'below', title: 'Preview (⌘P)',
       text: 'See a file, or your app while it’s running, right beside the terminal.' },
     { targets: ['#tabs', '#newTab'], place: 'below', title: 'Your workspaces',
-      text: 'Each tab is a folder you work in: its files, branch and what’s changed show in the sidebar, wherever its terminals go. + opens another folder, and the split buttons on the right add terminals side by side.' },
+      text: 'Each tab is a folder you work in: its files, branch and what’s changed show in the sidebar, wherever its terminals go. + or ⌘N opens another folder, and ⌘T adds a terminal next to the ones you have.' },
   ];
 
   const $ = (id) => document.getElementById(id);
