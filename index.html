@@ -267,7 +267,7 @@
     --trees-git-added-color-override: var(--plus); --trees-git-untracked-color-override: var(--plus);
     --trees-git-modified-color-override: var(--warn); --trees-git-renamed-color-override: var(--warn);
     --trees-git-deleted-color-override: var(--minus); --trees-git-ignored-color-override: var(--text-4); }
-  #entries[hidden] { display: none; }
+  #entries[hidden] { display: none !important; } /* @pierre/trees puts display: flex inline on it */
   #newEntry .entry { margin-bottom: 12px; }
   .entry { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 16px; padding-left: calc(var(--depth, 0) * 20px);
     cursor: default; white-space: nowrap; overflow: hidden; font: 450 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-2); }
@@ -275,6 +275,24 @@
   .entry span { overflow: hidden; text-overflow: ellipsis; }
   .entry input { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--text-1); }
   .empty { color: var(--text-4); font: 450 13px/1.2 var(--ui); }
+  .hbtn[hidden] { display: none; }
+  /* A Home workspace: no tree of your whole home folder, just a way into a project (renderer.js moveWorkspace). */
+  .home-empty { display: flex; flex-direction: column; align-items: flex-start; font: 450 13px/1.4 var(--ui); letter-spacing: -.13px; }
+  .home-empty[hidden] { display: none; }
+  .home-empty > .ph { color: var(--text-4); margin-bottom: 12px; }
+  .he-title { margin: 0; color: var(--text-1); }
+  .he-body { margin: 2px 0 16px; color: var(--text-4); }
+  .he-choose { width: 100%; height: 32px; border-radius: 8px; background: var(--field); color: var(--text-1);
+    transition: background-color .12s ease, transform .12s ease; }
+  .he-choose:hover { background: var(--hover); }
+  .he-choose:active { transform: scale(.97); }
+  #homeRecent { align-self: stretch; }
+  #homeRecent h3 { margin: 24px 0 12px; }
+  .he-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 0; margin-bottom: 12px;
+    font: 450 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-2); text-align: left; transition: color .12s ease; }
+  .he-row:hover { color: var(--text-1); }
+  .he-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { .he-choose, .he-row { transition: none; } .he-choose:active { transform: none; } }
 
   /* Panes: the active tab's split tree. */
   .term { grid-area: 1 / 2; min-width: 0; min-height: 0; display: flex; }
@@ -712,6 +730,13 @@
         <div id="newEntry"></div>
         <div id="entries"></div>
         <div class="empty" id="treeEmpty" hidden>This folder is empty.</div>
+        <div class="home-empty" id="homeEmpty" hidden>
+          <i class="ph" data-ph="folder"></i>
+          <p class="he-title">This is your home folder</p>
+          <p class="he-body">Pick a project folder to see its files here.</p>
+          <button class="he-choose" id="homeChoose">Choose a project folder</button>
+          <div id="homeRecent"></div>
+        </div>
       </div>
       </div>
       <div class="find-list" id="findList" role="listbox" aria-label="Search results" hidden></div>

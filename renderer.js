@@ -810,8 +810,12 @@ async function refresh() {
   }
   treePaths = next;
   tree.setGitStatus(changed);
-  $('entries').hidden = !r.entries.length;
-  $('treeEmpty').hidden = !!r.entries.length;
+  const atHome = cwd === home; // your whole home folder isn't a project: offer a way into one instead
+  $('entries').hidden = atHome || !r.entries.length;
+  $('treeEmpty').hidden = atHome || !!r.entries.length;
+  $('homeEmpty').hidden = !atHome;
+  $('collapseAll').hidden = $('newFile').hidden = atHome;
+  if (atHome) drawHomeRecent();
   treeDirs = [cwd, ...inside];
   syncWatch();
   markShown();
@@ -829,6 +833,29 @@ async function refresh() {
   $('chips').innerHTML = suggestions.map((s, i) => `<button class="chip" data-i="${i}" title="${esc(s.cmd)}">${esc(s.label)}</button>`).join('');
   renderTabs();
 }
+
+// A Home workspace's Files: a few recent projects to move this workspace into (or Choose any folder).
+async function drawHomeRecent() {
+  const list = (await dt.recents()).filter((p) => p !== home && !tabs.some((t) => t.dir === p)).slice(0, 3);
+  $('homeRecent').innerHTML = list.length ? '<h3>Recent</h3>' + list.map((p) => `<button class="he-row" data-path="${esc(p)}" title="${esc(tilde(p))}">`
+    + `${ph('folder')}<span>${esc(p.split('/').pop() || '/')}</span></button>`).join('') : '';
+}
+// Point this workspace at a project folder: same tab, same terminals (the idle ones cd there), new name and files.
+function moveWorkspace(dir) {
+  const t = tab(), other = tabs.findIndex((x) => x !== t && x.dir === dir);
+  if (!t || !dir) return;
+  if (other >= 0) return goTab(other); // already open: go there
+  t.dir = dir;
+  dt.recents(dir);
+  dt.track('start_choice', { choice: 'from_home' });
+  for (const p of panesOf(t)) if (!p.busy && !isGame(p)) dt.write(p.id, `cd ${q(dir)}\r`);
+  t.git = null;
+  gitSoon(t);
+  renderTabs();
+  refresh();
+}
+$('homeChoose').onclick = async () => { const p = await dt.pickFolder(); if (p) moveWorkspace(p); };
+$('homeRecent').onclick = (e) => { const b = e.target.closest('.he-row'); if (b) moveWorkspace(b.dataset.path); };
 
 $('crumbs').onclick = (e) => {
   const b = e.target.closest('.crumb');
