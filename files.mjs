@@ -1,5 +1,7 @@
 // The sidebar's file tree and what the preview panel shows. Main process only; check.mjs tests it.
+import { execFile } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { marked } from 'marked';
@@ -58,4 +60,90 @@ export function findEditor() {
   const dirs = ['/Applications', join(homedir(), 'Applications')];
   const hit = EDITORS.find(([app]) => dirs.some((d) => existsSync(join(d, `${app}.app`))));
   return hit ? { app: hit[0], label: hit[1] } : null;
+}
+
+// The sidebar's search: files whose name has the words, then lines inside files that do (a find + grep you
+// didn't have to type). In a git repo git does both, skipping what .gitignore skips; anywhere else a walk that
+// steps around installed packages and build output, with caps so a search from your home folder stays quick.
+// A newer search aborts this one (signal), which also stops its git. Paths come back relative to root.
+const SKIP = new Set([...NOISE, 'Library', 'Applications', 'Movies', 'Music', 'Pictures', 'Photos Library.photoslibrary']);
+const WALK_MAX = 20000, WALK_DEPTH = 6, TEXT_MAX = 512 * 1024, READ_BUDGET = 64 * 1024 * 1024;
+const gitIn = (root, args, signal) => new Promise((res) => execFile('git', ['--no-optional-locks', '-C', root, ...args],
+  { signal, timeout: 8000, maxBuffer: 64 << 20 }, (err, out) => res(!err ? out : err.code === 1 ? '' : null))); // grep exits 1 when nothing matches
+
+async function walk(root, signal) {
+  const out = [], queue = [['', 0]];
+  while (queue.length && out.length < WALK_MAX && !signal?.aborted) {
+    const [rel, depth] = queue.shift(); // breadth first: what's near the top comes first
+    let entries;
+    try { entries = await readdir(join(root, rel), { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      const path = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { if (!SKIP.has(e.name) && depth < WALK_DEPTH) queue.push([path, depth + 1]); }
+      else if (e.isFile()) out.push(path);
+    }
+  }
+  return out;
+}
+
+// One line of a hit, cut to a readable length around the match.
+function snippet(text, at, q) {
+  const line = text.replace(/\t/g, '  ');
+  if (line.length <= 160) return line.trim();
+  const from = Math.max(0, at - 50);
+  return (from ? '…' : '') + line.slice(from, from + 150).trim() + (from + 150 < line.length ? '…' : '');
+}
+
+export async function searchFiles(root, query, { names = 30, hits = 80, signal } = {}) {
+  const q = String(query || '').trim(), low = q.toLowerCase();
+  if (!q || !root) return { names: [], hits: [] };
+  const listed = await gitIn(root, ['ls-files', '-co', '--exclude-standard', '-z'], signal);
+  const git = listed != null;
+  const files = git ? listed.split('\0').filter(Boolean) : await walk(root, signal);
+  if (signal?.aborted) return null;
+
+  // Names: the file's own name matching beats a folder on the way to it; starting with it beats containing it.
+  const named = [];
+  for (const path of files) {
+    const at = path.toLowerCase().lastIndexOf(low);
+    if (at < 0) continue;
+    const cut = path.lastIndexOf('/') + 1, base = path.slice(cut).toLowerCase();
+    named.push({ path, rank: base.startsWith(low) ? 0 : base.includes(low) ? 1 : 2 });
+  }
+  named.sort((a, b) => a.rank - b.rank || a.path.length - b.path.length || a.path.localeCompare(b.path));
+
+  // Lines inside files.
+  const found = [];
+  if (git) {
+    const out = await gitIn(root, ['grep', '-n', '-I', '-i', '-F', '--untracked', '--no-color', '-z', '-m', '3', '-e', q], signal);
+    if (signal?.aborted) return null;
+    for (const row of (out || '').split('\n')) {
+      if (found.length >= hits) break;
+      const [path, n, ...rest] = row.split('\0');
+      if (!rest.length) continue;
+      const text = rest.join('\0');
+      found.push({ path, line: +n, text: snippet(text, text.toLowerCase().indexOf(low), q) });
+    }
+  } else {
+    let budget = READ_BUDGET;
+    for (const path of files) {
+      if (found.length >= hits || budget <= 0 || signal?.aborted) break;
+      const full = join(root, path);
+      try {
+        const { size } = await stat(full);
+        if (size > TEXT_MAX) continue;
+        budget -= size;
+        const buf = await readFile(full);
+        if (buf.subarray(0, 8192).includes(0)) continue; // binary
+        const lines = buf.toString('utf8').split('\n');
+        for (let i = 0, k = 0; i < lines.length && k < 3 && found.length < hits; i++) {
+          const at = lines[i].toLowerCase().indexOf(low);
+          if (at >= 0) { found.push({ path, line: i + 1, text: snippet(lines[i], at, q) }); k++; }
+        }
+      } catch {}
+    }
+  }
+  if (signal?.aborted) return null;
+  return { names: named.slice(0, names).map((x) => x.path), hits: found, git };
 }

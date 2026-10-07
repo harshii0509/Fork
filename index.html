@@ -46,10 +46,10 @@
     --shadow-card: 0 24px 60px #0008;  /* cards: ⌘K, welcome, updates */
     --radius: 10px; --ease: cubic-bezier(.2, .8, .2, 1);
     /* The redesign's roles (Figma: Workspaces frame), from colors.css. Light has its own values below. */
-    --chrome: var(--gray-1000);     /* the outer frame: top strip and icon rail */
+    --chrome: var(--gray-1000);     /* the outer frame: the top strip */
     --card: var(--gray-975);        /* the rounded card holding the sidebar and terminals */
     --card-line: var(--gray-900);   /* its edge, and the lines inside it */
-    --field: var(--gray-950); --field-line: var(--gray-900); /* search box, the selected rail icon */
+    --field: var(--gray-950); --field-line: var(--gray-900); /* search box, the open workspace tab */
     --chip: var(--gray-925);        /* the active terminal's name chip */
     --kbd: var(--gray-900);
     --text-1: var(--gray-25);       /* names */
@@ -106,28 +106,32 @@
   .fi { flex: none; display: grid; } /* a file's type icon: never squeezed by a long name */
   .pv-name .fi { display: inline-grid; vertical-align: -3px; margin-right: 7px; }
 
-  /* The window: a top strip and an icon rail (the frame), around a rounded card that holds the sidebar,
-     the terminals and the preview. With Translucent on, the frame is frosted glass and the card stays solid. */
-  .app { display: grid; grid-template: 36px 1fr / 49px 1fr; height: 100%; background: var(--chrome); }
+  /* The window: a top strip (traffic lights, your workspaces as tabs, the split and preview buttons) over a
+     rounded card that holds the sidebar, the terminals and the preview. With Translucent on, the strip is
+     frosted glass and the card stays solid. */
+  .app { display: grid; grid-template: 44px 1fr / 1fr; height: 100%; background: var(--chrome); }
   :root[data-translucent="on"] .app { background: transparent; }
-  .stage { --pvw: 0px; grid-area: 2 / 2; margin: 0 8px 8px 0; min-width: 0; min-height: 0; overflow: hidden;
+  .stage { --pvw: 0px; grid-area: 2 / 1; margin: 0 8px 8px; min-width: 0; min-height: 0; overflow: hidden;
     display: grid; grid-template: 1fr auto / var(--side, 224px) 1fr var(--pvw);
     background: var(--card); border: .5px solid var(--card-line); border-radius: 12px; }
   /* ⌘P opens the preview panel on the right. --pv is the dragged width. */
   .has-pv .stage { --pvw: clamp(320px, var(--pv, 42vw), calc(100vw - 480px)); }
   .in-settings .stage { --pvw: 0px; }
-  /* ⌘B hides the sidebar. A class rule, not --side, so the dragged width comes back. The rail stays. */
+  /* ⌘B hides the sidebar. A class rule, not --side, so the dragged width comes back. The strip's sidebar
+     button only shows then, to bring it back. */
   .no-side .stage { grid-template-columns: 0 1fr var(--pvw); }
   .no-side .side, .no-side .side-grip { display: none; }
-  #sideShow, #crumbs { display: none !important; } /* the rail brings the sidebar back; where you are is in the sidebar */
+  #crumbs { display: none !important; } /* where you are is in the sidebar */
+  #sideShow { display: none; }
+  .no-side #sideShow { display: grid; }
   .side-grip { grid-row: 1 / 3; grid-column: 1; justify-self: end; width: 6px; margin-right: -3px;
     cursor: col-resize; z-index: 2; }
 
-  /* Top strip: traffic lights on the left (main.js places them), the split and preview buttons on the right. */
-  .top { grid-area: 1 / 1 / 2 / 3; display: flex; align-items: center; gap: 2px; padding: 0 12px;
+  /* Top strip: traffic lights on the left (main.js places them), your workspaces, then the split and preview
+     buttons on the right. The strip drags the window; the tabs and buttons don't. */
+  .top { grid-area: 1 / 1; display: flex; align-items: center; gap: 2px; padding: 0 12px 0 74px;
     -webkit-app-region: drag; min-width: 0; }
   .top button { -webkit-app-region: no-drag; }
-  .top .spacer { flex: 1; }
   .tbtn { width: 24px; height: 24px; padding: 0; border-radius: 6px; display: grid; place-items: center; color: var(--text-4); }
   .tbtn:hover { background: var(--field); color: var(--text-1); }
   #splitR .ph { transform: rotate(-90deg) scaleY(-1); }
@@ -137,46 +141,119 @@
   .crumb { padding: 4px 8px; border-radius: 6px; color: var(--dim); white-space: nowrap; }
   .sep { color: var(--faint); }
 
-  /* Icon rail: Workspaces and Files switch what the sidebar shows; What's new, Settings and Help at the bottom. */
-  .rail { grid-area: 2 / 1; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-    padding: 10px 0 18px; min-height: 0; } /* the bottom lines up with the card's, 8px up */
-  .rail-top { display: flex; flex-direction: column; gap: 12px; }
-  .rail-bottom { display: flex; flex-direction: column; gap: 4px; margin-bottom: -4px; } /* 16px icons 12px apart, in 24px buttons */
-  .rbtn { width: 29px; height: 29px; padding: 0; display: grid; place-items: center; border-radius: 8px;
-    border: .5px solid transparent; color: var(--text-4); }
-  .rbtn:hover { color: var(--text-2); }
-  .rbtn.on { background: var(--field); border-color: var(--field-line); color: var(--text-1); }
-  .rsm { width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border-radius: 6px; color: var(--text-4); }
-  .rsm:hover, .rsm.on { color: var(--text-1); }
-  .in-settings #openSettings { color: var(--text-1); }
+  /* Workspaces, one tab each: a square in the workspace's colour and the folder's name, × on hover. The square
+     is the status: a rippling lattice while something works; yellow (needs you, or finished while you were
+     away) or red (failed), pulsing, until it's seen to; then its own colour again. Many workspaces: tabs
+     shrink to 96px, then the row scrolls sideways. */
+  .tabstrip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 0 12px; }
+  #tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab { -webkit-app-region: no-drag; position: relative; flex: 0 1 auto; width: 200px; min-width: 96px; display: flex; align-items: center;
+    gap: 6px; padding: 6px 8px; border-radius: 8px; background: var(--card); cursor: default; transition: background-color .12s ease; }
+  .tab:hover { background: color-mix(in srgb, var(--field) 60%, var(--card)); }
+  .tab.active { background: var(--field); }
+  .tab.enter { animation: tab-in 150ms var(--ease-out-quart); }
+  @keyframes tab-in { from { opacity: 0; transform: scale(.96); } }
+  @media (prefers-reduced-motion: reduce) { .tab { transition: none; } .tab.enter { animation: none; } }
+  .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 450 13px/1.2 var(--ui); color: var(--text-3); }
+  .tab:hover .tname { color: var(--text-2); }
+  .tab.active .tname { color: var(--text-1); }
+  .tclose { flex: none; display: grid; place-items: center; width: 12px; height: 12px; padding: 0; border-radius: 3px;
+    color: var(--text-4); opacity: 0; transition: opacity .12s ease; }
+  .tclose .ph { width: 12px; height: 12px; }
+  .tab:hover .tclose, .tclose:focus-visible { opacity: 1; }
+  .tclose:hover { color: var(--text-1); }
+  @media (prefers-reduced-motion: reduce) { .tclose { transition: none; } }
+  .tnew { width: 26px; height: 26px; flex: none; border-radius: 8px; }
+  /* The square: nine 3px tiles that touch (9px, in a 12px spot). While something works they separate into a
+     3×3 lattice in the same colour and a wave runs through them from the top left (whimsically.app's "lattice"
+     loader: 2.1s, each column 233ms behind, each row 117ms). --phase keeps the wave going across redraws.
+     Needs you / failed: the tiles take the yellow or red (150ms), and a copy of the square grows and fades
+     behind them (ease-out, 2s with a rest); back to the workspace's colour takes 200ms. */
+  .ws-sq { --sq: var(--tab-c, var(--ws-1)); flex: none; position: relative; width: 12px; height: 12px; display: grid; place-items: center; }
+  .ws-sq[data-s="done"] { --sq: var(--needs); }
+  .ws-sq[data-s="failed"] { --sq: var(--failed); }
+  .ws-cubes { position: relative; display: grid; grid-template: repeat(3, 3px) / repeat(3, 3px); }
+  .ws-cubes i { background: var(--sq); transition: transform 250ms var(--ease-in-out-cubic), background-color 200ms ease; }
+  .ws-sq[data-s] .ws-cubes i { transition-duration: 250ms, 150ms; }
+  .ws-cubes.working i { transform: scale(.75); animation: ws-lattice 2.1s ease-in-out infinite;
+    animation-delay: calc(var(--phase) + var(--c) * 233ms + var(--r) * 117ms); }
+  @keyframes ws-lattice { 0%, 50%, 100% { opacity: .3; } 25% { opacity: 1; } }
+  .ws-sq[data-s]::before { content: ''; position: absolute; inset: 1.5px; background: var(--sq);
+    animation: ws-pulse 2s var(--ease-out-quart) infinite; }
+  @keyframes ws-pulse { 0% { transform: scale(1); opacity: .55; } 70%, 100% { transform: scale(2.2); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ws-cubes i, .ws-cubes.working i { transition: none; animation: none; opacity: 1; }
+    .ws-sq[data-s]::before { display: none; }
+  }
 
-  /* Sidebar: the name, search, then your workspaces (or, in Files, what's in this folder). */
+  /* Sidebar: the open workspace. Its name, search, what it's on (branch, what changed, the app it serves),
+     then its files; What's new, Settings and Help sit at the bottom, over the files, which fade out under them. */
   .side { grid-row: 1 / 3; grid-column: 1; position: relative; border-right: .5px solid var(--card-line);
     display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .side-top { flex: none; height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; }
   .brand { font: 500 18px/1 var(--ui-mono); letter-spacing: -.36px; color: var(--text-1); }
-  .side-scroll { flex: 1; overflow-y: auto; padding: 12px 10px 12px; }
+  .side-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 10px 0; }
+  .side-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .side-body[hidden] { display: none; }
   .parked { display: none; } /* ← →, suggestions: kept working, not in this design yet */
   .ibtn:disabled { opacity: .35; cursor: default; background: none; color: var(--dim); }
-  .search { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 4px; border-radius: 8px;
-    background: var(--field); border: .5px solid var(--field-line); color: var(--text-4); text-align: left;
-    font: 450 12px/1.2 var(--ui); }
-  .search span:first-of-type { flex: 1; }
+  /* Search: file names in this workspace, then the lines inside files (files.mjs searchFiles). ⌘K jumps here. */
+  .search { flex: none; display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 4px; border-radius: 8px;
+    background: var(--field); border: .5px solid var(--field-line); color: var(--text-4); cursor: text;
+    font: 450 12px/1.2 var(--ui); transition: border-color .12s ease; }
   .search:hover { color: var(--text-2); }
+  .search:focus-within { border-color: color-mix(in srgb, var(--text-1) 20%, transparent); color: var(--text-2); }
+  .search input { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; outline: 0;
+    font: inherit; color: var(--text-1); }
+  .search input::placeholder { color: var(--text-4); }
   .search kbd { gap: 2px; padding: 2px; border-radius: 4px; background: var(--kbd); color: var(--text-4); font: 450 10px/1 var(--ui); }
+  .search:focus-within kbd { visibility: hidden; }
   .side h3 { margin: 0; font: 600 12px/1.2 var(--ui-mono); letter-spacing: .48px; text-transform: uppercase; color: var(--text-4); }
-  .side-files, .view-files .side-ws { display: none; }
-  .view-files .side-files { display: block; }
+  .sec { display: flex; align-items: center; justify-content: space-between; height: 14px; margin: 20px 0 12px; }
+  .ws-info { display: flex; flex-direction: column; gap: 4px; }
+  .ws-line { display: flex; align-items: center; gap: 8px; min-width: 0; font: 450 13px/1.2 var(--ui); color: var(--text-2); white-space: nowrap; }
+  .ws-line span { overflow: hidden; text-overflow: ellipsis; }
+  .ws-line span:last-child { flex: 1; min-width: 0; }
+  .ws-line .plus { color: var(--plus); } .ws-line .minus { color: var(--minus); }
+  /* Search results, in place of the info and files while there's something in the box. */
+  .find-list { flex: 1; min-height: 0; overflow-y: auto; margin: 8px -4px 0; padding-bottom: 56px; scrollbar-width: none; }
+  .find-list[hidden] { display: none; }
+  .find-list h3 { margin: 12px 4px 6px; }
+  .fl-row { display: flex; flex-direction: column; gap: 3px; padding: 6px 4px; border-radius: 8px; cursor: default; }
+  .fl-row:hover, .fl-row.on { background: var(--hover); }
+  .fl-top { display: flex; align-items: center; gap: 8px; min-width: 0; font: 450 13px/1.2 var(--ui); color: var(--text-2); white-space: nowrap; }
+  .fl-top b { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; font-weight: 450; color: var(--text-1); }
+  .fl-top small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--text-4); }
+  .fl-snip { padding-left: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 450 12px/1.3 var(--ui-mono); color: var(--text-4); }
+  .fl-top b span { color: var(--text-4); } /* :line */
+  .find-list mark { background: none; color: var(--text-1); }
+  .fl-top b mark { background: color-mix(in srgb, var(--text-1) 14%, transparent); border-radius: 2px; }
+  .fl-empty { padding: 8px 4px; color: var(--text-4); font: 450 13px/1.3 var(--ui); }
+  /* The footer: What's new on the left, Settings and Help on the right, over the bottom of the files. The files
+     fade out under it (the gradient reaches the card's colour at --foot-fade) and blur a touch as they go. */
+  .side-foot { --foot-fade: 55%; position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; height: 56px;
+    display: flex; align-items: flex-end; justify-content: space-between; padding: 0 10px 12px; pointer-events: none;
+    background: linear-gradient(to bottom, transparent, var(--card) var(--foot-fade)); }
+  .side-foot::before { content: ''; position: absolute; inset: 0; z-index: -1; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+    -webkit-mask: linear-gradient(to bottom, transparent, #000 60%); }
+  .side-foot span { display: flex; gap: 8px; }
+  .fbtn { position: relative; pointer-events: auto; width: 14px; height: 14px; padding: 0; display: grid; place-items: center;
+    color: var(--text-4); transition: color .12s ease; }
+  .fbtn::after { content: ''; position: absolute; inset: -5px; } /* a 24px target for a 14px icon */
+  .fbtn:hover, .in-settings #openSettings { color: var(--text-1); }
+  @media (prefers-reduced-motion: reduce) { .fbtn { transition: none; } }
   /* Files: the folder the open terminal is in, as a tree. A folder opens in place; a file previews; drag
      either into a terminal to type its path; right-click for the rest (renderer.js entryMenu). */
-  .files-head { display: flex; align-items: center; justify-content: space-between; height: 14px; margin: 20px 0 12px; }
+  .files-head { flex: none; display: flex; align-items: center; justify-content: space-between; height: 14px; margin: 24px 0 12px; }
   .files-head span { display: flex; gap: 6px; }
   .hbtn { display: grid; place-items: center; width: 14px; height: 14px; padding: 0; color: var(--text-4); }
   .hbtn:hover { color: var(--text-1); }
   /* The tree itself is @pierre/trees in a shadow root: only its --trees-* variables reach in. They take Fork's
      tokens, so Light and Dark follow. It scrolls itself (virtual rows), so it fills what's left of the sidebar. */
-  .view-files .side-scroll { display: flex; flex-direction: column; overflow: hidden; }
-  .view-files .side-files { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .side-files { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   /* Rows bleed 4px past the sidebar's padding, like workspace rows; the background is the card's, solid, because
      a long name's "…" covers the cut text with it. */
   #entries { flex: 1; min-height: 0; margin: 0 -4px;
@@ -199,62 +276,6 @@
   .entry input { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--text-1); }
   .empty { color: var(--text-4); font: 450 13px/1.2 var(--ui); }
 
-  /* Workspaces (one per tab): a coloured square and the name; under it the branch, what changed and the
-     running app, each only when there is one. The open workspace is bright, the others dimmed. */
-  .sec { display: flex; align-items: center; justify-content: space-between; height: 14px; margin: 20px 0 12px; }
-  .add { width: 20px; height: 20px; margin-right: -4px; padding: 0; border-radius: 5px; color: var(--text-4); display: grid; place-items: center;
-    opacity: 0; transition: opacity .12s; }
-  .side:hover .add, .add:focus-visible { opacity: 1; }
-  .add:hover { background: var(--field); color: var(--text-1); }
-  #tabs { display: flex; flex-direction: column; gap: 20px; }
-  /* Hover: a soft box past the row (padding + negative margin: 8px above and below, 4px at the sides), so nothing moves. */
-  .tab { display: flex; flex-direction: column; gap: 8px; cursor: default;
-    padding: 8px 4px; margin: -8px -4px; border-radius: 8px; transition: background-color .12s ease; }
-  .tab:hover { background: var(--hover); }
-  @media (prefers-reduced-motion: reduce) { .tab { transition: none; } }
-  /* Workspaces you're not in are dimmed, all but the badge, which is how you notice one needs you. */
-  .tab .ws-cubes, .tab .tname, .tab .ws-info { opacity: .5; transition: opacity .12s ease; }
-  .tab:hover .ws-cubes, .tab:hover .tname, .tab:hover .ws-info { opacity: .75; }
-  .tab.active .ws-cubes, .tab.active .tname, .tab.active .ws-info, .show-keys .tab .ws-cubes { opacity: 1; }
-  .tab .ws-cubes.working { opacity: 1; } /* working shows at full strength, like the badges */
-  .ws-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .ws-sq { flex: none; position: relative; width: 16px; height: 16px; display: grid; place-items: center; }
-  /* The square is nine 4px tiles that touch. While something works they separate into a 3×3 lattice of 3px
-     cubes in the same colour, and a wave runs through them from the top left (whimsically.app's "lattice"
-     loader: 2.1s, each column 233ms behind, each row 117ms). --phase keeps the wave going across redraws. */
-  .ws-cubes { display: grid; grid-template: repeat(3, 4px) / repeat(3, 4px); }
-  .ws-cubes i { background: var(--sq, var(--ws-1)); transition: transform 250ms var(--ease-in-out-cubic); }
-  .ws-cubes.working i { transform: scale(.75); animation: ws-lattice 2.1s ease-in-out infinite;
-    animation-delay: calc(var(--phase) + var(--c) * 233ms + var(--r) * 117ms); }
-  @keyframes ws-lattice { 0%, 50%, 100% { opacity: .3; } 25% { opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { .ws-cubes i, .ws-cubes.working i { transition: none; animation: none; opacity: 1; } }
-  /* The end of the name row: a badge, yellow when it needs you or finished while you were away, red when it
-     failed. It shares its spot with the close ×, which takes over on hover. The badge pulses: a copy of it
-     grows and fades (ease-out, 2s with a rest), so the square itself stays solid. Without ::after it's plain. */
-  .ws-end { position: relative; flex: none; width: 16px; height: 16px; }
-  .ws-slot, .ws-end .tclose { position: absolute; inset: 0; display: grid; place-items: center; transition: opacity .12s ease; }
-  .tab:hover .ws-slot { opacity: 0; }
-  .ws-badge { position: relative; width: 6px; height: 6px; background: var(--needs); }
-  .ws-badge[data-s="failed"] { background: var(--failed); }
-  .ws-badge.enter { animation: ws-badge-in 150ms var(--ease-out-quart); }
-  @keyframes ws-badge-in { from { opacity: 0; transform: scale(.6); } }
-  .ws-badge::after { content: ''; position: absolute; inset: 0; background: inherit; animation: ws-pulse 2s var(--ease-out-quart) infinite; }
-  @keyframes ws-pulse { 0% { transform: scale(1); opacity: .55; } 70%, 100% { transform: scale(2.6); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .ws-badge.enter { animation: none; } .ws-badge::after { display: none; } }
-  .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font: 500 13px/1.2 var(--ui); color: var(--text-1); }
-  .tclose { padding: 0; opacity: 0; color: var(--text-4); border-radius: 4px; }
-  .tab:hover .tclose { opacity: 1; }
-  .tclose:hover { color: var(--text-1); }
-  .ws-info { display: flex; flex-direction: column; gap: 4px; }
-  .ws-info:empty { display: none; }
-  .ws-line { display: flex; align-items: center; gap: 8px; min-width: 0; font: 450 13px/1.2 var(--ui); color: var(--text-3); white-space: nowrap; }
-  .ws-line span { overflow: hidden; text-overflow: ellipsis; }
-  .ws-line span:last-child { flex: 1; min-width: 0; }
-  .ws-line .plus { color: var(--plus-dim); } .ws-line .minus { color: var(--minus-dim); }
-  .tab.active .ws-line { color: var(--text-2); }
-  .tab.active .ws-line .plus { color: var(--plus); } .tab.active .ws-line .minus { color: var(--minus); }
-
   /* Panes: the active tab's split tree. */
   .term { grid-area: 1 / 2; min-width: 0; min-height: 0; display: flex; }
   .term > *, .split > * { flex: 1 1 0; min-width: 0; min-height: 0; }
@@ -268,15 +289,19 @@
   .divider:hover, .divider.dragging { background: var(--accent); }
   .pane { position: relative; transition: opacity .15s; }
   .pane-inner { position: absolute; inset: 60px 4px 4px 8px; }
-  .term.multi .pane:not(.active) { opacity: .5; }
-  /* Each terminal's name, top left. The open one sits on a chip with a ×; double-click to rename. */
+  .term.multi .pane:not(.active) { opacity: .4; }
+  /* Each terminal's name, top left, on a chip with an icon: a terminal, or console-sparkle while an AI agent
+     (Claude, Codex…) is open in it. The open one has a ×; double-click to rename. */
   .pane-title { position: absolute; top: 0; left: 0; right: 0; display: flex; padding: 8px; }
-  .pane-chip { display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 8px 6px; border-radius: 8px;
+  .pane-chip { display: flex; align-items: center; gap: 6px; width: 180px; max-width: 100%; padding: 8px 10px; border-radius: 6px;
+    background: var(--chip);
     font: 500 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-1); }
-  .pane-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pane-chip > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pane-ico.enter { animation: ico-in 150ms var(--ease-out-quart); }
+  @keyframes ico-in { from { opacity: 0; transform: scale(.85); } }
+  @media (prefers-reduced-motion: reduce) { .pane-ico.enter { animation: none; } }
   .pane-chip .x { display: none; place-items: center; padding: 0; color: var(--text-4); border-radius: 4px; }
   .pane-chip .x:hover { color: var(--text-1); }
-  .pane.active .pane-chip { background: var(--chip); padding: 8px 10px; }
   .pane.active .pane-chip .x { display: grid; }
   .pane-chip input { width: 160px; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: inherit; color: inherit; }
   /* Dragging a file over a pane: dropping types its path at the cursor. */
@@ -301,7 +326,8 @@
     background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-key); pointer-events: none;
     opacity: 0; transform: scale(.85); transition: opacity .12s, transform .12s var(--ease); }
   .show-keys [data-key]::after { opacity: 1; transform: none; }
-  .tab[data-key]::after { top: 7px; right: 4px; } /* inside the hover padding */
+  .tab[data-key]::after { top: 50%; right: 6px; transform: translateY(-50%) scale(.85); } /* inside: the strip clips */
+  .show-keys .tab[data-key]::after { transform: translateY(-50%); }
   .show-keys .tab .tclose { visibility: hidden; }
   .tbtn[data-key]::after { top: calc(100% + 4px); right: 50%; transform: translateX(50%) scale(.85); }
   .show-keys .tbtn[data-key]::after { transform: translateX(50%); }
@@ -589,7 +615,7 @@
 
   /* Settings mode: the sidebar lists sections, the main area shows the page. Terminals keep running, hidden. */
   .set-nav, .set-page { display: none; }
-  .in-settings .side-scroll, .in-settings .term, .in-settings .dock, .in-settings .top > :not(.spacer) { display: none; }
+  .in-settings .side-scroll, .in-settings .term, .in-settings .dock, .in-settings .top > :not(.tabstrip) { display: none; }
   .in-settings .set-nav { display: block; flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
   .in-settings .set-page { display: block; grid-row: 1 / 3; grid-column: 2; min-width: 0; overflow-y: auto;
     padding: 0 32px 40px; }
@@ -642,26 +668,17 @@
 <body>
 <div class="app" id="app">
   <header class="top">
-    <button class="ibtn" id="sideShow" title="Show sidebar (⌘B)" aria-label="Show sidebar"><i data-icon="panel-left"></i></button>
+    <button class="tbtn" id="sideShow" title="Show sidebar (⌘B)" aria-label="Show sidebar"><i class="ph" data-ph="sidebar-simple"></i></button>
     <nav id="crumbs"></nav>
-    <div class="spacer"></div>
+    <div class="tabstrip">
+      <div id="tabs" role="tablist" aria-label="Workspaces"></div>
+      <button class="tbtn tnew" id="newTab" data-key="⌘T" title="New workspace (⌘T)" aria-label="New workspace"><i class="ph small" data-ph="plus"></i></button>
+    </div>
     <button class="upd" id="updPill" hidden title="A new version of Fork"><i data-icon="download"></i><span id="updPillV"></span></button>
     <button class="tbtn" id="splitR" data-key="⌘D" title="Split right (⌘D)" aria-label="Split right"><i class="ph" data-ph="square-split-vertical"></i></button>
     <button class="tbtn" id="splitD" data-key="⌘⇧D" title="Split down (⌘⇧D)" aria-label="Split down"><i class="ph" data-ph="square-split-horizontal"></i></button>
     <button class="tbtn" id="pvToggle" data-key="⌘P" title="Preview (⌘P)" aria-label="Preview"><i class="ph" data-ph="sidebar-simple"></i></button>
   </header>
-
-  <nav class="rail">
-    <div class="rail-top">
-      <button class="rbtn on" id="railWs" title="Workspaces" aria-label="Workspaces"><i class="ph big" data-ph="terminal-window"></i></button>
-      <button class="rbtn" id="railFiles" title="In this folder" aria-label="In this folder"><i class="ph big" data-ph="folders"></i></button>
-    </div>
-    <div class="rail-bottom">
-      <button class="rsm" id="railNew" title="What's new" aria-label="What's new"><i class="ph" data-ph="gift"></i></button>
-      <button class="rsm" id="openSettings" title="Settings (⌘,)" aria-label="Settings"><i class="ph" data-ph="gear"></i></button>
-      <button class="rsm" id="railHelp" title="Welcome tour" aria-label="Welcome tour"><i class="ph" data-ph="question"></i></button>
-    </div>
-  </nav>
 
   <div class="stage">
   <aside class="side">
@@ -675,10 +692,11 @@
         <button class="ibtn" id="fwd" data-key="⌘]" title="Forward (⌘])" aria-label="Forward" disabled><i data-icon="arrow-right"></i></button>
         <div class="chips" id="chips"></div>
       </div>
-      <button class="search" id="openPal"><i class="ph" data-ph="magnifying-glass"></i><span>Search...</span><kbd><span>⌘</span><span>K</span></kbd></button>
-      <div class="side-ws">
-        <div class="sec"><h3>Workspaces</h3><button class="add" id="newTab" data-key="⌘T" title="New workspace (⌘T)" aria-label="New workspace"><i data-icon="plus"></i></button></div>
-        <div id="tabs"></div>
+      <label class="search" id="searchBox"><i class="ph" data-ph="magnifying-glass"></i><input id="search" placeholder="Search..." spellcheck="false" autocomplete="off" aria-label="Search the files in this workspace" aria-controls="findList"><kbd><span>⌘</span><span>K</span></kbd></label>
+      <div class="side-body" id="sideBody">
+      <div class="side-info">
+        <div class="sec"><h3>Workspace info</h3></div>
+        <div class="ws-info" id="wsInfo"></div>
       </div>
       <div class="side-files">
         <div class="files-head"><h3 class="folder">Files</h3>
@@ -687,7 +705,16 @@
         <div id="entries"></div>
         <div class="empty" id="treeEmpty" hidden>This folder is empty.</div>
       </div>
+      </div>
+      <div class="find-list" id="findList" role="listbox" aria-label="Search results" hidden></div>
     </div>
+    <footer class="side-foot">
+      <button class="fbtn" id="railNew" title="What's new" aria-label="What's new"><i class="ph small" data-ph="gift"></i></button>
+      <span>
+        <button class="fbtn" id="openSettings" title="Settings (⌘,)" aria-label="Settings"><i class="ph small" data-ph="gear"></i></button>
+        <button class="fbtn" id="railHelp" title="Welcome tour" aria-label="Welcome tour"><i class="ph small" data-ph="question"></i></button>
+      </span>
+    </footer>
     <nav class="set-nav">
       <button class="nav-back" id="closeSettings"><i data-icon="chevron-left"></i>Back to terminal</button>
       <h3>Settings</h3>
@@ -771,7 +798,7 @@
       </div>
       <h4>Window</h4>
       <div class="set-list">
-        <label class="set-row"><span>Translucent frame<small>See your desktop through the top bar and the icon rail</small></span>
+        <label class="set-row"><span>Translucent frame<small>See your desktop through the top bar</small></span>
           <input type="checkbox" class="switch" id="setTranslucent"></label>
       </div>
       <h4>Preview</h4>

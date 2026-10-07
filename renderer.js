@@ -65,7 +65,7 @@ async function newPane(cwd, { screen, when } = {}) {
   inner.className = 'pane-inner';
   const title = document.createElement('div'); // the terminal's name (see nameChip)
   title.className = 'pane-title';
-  title.innerHTML = `<div class="pane-chip"><span></span><button class="x" aria-label="Close this terminal" title="Close (⌘W)">${ph('x', 'small')}</button></div>`;
+  title.innerHTML = `<div class="pane-chip">${ph('terminal', 'pane-ico')}<span></span><button class="x" aria-label="Close this terminal" title="Close (⌘W)">${ph('x', 'small')}</button></div>`;
   el.append(title, inner);
   $('hidden').append(el);
 
@@ -136,6 +136,7 @@ async function newPane(cwd, { screen, when } = {}) {
   term.onTitleChange((title) => {
     if (!pane.busy) return;
     pane.seen ||= Protocols.agentFromTitle(title); // however it was started (`cd x && claude`)
+    syncChip(pane);
     const now = agentOf(pane)?.titled ? Protocols.claudeTitle(title) : null;
     if (now !== null) setThinking(pane, now);
   });
@@ -332,13 +333,16 @@ function goTab(i) {
   focusPane(tabs[(i + tabs.length) % tabs.length].activeId);
 }
 
-// The sidebar's workspaces: one per tab. A coloured square and the folder's name; under it the branch,
-// what's changed (gitSoon) and the app it's serving (appFound), each only when there is one.
-// Rows are kept and updated in place (not redrawn), so a square's split, merge and wave, and a badge popping
-// in, carry on smoothly however often this runs.
-const rowOf = new WeakMap(); // tab -> its row
+// The workspaces, one tab each along the top: a square in the workspace's colour and the folder's name.
+// The square is the status: a rippling lattice while something works, yellow (needs you, or finished while
+// you were away) or red (failed), pulsing until it's seen to, then its own colour again (index.html .ws-sq).
+// Tabs are kept and updated in place (not redrawn), so a square's split, merge, wave and pulse carry on
+// smoothly however often this runs.
+const rowOf = new WeakMap(); // tab -> its tab in the strip
 const CELLS = [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => `<i style="--c:${c};--r:${r}"></i>`)).join('');
 const put = (el, prop, v) => { if (el[prop] !== v) el[prop] = v; };
+const SQUARE = { done: 'Needs you', failed: 'Failed' }; // the states that recolour the square
+let tabsDrawn = false, shownIx = -1;
 function renderTabs() {
   const box = $('tabs');
   tabs.forEach((t, i) => {
@@ -346,47 +350,74 @@ function renderTabs() {
     if (!row) {
       row = document.createElement('div');
       row.className = 'tab';
-      row.innerHTML = `<div class="ws-head"><span class="ws-sq"><span class="ws-cubes">${CELLS}</span></span><span class="tname"></span>`
-        + `<span class="ws-end"><span class="ws-slot"></span><button class="tclose" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button></span></div>`
-        + '<div class="ws-info"></div>';
+      row.setAttribute('role', 'tab');
+      row.innerHTML = `<span class="ws-sq"><span class="ws-cubes">${CELLS}</span></span><span class="tname"></span>`
+        + `<button class="tclose" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button>`;
+      if (tabsDrawn) { // one you just opened pops in; the ones a window starts with are simply there
+        row.classList.add('enter');
+        row.addEventListener('animationend', () => row.classList.remove('enter'), { once: true });
+      }
       rowOf.set(t, row);
     }
     if (box.children[i] !== row) box.insertBefore(row, box.children[i] || null);
-    const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], g = t.git, url = ps.find((x) => x.url)?.url, key = tabKey(t);
+    const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], key = tabKey(t);
     row.classList.toggle('active', i === tabIx);
+    row.setAttribute('aria-selected', String(i === tabIx));
     row.dataset.i = i;
     if (i < 9) row.dataset.key = `⌘${i + 1}`; else delete row.dataset.key;
     put(row, 'title', LOOKS[key].label + (p?.cwd ? ` · ${p.cwd}` : ''));
-    row.querySelector('.ws-sq').style.setProperty('--sq', `var(--ws-${(t.color ?? 0) + 1})`);
+    row.style.setProperty('--tab-c', `var(--ws-${(t.color ?? 0) + 1})`);
     put(row.querySelector('.tname'), 'textContent', tabName(t));
     row.querySelector('.tclose').dataset.close = i;
-    put(row.querySelector('.ws-info'), 'innerHTML', [
-      g?.branch && `<div class="ws-line">${ph('git-branch')}<span>${esc(g.branch)}</span></div>`,
-      g?.files && `<div class="ws-line">${ph('plus-minus')}<span><span class="plus">+${g.add}</span> <span class="minus">-${g.del}</span></span>`
-        + `<span>·</span><span>${g.files} ${g.files === 1 ? 'file' : 'files'} changed</span></div>`,
-      url && `<div class="ws-line">${ph('globe')}<span>${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span></div>`,
-    ].filter(Boolean).join(''));
-    // Working: the square separates into a lattice and ripples (index.html .ws-cubes); it merges back when done.
-    const sq = row.querySelector('.ws-cubes'), run = key === 'running';
+    const box2 = row.querySelector('.ws-sq'), sq = row.querySelector('.ws-cubes'), run = key === 'running';
+    if ((box2.dataset.s || '') !== (SQUARE[key] ? key : '')) { if (SQUARE[key]) box2.dataset.s = key; else delete box2.dataset.s; }
+    // Working: the square separates into a lattice and ripples; it merges back when done.
     if (sq.classList.contains('working') !== run) {
       if (run) sq.style.setProperty('--phase', `-${Date.now() % 2100}ms`); // every working square ripples in step
       sq.classList.toggle('working', run);
-      run ? sq.setAttribute('aria-label', 'Working') : sq.removeAttribute('aria-label');
-      sq.setAttribute('role', run ? 'img' : 'presentation');
     }
-    put(row.querySelector('.ws-slot'), 'innerHTML', badge(key));
+    const said = run ? 'Working' : SQUARE[key];
+    box2.setAttribute('role', said ? 'img' : 'presentation');
+    said ? box2.setAttribute('aria-label', said) : box2.removeAttribute('aria-label');
+    for (const x of ps) syncChip(x);
   });
   for (const row of [...box.children].slice(tabs.length)) row.remove(); // closed workspaces
+  tabsDrawn = true;
+  if (tabIx !== shownIx) { shownIx = tabIx; box.children[tabIx]?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+  renderInfo();
   syncNotch();
   saveSoon(); // tabs, splits, folders and busy states all pass through here
 }
 
-// The badge at the end of the name (index.html .ws-badge): needs you (or finished while you were away), or failed.
-// It pops in when it changes; renderTabs only replaces it then.
-const BADGES = { done: ['done', 'Needs you'], failed: ['failed', 'Failed'] };
-function badge(key) {
-  const [s, label] = BADGES[key] || [];
-  return s ? `<span class="ws-badge enter" data-s="${s}" role="img" aria-label="${label}"></span>` : '';
+// The sidebar's Workspace info, for the open workspace: its branch (or, outside git, its folder), what's
+// changed (gitSoon) and the app it's serving (appFound), each only when there is one.
+function renderInfo() {
+  const t = tab();
+  if (!t) return;
+  const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], g = t.git, url = ps.find((x) => x.url)?.url, cwd = p?.cwd || '';
+  const where = cwd === home ? '~' : cwd.startsWith(home + '/') ? '~' + cwd.slice(home.length) : cwd;
+  put($('wsInfo'), 'innerHTML', [
+    g?.branch ? `<div class="ws-line">${ph('git-branch')}<span>${esc(g.branch)}</span></div>`
+      : where && `<div class="ws-line">${ph('folder')}<span>${esc(where)}</span></div>`,
+    g?.files && `<div class="ws-line">${ph('plus-minus')}<span><span class="plus">+${g.add}</span> <span class="minus">-${g.del}</span></span>`
+      + `<span>·</span><span>${g.files} ${g.files === 1 ? 'file' : 'files'} changed</span></div>`,
+    url && `<div class="ws-line">${ph('globe')}<span>${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span></div>`,
+  ].filter(Boolean).join(''));
+}
+
+// Each terminal's chip icon: console-sparkle while an AI agent (Claude, Codex…) is open in it, a terminal
+// otherwise. A change pops the new one in (index.html .pane-ico).
+function syncChip(p) {
+  const a = agentOf(p), ai = !!a;
+  if (p.chipAi === ai) return;
+  const first = p.chipAi === undefined;
+  p.chipAi = ai;
+  const ico = p.el.querySelector('.pane-ico');
+  if (!ico) return;
+  ico.style.setProperty('--ph', `url(${PH_DIR}/${ai ? 'console-sparkle' : 'terminal'}.svg)`);
+  ico.setAttribute('role', 'img');
+  ico.setAttribute('aria-label', ai ? `${a.name} is open` : 'Terminal');
+  if (!first) { ico.classList.remove('enter'); void ico.offsetWidth; ico.classList.add('enter'); }
 }
 
 // Each workspace's square: the colour the fewest others have, so the first three always differ.
@@ -493,26 +524,13 @@ $('tabs').onclick = (e) => {
   const c = e.target.closest('.tclose');
   if (c) return closeTab(+c.dataset.close);
   const t = e.target.closest('.tab');
-  if (t) goTab(+t.dataset.i);
+  if (t) { closeSettings(); goTab(+t.dataset.i); }
 };
 $('newTab').onclick = () => { newTab(active()?.cwd); dt.track('tab_opened'); };
 const toggleSide = () => { $('app').classList.toggle('no-side'); dt.track('sidebar_toggled'); saveSoon(); }; // panes refit via their ResizeObserver
 $('sideToggle').onclick = $('sideShow').onclick = toggleSide;
 
-// --- Icon rail: what the sidebar shows (your workspaces, or what's in this folder), then What's new,
-// Settings and the welcome tour. Clicking the view that's already showing hides the sidebar, like ⌘B.
-function showView(v) {
-  const app = $('app'), was = inSettings();
-  closeSettings();
-  if (!was && !app.classList.contains('no-side') && app.classList.contains('view-files') === (v === 'files')) return toggleSide();
-  app.classList.remove('no-side');
-  app.classList.toggle('view-files', v === 'files');
-  $('railWs').classList.toggle('on', v !== 'files');
-  $('railFiles').classList.toggle('on', v === 'files');
-  saveSoon();
-}
-$('railWs').onclick = () => showView('workspaces');
-$('railFiles').onclick = () => showView('files');
+// --- The sidebar's footer: What's new, Settings (below) and the welcome tour.
 $('railHelp').onclick = () => replayTour();
 // This version's release notes, any time (they also show once by themselves after an update).
 $('railNew').onclick = async () => {
@@ -720,6 +738,7 @@ const tree = new Trees.FileTree({
       remap: { 'file-tree-icon-chevron': { name: 'central-chevron-down', viewBox: '0 0 24 24' } } }) },
   sort: (a, b) => b.isDirectory - a.isDirectory || noisy.has(a.path) - noisy.has(b.path) || a.basename.localeCompare(b.basename),
   dragAndDrop: { canDrop: () => false }, // rows drag out to a terminal (below); nothing moves on disk
+  unsafeCSS: '[data-file-tree-virtualized-scroll] { padding-bottom: 44px; }', // the last file scrolls clear of the sidebar's footer
 });
 tree.render({ fileTreeContainer: $('entries') });
 
@@ -807,6 +826,87 @@ const showFile = (path) => {
   dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon, where: 'app' }); // the type, never the name
   dt.openDefault(path);
 };
+// --- Search: file names in this workspace, then the lines inside files that have the words (main.js
+// files:search). The results take the place of the info and files while there's something in the box; Esc or
+// an empty box brings them back. A result opens in the preview; a line opens there, highlighted.
+const searchIn = $('search');
+let found = null, foundIx = -1, searchTimer = 0, searchRun = 0;
+function focusSearch() {
+  closeSettings();
+  $('app').classList.remove('no-side');
+  searchIn.focus();
+  searchIn.select();
+}
+function endSearch() {
+  clearTimeout(searchTimer); searchRun++;
+  found = null; foundIx = -1;
+  $('findList').hidden = true; $('findList').innerHTML = '';
+  $('sideBody').hidden = false;
+}
+searchIn.oninput = () => {
+  clearTimeout(searchTimer);
+  const q = searchIn.value.trim();
+  if (!q) return endSearch();
+  searchTimer = setTimeout(() => runSearch(q), 120);
+};
+async function runSearch(q) {
+  const run = ++searchRun, root = active()?.cwd || treeRoot;
+  if (!root) return;
+  const r = await dt.searchFiles(root, q);
+  if (!r || run !== searchRun) return; // a newer search took over
+  found = { ...r, root, q }; foundIx = -1;
+  drawFound();
+}
+const baseOf = (p) => p.slice(p.lastIndexOf('/') + 1);
+const folderPart = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+function marked(text, q) {
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  return i < 0 ? esc(text) : esc(text.slice(0, i)) + `<mark>${esc(text.slice(i, i + q.length))}</mark>` + esc(text.slice(i + q.length));
+}
+function drawFound() {
+  const { names, hits, q } = found, box = $('findList');
+  let n = 0;
+  const row = (path, line, top, snip) => `<div class="fl-row" role="option" id="fl${n}" data-n="${n++}" data-path="${esc(path)}"${line ? ` data-line="${line}"` : ''}>`
+    + `<div class="fl-top">${fileIconHtml(baseOf(path))}${top}<small>${esc(folderPart(path))}</small></div>${snip || ''}</div>`;
+  const html = (names.length ? '<h3>Files</h3>' + names.map((p) => row(p, 0, `<b>${marked(baseOf(p), q)}</b>`)).join('') : '')
+    + (hits.length ? '<h3>In files</h3>' + hits.map((h) => row(h.path, h.line, `<b>${esc(baseOf(h.path))}<span>:${h.line}</span></b>`,
+      `<div class="fl-snip">${marked(h.text, q)}</div>`)).join('') : '');
+  box.innerHTML = html || `<div class="fl-empty">Nothing matches “${esc(q)}” in this folder.</div>`;
+  $('sideBody').hidden = true;
+  box.hidden = false;
+  box.scrollTop = 0;
+}
+function pickFound(i) {
+  const rows = $('findList').querySelectorAll('.fl-row');
+  if (!rows.length) return;
+  foundIx = (i + rows.length) % rows.length;
+  rows.forEach((r, k) => r.classList.toggle('on', k === foundIx));
+  rows[foundIx].scrollIntoView({ block: 'nearest' });
+  searchIn.setAttribute('aria-activedescendant', rows[foundIx].id);
+}
+async function openFound(row) {
+  if (!row || !found) return;
+  const path = join(found.root, row.dataset.path), line = +row.dataset.line || 0;
+  await showFile(path);
+  if (line) showLine(path, line);
+}
+// The preview's code view: select line n and bring it into view (its rows live in @pierre/diffs' shadow root).
+function showLine(path, n, tries = 20) {
+  if (pv.file !== path || !codeFile) return;
+  const host = [...$('pvFile').querySelectorAll('*')].find((el) => el.shadowRoot);
+  const el = host?.shadowRoot.querySelector(`[data-line="${n}"]`);
+  if (!el) return tries && setTimeout(() => showLine(path, n, tries - 1), 50);
+  codeFile.setSelectedLines({ start: n, end: n });
+  const view = $('pvFile'); // straight down to it, never sideways (scrollIntoView also scrolled the code left)
+  view.scrollTop += el.getBoundingClientRect().top - view.getBoundingClientRect().top - view.clientHeight / 2;
+}
+searchIn.onkeydown = (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); pickFound(foundIx + (e.key === 'ArrowDown' ? 1 : -1)); }
+  else if (e.key === 'Enter') { e.preventDefault(); openFound($('findList').querySelectorAll('.fl-row')[Math.max(0, foundIx)]); }
+  else if (e.key === 'Escape') { e.preventDefault(); searchIn.value = ''; endSearch(); searchIn.blur(); focusActive(); }
+};
+$('findList').onclick = (e) => openFound(e.target.closest('.fl-row'));
+
 const cdTo = (path) => {
   const cwd = active()?.cwd || '';
   send(`cd ${q(path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path)}`, '', true); // relative reads better
@@ -1371,7 +1471,6 @@ async function runWelcome() {
 }
 async function runTour() {
   $('app').classList.remove('no-side'); // everything the tour points at must be on screen
-  if ($('app').classList.contains('view-files')) showView('workspaces');
   closeSettings(); closePal();
   const r = await Onboarding.tour();
   dt.track(r.done ? 'tour_done' : 'tour_skipped', { step: r.step, of: r.of });
@@ -1511,7 +1610,6 @@ $('palList').onclick = (e) => {
   drawPal();
   $('palList').querySelector('[data-f]')?.focus();
 };
-$('openPal').onclick = openPal;
 
 // --- Updates: a quiet pill once a newer Fork is downloaded, and What's new once after updating -----
 // ready: downloaded, Restart now swaps it in (or it installs when Fork quits). Not ready: the old way,
@@ -1737,7 +1835,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   hideKeys();
-  if (e.metaKey && e.key === 'k') { e.preventDefault(); $('palOv').classList.contains('show') ? closePal() : openPal(); }
+  if (e.metaKey && e.code === 'KeyK' && e.shiftKey) { e.preventDefault(); $('palOv').classList.contains('show') ? closePal() : openPal(); }
+  else if (e.metaKey && e.code === 'KeyK') { e.preventDefault(); closePal(); focusSearch(); }
   if (e.metaKey && !e.altKey && /^[1-9]$/.test(e.key) && +e.key <= tabs.length) { e.preventDefault(); goTab(+e.key - 1); }
   if (e.metaKey && e.altKey && e.key.startsWith('Arrow') && active()) {
     e.preventDefault();

@@ -11,7 +11,7 @@ import { marked } from 'marked';
 import { suggest, PALETTE, shape, pm, scripts } from './suggest.mjs';
 import { diagnose, explainEntry, looksLikeCommand, ERRORS } from './errors.mjs';
 import { judge, commandQuestion, errorQuestion } from './jev.mjs';
-import { list, readPreview, readBook, findEditor } from './files.mjs';
+import { list, readPreview, readBook, findEditor, searchFiles } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
 import { gitFiles, gitInfo } from './git.mjs';
@@ -61,7 +61,7 @@ function createWindow(restore) {
   const win = new BrowserWindow({
     width: 1200, height: 760, ...(restore?.bounds && onScreen(restore.bounds) ? restore.bounds : {}),
     minWidth: 760, minHeight: 480,
-    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 11 }, // centred in the 36px top strip
+    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 15 }, // centred in the 44px top strip
     backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'active',
     webPreferences: { preload: join(HERE, 'preload.cjs'), webviewTag: true }, // <webview> = the preview panel's app view
   });
@@ -182,6 +182,14 @@ ipcMain.handle('ls', (_, dir) => list(dir)); // an expanded folder in the sideba
 // --no-optional-locks: reading status never gets in the way of your own git commands.
 const git = (cwd, args) => new Promise((res) =>
   execFile('git', ['--no-optional-locks', '-C', cwd, ...args], { timeout: 2000, maxBuffer: 8 << 20 }, (err, out) => res(err ? null : out)));
+// The sidebar's search box (files.mjs searchFiles). A new search stops the one before it.
+let finding = null;
+ipcMain.handle('files:search', async (_, root, query) => {
+  finding?.abort();
+  const ac = finding = new AbortController();
+  const r = await searchFiles(root, query, { signal: ac.signal }).catch(() => null);
+  return ac.signal.aborted ? null : r;
+});
 ipcMain.handle('git:info', async (_, cwd) => {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) return null;
   const status = await git(cwd, ['status', '--porcelain', '--branch']);

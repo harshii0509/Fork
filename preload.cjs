@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('dt', {
   watch: (dirs) => ipcRenderer.send('watch', dirs),
   onFsChanged: (fn) => ipcRenderer.on('fs:changed', (_, paths) => fn(paths)),
   preview: (path) => ipcRenderer.invoke('preview', path),
+  searchFiles: (root, query) => ipcRenderer.invoke('files:search', root, query), // { names, hits: [{ path, line, text }] } or null if overtaken
   editor: () => ipcRenderer.invoke('editor'),
   openIn: (path) => ipcRenderer.send('open-in', path),
   reveal: (path) => ipcRenderer.send('reveal', path),

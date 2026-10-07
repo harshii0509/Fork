@@ -237,6 +237,33 @@ assert.equal(Buffer.from(readBook(join(proj, 'Book.PDF')).bytes).toString(), '%P
 assert.equal(readBook(join(proj, 'app.ts')).error, 'kind'); // never any other file
 assert.equal(readBook(join(proj, 'gone.epub')).error, 'missing');
 assert.equal(readBook(undefined).error, 'kind');
+// The sidebar's search: names first, then lines inside files; installed packages are never searched.
+{
+  const { searchFiles } = await import('./files.mjs');
+  const plain = fresh();
+  mkdirSync(join(plain, 'src')); mkdirSync(join(plain, 'node_modules', 'pkg'), { recursive: true });
+  writeFileSync(join(plain, 'src', 'checkout.js'), 'const total = 1;\nexport function Pay() {}\n');
+  writeFileSync(join(plain, 'pay-notes.md'), 'nothing here\n');
+  writeFileSync(join(plain, 'node_modules', 'pkg', 'pay.js'), 'pay pay pay\n');
+  writeFileSync(join(plain, 'blob.bin'), Buffer.from([0x70, 0x61, 0x79, 0]));
+  const r = await searchFiles(plain, 'PAY');
+  assert.deepEqual(r.names, ['pay-notes.md']); // case doesn't matter; node_modules is skipped
+  assert.deepEqual(r.hits, [{ path: 'src/checkout.js', line: 2, text: 'export function Pay() {}' }]); // binary skipped
+  assert.equal(r.git, false);
+  const repo = fresh();
+  execFileSync('git', ['init', '-q', repo]);
+  mkdirSync(join(repo, 'src')); mkdirSync(join(repo, 'build'));
+  writeFileSync(join(repo, '.gitignore'), 'build\n');
+  writeFileSync(join(repo, 'src', 'pay.ts'), 'a\nb\npay me\n');
+  writeFileSync(join(repo, 'build', 'pay.js'), 'pay\n');
+  const g = await searchFiles(repo, 'pay');
+  assert.equal(g.git, true);
+  assert.deepEqual(g.names, ['src/pay.ts']); // .gitignore'd build/ left out
+  assert.deepEqual(g.hits, [{ path: 'src/pay.ts', line: 3, text: 'pay me' }]);
+  assert.deepEqual(await searchFiles(repo, '  '), { names: [], hits: [] });
+  const ac = new AbortController(); ac.abort();
+  assert.equal(await searchFiles(repo, 'pay', { signal: ac.signal }), null); // overtaken by a newer search
+}
 
 // --- Shell integration (shell/.zshrc): a command's first word, even when it's the only word ---
 {

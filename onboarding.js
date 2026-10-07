@@ -8,7 +8,7 @@ window.Onboarding = (() => {
     { title: 'Fork does the typing for you',
       text: 'Click a folder, a file or a suggestion, and Fork puts the real command in the terminal. Anything that can’t be undone asks first.' },
     { title: 'Stuck? Just ask',
-      text: 'Press ⌘K and say what you want in plain words. If something goes wrong, Fork explains it and suggests a fix.' },
+      text: 'Press ⌘⇧K and say what you want in plain words. If something goes wrong, Fork explains it and suggests a fix.' },
   ];
 
   // Each step lights up everything its targets cover. A step with nothing on screen (no suggestions
@@ -16,14 +16,14 @@ window.Onboarding = (() => {
   const STEPS = [
     { targets: ['#term'], place: 'inside', title: 'This is the terminal',
       text: 'Commands show up here, and so does whatever they print. You can type here too, then press Enter.' },
-    { targets: ['#railFiles'], place: 'right', title: 'What’s in this folder',
+    { targets: ['.side-files'], place: 'right', title: 'What’s in this folder',
       text: 'The files in the folder you’re in. Open folders in place, click a file to preview it, or drag one into the terminal to use its path. Right-click for more.' },
-    { targets: ['#openPal'], place: 'right', title: 'Search for anything (⌘K)',
-      text: 'Say what you want in plain words, like “go back a folder”. Fork finds the command, or asks Claude.' },
+    { targets: ['#searchBox'], place: 'right', title: 'Search this folder (⌘K)',
+      text: 'Type a word to find files by name, and the lines inside files that have it. Click one to see it. Want to do something instead? ⌘⇧K, in plain words.' },
     { targets: ['#pvToggle'], place: 'below', title: 'Preview (⌘P)',
       text: 'See a file, or your app while it’s running, right beside the terminal.' },
-    { targets: ['.sec', '#tabs'], place: 'right', title: 'Your workspaces',
-      text: 'Each one is a folder you’re working in, with its branch and what’s changed. + opens another, and the split buttons at the top add terminals side by side.' },
+    { targets: ['#tabs', '#newTab'], place: 'below', title: 'Your workspaces',
+      text: 'Each tab is a folder you’re working in; its branch and what’s changed show in the sidebar. + opens another, and the split buttons on the right add terminals side by side.' },
   ];
 
   const $ = (id) => document.getElementById(id);
