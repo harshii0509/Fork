@@ -747,7 +747,8 @@ const noisy = new Set(); // node_modules, dist…: sorted last
 const relOf = (path) => path.slice(treeRoot.length + 1);
 const absOf = (id) => join(treeRoot, id.replace(/\/$/, ''));
 const tree = new Trees.FileTree({
-  paths: [], itemHeight: 28, icons: { set: 'minimal', colored: false,
+  // The tree's "complete" icons: a coloured icon per file type, with brand and framework logos (React, Tailwind…).
+  paths: [], itemHeight: 28, icons: { set: 'complete', colored: true,
     // Folder arrows are Central's chevron when it's drawn on this Mac (the tree still turns it for closed folders).
     ...(window.CENTRAL_SPRITE && { spriteSheet: window.CENTRAL_SPRITE,
       remap: { 'file-tree-icon-chevron': { name: 'central-chevron-down', viewBox: '0 0 24 24' } } }) },
