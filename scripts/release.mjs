@@ -42,6 +42,10 @@ if (ahead) console.log(`  ${ahead} commit(s) not on GitHub yet; they'll be pushe
 try { quiet('gh', ['auth', 'status']); } catch { stop('The GitHub CLI isn\'t logged in. Run: gh auth login'); }
 if (!existsSync(NOTARY)) problem(`The notarization key isn't set up (${NOTARY} is missing). See DISTRIBUTION.md §3.`);
 else for (const [, k, v] of readFileSync(NOTARY, 'utf8').matchAll(/^(APPLE_API_\w+)=(.*)$/gm)) process.env[k] = v.trim();
+// Neither is committed: the Central icons are paid, and vendor/ is bundled by npm install. Without them the
+// build still works but ships fallback icons and no Changes tab.
+if (!existsSync(join(ROOT, 'icons/central/ready.js'))) problem("The Central icons aren't built. Run: npm run icons");
+if (!existsSync(join(ROOT, 'vendor/diffs'))) problem("vendor/ isn't built. Run: npm install");
 if (quiet('security', ['find-identity', '-v', '-p', 'codesigning']).indexOf('Developer ID Application') < 0) {
   problem('The Developer ID certificate isn\'t in this Mac\'s Keychain. See DISTRIBUTION.md §3.');
 }

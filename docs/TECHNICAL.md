@@ -235,6 +235,7 @@ In the window's localStorage:
 ---
 
 ## Log
+- **9 Oct 2026**: `scripts/release.mjs` stops if `icons/central/ready.js` or `vendor/diffs` is missing; neither is committed, and a build without them ships fallback icons and no Changes tab.
 - **8 Oct 2026**: Three fixes before 1.1.0.
   - `session.mjs` keeps each workspace's folder (`dir`), so a relaunch no longer reopens workspaces in their terminal's folder.
   - `main.js` reads the login shell's PATH in the background (`pathReady`); Ask AI and "What went wrong?" wait for it. Launch went from 1.85 s to 0.85 s on a Mac with oh-my-zsh.
