@@ -37,6 +37,8 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+### 1.1.0 — 2026-10-08
+
 **A new look for Fork.** Your work is organised into workspaces, one per project folder. Everything from before is still here, just easier to find.
 
 **New**
