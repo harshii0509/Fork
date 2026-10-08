@@ -3,6 +3,11 @@ const q = (s) => `'${s.replace(/'/g, `'\\''`)}'`; // shell-quote a path
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Icons in index.html are <i data-icon="name"> placeholders; draw them (icons.js, Lucide).
 for (const el of document.querySelectorAll("[data-icon]")) el.outerHTML = icon(el.dataset.icon);
+// The redesign's icons (Phosphor, exported from the Figma file into icons/ph) are <i class="ph" data-ph="name">.
+// Central Icons replace them when drawn on this Mac (npm run icons; icons/central.json maps the same names).
+const PH_DIR = window.CENTRAL ? 'icons/central' : 'icons/ph';
+const ph = (name, cls = '') => `<i class="ph ${cls}" style="--ph:url(${PH_DIR}/${name}.svg)"></i>`;
+for (const el of document.querySelectorAll("[data-ph]")) el.style.setProperty('--ph', `url(${PH_DIR}/${el.dataset.ph}.svg)`);
 
 // --- Tabs and panes -------------------------------------------------------------
 // Window -> tabs (listed in the sidebar) -> panes (split tree, see panes.js). Each pane is
@@ -36,6 +41,21 @@ function useGpu(p, on) {
   } else if (!on && p.gl) { p.gl.dispose(); p.gl = null; }
 }
 
+// As many rows and columns as fit the pane, and tell the shell. Hidden tabs refit when shown (their ResizeObserver).
+function refit(p) {
+  if (!p.el.offsetParent) return;
+  p.fit.fit();
+  dt.resize(p.id, p.term.cols, p.term.rows);
+}
+
+// A row's height can change while the pane stays the same size: the window moves to a screen with another
+// scale, or a font finishes loading. Without a refit the rows overflow and the bottom line (the prompt) is cut.
+const refitAll = () => requestAnimationFrame(() => { for (const p of panes.values()) if (!isGame(p)) refit(p); });
+(function watchScale() {
+  matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => { refitAll(); watchScale(); }, { once: true });
+})();
+document.fonts.addEventListener('loadingdone', refitAll);
+
 // screen/when: output saved from last time (session.mjs), shown above a quiet "Restored" line.
 async function newPane(cwd, { screen, when } = {}) {
   const id = await dt.create(cwd);
@@ -43,7 +63,10 @@ async function newPane(cwd, { screen, when } = {}) {
   el.className = 'pane';
   const inner = document.createElement('div'); // unpadded box so FitAddon measures exactly
   inner.className = 'pane-inner';
-  el.append(inner);
+  const title = document.createElement('div'); // the terminal's name (see nameChip)
+  title.className = 'pane-title';
+  title.innerHTML = `<div class="pane-chip">${ph('terminal', 'pane-ico')}<span></span><button class="x" aria-label="Close this terminal" title="Close (⌘W)">${ph('x', 'small')}</button></div>`;
+  el.append(title, inner);
   $('hidden').append(el);
 
   // 10,000 lines to scroll back through (xterm's default is 1,000, which one Claude session outgrows).
@@ -64,8 +87,14 @@ async function newPane(cwd, { screen, when } = {}) {
   // Pictures apps draw in the terminal (Sixel and iTerm's inline images), e.g. OpenCode showing an image.
   term.loadAddon(new ImageAddon.ImageAddon({ storageLimit: 32, showPlaceholder: false }));
   if (screen) term.write(`${screen}\x1b[0m\r\n\x1b[2m── Restored · ${restoredAt(when)} ──\x1b[0m\r\n`);
-  const pane = { id, term, fit, serial, search, gl: null, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null };
+  const pane = { id, term, fit, serial, search, gl: null, el, cwd: cwd || '', busy: false, failed: false, unseen: false, lastUsed: Date.now(), tail: '', hist: [], at: -1, nav: null, name: '', url: null };
   panes.set(id, pane);
+  const chip = title.firstChild;
+  chip.onclick = (e) => {
+    if (e.target.closest('.x')) return closePane(id);
+    if (!chip.querySelector('input')) { focusPane(id); term.focus(); }
+  };
+  chip.ondblclick = (e) => { if (!e.target.closest('.x')) renameTerminal(pane); };
   useGpu(pane, settings.smoothing === 'on');
   search.onDidChangeResults(({ resultIndex, resultCount }) => { if (pane === findPane) showCount(resultIndex, resultCount); });
 
@@ -107,14 +136,11 @@ async function newPane(cwd, { screen, when } = {}) {
   term.onTitleChange((title) => {
     if (!pane.busy) return;
     pane.seen ||= Protocols.agentFromTitle(title); // however it was started (`cd x && claude`)
+    syncChip(pane);
     const now = agentOf(pane)?.titled ? Protocols.claudeTitle(title) : null;
     if (now !== null) setThinking(pane, now);
   });
-  new ResizeObserver(() => {
-    if (!el.offsetParent) return; // hidden tab
-    fit.fit();
-    dt.resize(id, term.cols, term.rows);
-  }).observe(inner);
+  new ResizeObserver(() => refit(pane)).observe(inner);
 
   // Shell integration (see shell/.zshrc): OSC 7 = current folder, OSC 133 C/D = command started/finished.
   term.parser.registerOscHandler(7, (data) => {
@@ -129,6 +155,7 @@ async function newPane(cwd, { screen, when } = {}) {
       }
       pane.cwd = p;
       if (pane === active()) refresh();
+      gitSoon(tabOf(pane.id));
       renderTabs();
     }
     return true;
@@ -151,11 +178,15 @@ async function newPane(cwd, { screen, when } = {}) {
       if (tabOf(pane.id) !== tab()) pane.unseen = true; // finished while you were elsewhere
       pane.lastUsed = Date.now();
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
+      if (pane.thinking) turnEnded(pane); // the agent quit mid-turn: what it changed still counts
       pane.thinking = false; pane.sawSignal = false; pane.seen = null;
+      pane.url = null; // whatever served the app it printed has stopped
+      gitSoon(tabOf(pane.id)); // the command may have changed files or the branch
       workDone(pane);
       if (pane.failed) nudge(pane, `${pane.tool || 'Your command'} failed`, `in ${folderOf(pane)}`, 'failed');
       else if (pane.lastUsed - pane.startedAt >= 10e3) { // long enough that you may have gone to do something else
         nudge(pane, 'Your command finished', pane.tool ? `${pane.tool} · ${folderOf(pane)}` : `In ${folderOf(pane)}`);
+        chime(pane);
       }
     }
     syncBusy();
@@ -235,7 +266,7 @@ function drag(e, fn) {
 $('sideGrip').onpointerdown = (e) => drag(e, (x) => { $('app').style.setProperty('--side', `${clamp(x, 180, 420)}px`); saveSoon(); });
 
 function focusPane(id) {
-  $('app').classList.remove('in-settings'); // ⌘T, ⌘1–9, splits: back to the terminal
+  $('app').classList.remove('in-settings'); // ⌘N, ⌘T, ⌘1–9, splits: back to the terminal
   const t = tabOf(id);
   if (!t) return;
   if (t === tab() && t.activeId === id) return;
@@ -244,6 +275,7 @@ function focusPane(id) {
   if (!isGame(panes.get(id))) t.lastTerm = id;
   for (const pid of Panes.leaves(t.root)) panes.get(pid).unseen = false;
   render();
+  gitSoon(t);
   if (findOpen()) find(); // find follows you to the pane you switched to
   hideOops();
   setHint('');
@@ -252,18 +284,33 @@ function focusPane(id) {
   focusActive();
 }
 
-async function newTab(cwd) {
-  const p = await newPane(cwd);
-  tabs.push({ root: { id: p.id }, activeId: null });
+// A workspace is a folder (dir): its name, info, files and search are that folder's, wherever its terminals
+// go. Its first terminal starts there (or in start: a clone starts in the folder it downloads into).
+async function newTab(dir, { start } = {}) {
+  const p = await newPane(start ?? dir);
+  nameTerminal(p, null);
+  tabs.push({ root: { id: p.id }, activeId: null, color: nextColor(), dir });
   focusPane(p.id);
+  return p;
 }
 
 async function split(dir) {
   const cur = active();
   if (!cur) return;
-  const p = await newPane(cur.cwd); // a split opens in the same folder
+  const p = await newPane(tab().dir || cur.cwd); // a split opens in the workspace's folder
   dt.track('pane_split', { dir });
+  nameTerminal(p, tab());
   tab().root = Panes.split(tab().root, cur.id, p.id, dir);
+  focusPane(p.id);
+}
+
+// ⌘T: one more terminal in this workspace, side by side with the others.
+async function addTerminal() {
+  if (!tabs.length) return openPicker({ required: true });
+  const p = await newPane(tab().dir || active()?.cwd);
+  dt.track('pane_split', { dir: 'row' });
+  nameTerminal(p, tab());
+  tab().root = Panes.append(tab().root, p.id);
   focusPane(p.id);
 }
 
@@ -274,13 +321,13 @@ function closePane(id, { exited = false, force = false } = {}) {
   const t = tabOf(id), cur = tab();
   if (isGame(p)) Games.close();
   else { if (!exited) dt.kill(id); p.term.dispose(); }
+  if (p.turn?.before) dt.turnDrop(p.turn.dir, p.turn.before.path); // closed mid-turn: no after to go with it
   p.el.remove();
   panes.delete(id);
   t.root = Panes.remove(t.root, id);
   if (!t.root) {
-    t.blob?.destroy();
     tabs.splice(tabs.indexOf(t), 1);
-    if (!tabs.length) return forgetAndClose(); // last tab closes the window, and it won't come back
+    if (!tabs.length) return noWorkspace(); // the last one closed: pick a folder to work in
     tabIx = t === cur ? Math.min(tabIx, tabs.length - 1) : tabs.indexOf(cur);
   } else if (t.activeId === id) {
     t.activeId = Panes.leaves(t.root)[0];
@@ -301,38 +348,158 @@ function goTab(i) {
   focusPane(tabs[(i + tabs.length) % tabs.length].activeId);
 }
 
+// The workspaces, one tab each along the top: a square in the workspace's colour and the folder's name.
+// The square is the status: a rippling lattice while something works, yellow (needs you, or finished while
+// you were away) or red (failed), pulsing until it's seen to, then its own colour again (index.html .ws-sq).
+// Tabs are kept and updated in place (not redrawn), so a square's split, merge, wave and pulse carry on
+// smoothly however often this runs.
+const rowOf = new WeakMap(); // tab -> its tab in the strip
+const CELLS = [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => `<i style="--c:${c};--r:${r}"></i>`)).join('');
+const put = (el, prop, v) => { if (el[prop] !== v) el[prop] = v; };
+const SQUARE = { done: 'Needs you', failed: 'Failed' }; // the states that recolour the square
+let tabsDrawn = false, shownIx = -1;
 function renderTabs() {
-  $('tabs').innerHTML = tabs.map((t, i) => {
-    const ps = Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
-    const p = panes.get(t.activeId) || ps[0];
-    const name = tabName(t);
-    const where = p?.cwd ? ` · ${p.cwd}` : '';
-    return `<div class="tab ${i === tabIx ? 'active' : ''}" data-i="${i}" ${i < 9 ? `data-key="⌘${i + 1}"` : ''} title="${esc(tabState(t).label + where)}">
-      <span class="tblob"></span>
-      <span class="tname">${esc(name)}</span>
-      ${ps.length > 1 ? `<span class="tcount">${ps.length} panes</span>` : ''}
-      <button class="tclose" data-close="${i}" aria-label="Close tab">${icon("x")}</button></div>`;
-  }).join('');
-  // The rows were just rebuilt; move each tab's own blob back in so its animation carries on.
-  $('tabs').querySelectorAll('.tblob').forEach((slot, i) => {
-    const t = tabs[i];
-    t.blob ||= Blobs.status(22);
-    t.blob.el.className = 'tblob';
-    slot.replaceWith(t.blob.el);
+  const box = $('tabs');
+  tabs.forEach((t, i) => {
+    let row = rowOf.get(t);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'tab';
+      row.setAttribute('role', 'tab');
+      row.innerHTML = `<span class="ws-sq"><span class="ws-cubes">${CELLS}</span></span><span class="tname"></span>`
+        + `<button class="tclose" aria-label="Close workspace" title="Close workspace">${ph('x', 'small')}</button>`;
+      if (tabsDrawn) { // one you just opened pops in; the ones a window starts with are simply there
+        row.classList.add('enter');
+        row.addEventListener('animationend', () => row.classList.remove('enter'), { once: true });
+      }
+      rowOf.set(t, row);
+    }
+    if (box.children[i] !== row) box.insertBefore(row, box.children[i] || null);
+    const ps = panesOf(t), key = tabKey(t);
+    row.classList.toggle('active', i === tabIx);
+    row.setAttribute('aria-selected', String(i === tabIx));
+    row.dataset.i = i;
+    if (i < 9) row.dataset.key = `⌘${i + 1}`; else delete row.dataset.key;
+    put(row, 'title', LOOKS[key].label + (dirOfTab(t) ? ` · ${dirOfTab(t)}` : ''));
+    row.style.setProperty('--tab-c', `var(--ws-${(t.color ?? 0) + 1})`);
+    put(row.querySelector('.tname'), 'textContent', tabName(t));
+    row.querySelector('.tclose').dataset.close = i;
+    const box2 = row.querySelector('.ws-sq'), sq = row.querySelector('.ws-cubes'), run = key === 'running';
+    if ((box2.dataset.s || '') !== (SQUARE[key] ? key : '')) { if (SQUARE[key]) box2.dataset.s = key; else delete box2.dataset.s; }
+    // Working: the square separates into a lattice and ripples; it merges back when done.
+    if (sq.classList.contains('working') !== run) {
+      if (run) sq.style.setProperty('--phase', `-${Date.now() % 2100}ms`); // every working square ripples in step
+      sq.classList.toggle('working', run);
+    }
+    const said = run ? 'Working' : SQUARE[key];
+    box2.setAttribute('role', said ? 'img' : 'presentation');
+    said ? box2.setAttribute('aria-label', said) : box2.removeAttribute('aria-label');
+    for (const x of ps) syncChip(x);
   });
-  syncTabBlobs();
+  for (const row of [...box.children].slice(tabs.length)) row.remove(); // closed workspaces
+  tabsDrawn = true;
+  if (tabIx !== shownIx) { shownIx = tabIx; box.children[tabIx]?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+  renderInfo();
   syncNotch();
   saveSoon(); // tabs, splits, folders and busy states all pass through here
 }
 
-// What each tab's blob shows. With split panes, the most pressing pane wins.
+// The sidebar's Workspace info, for the open workspace: its branch (or, outside git, its folder), what's
+// changed (gitSoon) and the app it's serving (appFound), each only when there is one.
+function renderInfo() {
+  const t = tab();
+  if (!t) return put($('wsInfo'), 'innerHTML', '');
+  const ps = panesOf(t), g = t.git, url = ps.find((x) => x.url)?.url, cwd = dirOfTab(t);
+  const where = cwd === home ? '~' : cwd.startsWith(home + '/') ? '~' + cwd.slice(home.length) : cwd;
+  put($('wsInfo'), 'innerHTML', [
+    g?.branch ? `<div class="ws-line">${ph('git-branch')}<span>${esc(g.branch)}</span></div>`
+      : where && `<div class="ws-line">${ph('folder')}<span>${esc(where)}</span></div>`,
+    g?.files && `<div class="ws-line">${ph('plus-minus')}<span><span class="plus">+${g.add}</span> <span class="minus">-${g.del}</span></span>`
+      + `<span>·</span><span>${g.files} ${g.files === 1 ? 'file' : 'files'} changed</span></div>`,
+    url && `<div class="ws-line">${ph('globe')}<span>${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span></div>`,
+  ].filter(Boolean).join(''));
+}
+
+// Each terminal's chip icon: console-sparkle while an AI agent (Claude, Codex…) is open in it, a terminal
+// otherwise. A change pops the new one in (index.html .pane-ico).
+function syncChip(p) {
+  const a = agentOf(p), ai = !!a;
+  if (p.chipAi === ai) return;
+  const first = p.chipAi === undefined;
+  p.chipAi = ai;
+  const ico = p.el.querySelector('.pane-ico');
+  if (!ico) return;
+  ico.style.setProperty('--ph', `url(${PH_DIR}/${ai ? 'console-sparkle' : 'terminal'}.svg)`);
+  ico.setAttribute('role', 'img');
+  ico.setAttribute('aria-label', ai ? `${a.name} is open` : 'Terminal');
+  if (!first) { ico.classList.remove('enter'); void ico.offsetWidth; ico.classList.add('enter'); }
+}
+
+// Each workspace's square: the colour the fewest others have, so the first three always differ.
+function nextColor() {
+  const n = [0, 0, 0];
+  for (const t of tabs) if (t.color >= 0 && t.color < 3) n[t.color]++;
+  return n.indexOf(Math.min(...n));
+}
+
+// Each workspace's branch and what's changed (main.js git:info), for the folder its open terminal is in.
+// Read again when a command finishes, the folder changes, files change on disk, or you switch terminals; never on a timer.
+function gitSoon(t) {
+  if (!t) return;
+  clearTimeout(t.gitTimer);
+  t.gitTimer = setTimeout(async () => {
+    const cwd = dirOfTab(t);
+    const g = cwd ? await dt.gitInfo(cwd) : null;
+    if (!tabs.includes(t) || JSON.stringify(g) === JSON.stringify(t.git ?? null)) return;
+    t.git = g;
+    renderTabs();
+  }, 300);
+}
+
+// Terminal names, on each pane's chip: "Terminal 1", "Terminal 2"… in a workspace, the lowest number not
+// taken. Double-click one to name it yourself. Saved with the session.
+function nameTerminal(p, t, name) {
+  if (!name) {
+    const taken = new Set(t ? panesOf(t).map((x) => x.name) : []);
+    let n = 1;
+    while (taken.has(`Terminal ${n}`)) n++;
+    name = `Terminal ${n}`;
+  }
+  p.name = name;
+  const label = p.el.querySelector('.pane-chip > span');
+  if (label) label.textContent = name;
+}
+function renameTerminal(p) {
+  const label = p.el.querySelector('.pane-chip > span');
+  if (!label) return;
+  const input = document.createElement('input');
+  input.value = p.name;
+  input.spellcheck = false;
+  input.setAttribute('aria-label', 'Terminal name');
+  label.replaceWith(input);
+  input.focus();
+  input.select();
+  let over = false;
+  const done = (keep) => {
+    if (over) return;
+    over = true;
+    input.replaceWith(label);
+    nameTerminal(p, null, keep ? input.value.trim().slice(0, 60) || p.name : p.name);
+    saveSoon();
+    p.term.focus();
+  };
+  input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); };
+  input.onblur = () => done(true);
+}
+
+// Each tab's state, in words (the row's tooltip, the notch). With split panes, the most pressing pane wins.
 const DOZE_AFTER = 5 * 60e3;
 const LOOKS = {
-  running: { label: 'Running', state: 'thinking' },
-  failed: { label: 'Last command failed', state: 'idle', expression: 'sad', tint: 'bad' },
-  done: { label: 'Finished while you were away', state: 'notify' },
-  dozing: { label: 'Dozing', state: 'sleep' },
-  ready: { label: 'Ready', state: 'idle' },
+  running: { label: 'Running' },
+  failed: { label: 'Last command failed' },
+  done: { label: 'Finished while you were away' },
+  dozing: { label: 'Dozing' },
+  ready: { label: 'Ready' },
 };
 const panesOf = (t) => Panes.leaves(t.root).map((id) => panes.get(id)).filter(Boolean);
 function tabKey(t) {
@@ -344,9 +511,10 @@ function tabKey(t) {
     : 'ready';
 }
 const tabState = (t) => LOOKS[tabKey(t)];
+const dirOfTab = (t) => t?.dir || (panes.get(t?.activeId) || (t && panesOf(t)[0]))?.cwd || ''; // dir; cwd only for a game tab
 function tabName(t) {
-  const ps = panesOf(t), p = panes.get(t.activeId) || ps[0];
-  return isGame(p) && ps.length === 1 ? 'Games' : !p?.cwd ? 'New tab' : p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/';
+  const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], d = dirOfTab(t);
+  return isGame(p) && ps.length === 1 ? 'Games' : !d ? 'New tab' : d === home ? 'Home' : d.split('/').pop() || '/';
 }
 
 // The notch (main.js, notch.js) mirrors every tab while you're in another app: what it's doing, which
@@ -366,32 +534,32 @@ function syncNotch() {
     }));
   }, 250);
 }
-function syncTabBlobs() {
-  for (const t of tabs) {
-    if (!t.blob) continue;
-    const look = tabState(t);
-    t.blob.set(look.state, look.expression, look.tint);
-    t.blob.el.setAttribute('aria-label', look.label);
-    t.blob.el.setAttribute('role', 'img');
-  }
-}
-setInterval(() => { syncTabBlobs(); syncNotch(); }, 30e3); // so an untouched tab dozes off on its own
+setInterval(syncNotch, 30e3); // so an untouched tab dozes off on its own
 
 $('tabs').onclick = (e) => {
   const c = e.target.closest('.tclose');
   if (c) return closeTab(+c.dataset.close);
   const t = e.target.closest('.tab');
-  if (t) goTab(+t.dataset.i);
+  if (t) { closeSettings(); goTab(+t.dataset.i); }
 };
-$('newTab').onclick = () => { newTab(active()?.cwd); dt.track('tab_opened'); };
+$('newTab').onclick = () => openPicker();
 const toggleSide = () => { $('app').classList.toggle('no-side'); dt.track('sidebar_toggled'); saveSoon(); }; // panes refit via their ResizeObserver
 $('sideToggle').onclick = $('sideShow').onclick = toggleSide;
+
+// --- The sidebar's footer: What's new, Settings (below) and the welcome tour.
+$('railHelp').onclick = () => replayTour();
+// This version's release notes, any time (they also show once by themselves after an update).
+$('railNew').onclick = async () => {
+  const [v, r] = await Promise.all([dt.version(), dt.updateNotes()]);
+  showUpdate(`What's new in Fork ${v}`, r?.notes || "<p>Couldn't load what's new. Check your internet connection and try again.</p>", false);
+};
 $('splitR').onclick = () => split('row');
 $('splitD').onclick = () => split('col');
 
 dt.onCmd((cmd) => ({
-  'new-tab': () => { newTab(active()?.cwd); dt.track('tab_opened'); },
-  close: () => active() && closePane(active().id),
+  'new-workspace': () => openPicker(),
+  'new-terminal': () => addTerminal(),
+  close: () => (active() ? closePane(active().id) : !tabs.length && forgetAndClose()), // no workspace left: ⌘W closes the window
   'split-right': () => split('row'),
   'split-down': () => split('col'),
   'next-tab': () => goTab(tabIx + 1),
@@ -423,12 +591,13 @@ function setThinking(pane, on) {
   const was = pane.thinking, saw = pane.sawSignal;
   pane.thinking = on; pane.sawSignal = true;
   if (was === on && saw) return;
-  if (on) pane.thinkingSince = Date.now(); // for the notch's "working · 2m"
+  if (on) { pane.thinkingSince = Date.now(); turnStarted(pane); } // for the notch's "working · 2m"
   if (!on) {
     if (tabOf(pane.id) !== tab()) pane.unseen = true; // it finished while you were elsewhere
     pane.lastUsed = Date.now();
+    turnEnded(pane);
     workDone(pane);
-    if (was) nudge(pane, doneText(pane), `In ${folderOf(pane)}`);
+    if (was) { nudge(pane, doneText(pane), `In ${folderOf(pane)}`); chime(pane); }
   }
   syncBusy();
   renderTabs();
@@ -450,11 +619,19 @@ function toolNotified(pane, { title, body }) {
 // Only while you're in another app: in the notch on a Mac that has one, otherwise a Mac notification,
 // plus a dock badge (Settings → Notifications). kind: done, failed or app (your app is ready, at url).
 // The tool's own notification and Fork's noticing it's done arrive close together: show one.
+// Something you were waiting on finished (an agent's turn, a command of 10s or more): a soft chime
+// (sounds.js), in Fork or not. Settings → Notifications turns it off. One per pane at a time.
+function chime(pane) {
+  if (settings.sounds !== 'on' || Date.now() - (pane.chimedAt || 0) < 2000) return;
+  pane.chimedAt = Date.now();
+  Sounds.play(Sounds.done);
+}
 function nudge(pane, title, body, kind = 'done', url) {
   if (document.hasFocus()) return;
   if (Date.now() - (pane.nudgedAt || 0) < 2000) return;
   pane.nudgedAt = Date.now();
-  dt.notify({ kind, title, body, pane: pane.id, url, alerts: settings.alerts !== 'off' });
+  dt.notify({ kind, title, body, pane: pane.id, url, alerts: settings.alerts !== 'off',
+    silent: kind === 'done' && settings.sounds === 'on' }); // Fork's own chime plays instead of the Mac's ping
   dt.track('notification_shown', { tool: pane.tool, kind });
 }
 dt.onGoPane((id, action) => { // clicked a notification or the notch
@@ -467,7 +644,6 @@ dt.onGoPane((id, action) => { // clicked a notification or the notch
   if (action === 'app' && readyUrl) $('readyShow').click();
 });
 
-const runBlob = Blobs.mount($('runBlob'), { size: 34 });
 function syncBusy() {
   const p = activeTerm(), on = working(p);
   $('app').classList.toggle('busy', !!p?.busy); // chips and folders wait while anything is open
@@ -476,7 +652,6 @@ function syncBusy() {
   $('runText').textContent = a ? `${a.name} is working.` : 'Something is running.';
   $('stop').textContent = a ? 'Stop it (Esc)' : 'Stop it (Ctrl+C)'; // Esc interrupts an AI tool; Ctrl+C would quit it
   $('stop').dataset.key = a ? 'esc' : '⌃C';
-  on ? runBlob.start() : runBlob.stop();
 }
 
 // --- Games (games.js): Snake, Stack and Space Run, in a pane of their own -----------------------
@@ -500,7 +675,7 @@ function openGame(id) {
     const r = src?.el.getBoundingClientRect(), t = src && tabOf(src.id);
     const dir = !r ? null : r.width >= 640 && r.width >= r.height ? 'row' : r.height >= 400 ? 'col' : null;
     if (dir) t.root = Panes.split(t.root, src.id, g.id, dir); // the game half is at least 320 × 200
-    else tabs.push({ root: { id: g.id }, activeId: null });
+    else tabs.push({ root: { id: g.id }, activeId: null, color: nextColor(), dir: t?.dir || tab()?.dir });
   }
   focusPane(g.id);
   Games.open(id);
@@ -563,42 +738,91 @@ function setHint(text, warn) {
 
 // --- Where am I + what can I do here -------------------------------------------
 const join = (dir, name) => (dir === '/' ? '' : dir) + '/' + name;
-const expanded = new Set(); // folders opened with ▸ (full paths), remembered across cds
-let treeDirs = [], refreshing = 0;
-
-// A file's type icon in the theme colour for its kind (icons.js).
+// The tree is @pierre/trees (vendor/trees.js: virtual rows, arrow keys, screen readers, git badges). It reads
+// lazily like before: the folder you're in, plus each folder you open. Its paths are relative to that folder,
+// a folder's ends in "/".
+const expanded = new Set(); // open folders (full paths), remembered across cds
+let treeDirs = [], refreshing = 0, treeRoot = '', treePaths = new Set();
+// A file's type icon in the theme colour for its kind (icons.js): the preview's title.
 const fileIconHtml = (name) => `<span class="fi">${icon(fileIcon(name).icon)}</span>`;
+const loaded = new Map(); // folder read so far (full path) -> its entries (files.mjs list)
+const noisy = new Set(); // node_modules, dist…: sorted last
+const relOf = (path) => path.slice(treeRoot.length + 1);
+const absOf = (id) => join(treeRoot, id.replace(/\/$/, ''));
+const tree = new Trees.FileTree({
+  // The tree's "complete" icons: a coloured icon per file type, with brand and framework logos (React, Tailwind…).
+  paths: [], itemHeight: 28, icons: { set: 'complete', colored: true,
+    // Folder arrows are Central's chevron when it's drawn on this Mac (the tree still turns it for closed folders).
+    ...(window.CENTRAL_SPRITE && { spriteSheet: window.CENTRAL_SPRITE,
+      remap: { 'file-tree-icon-chevron': { name: 'central-chevron-down', viewBox: '0 0 24 24' } } }) },
+  sort: (a, b) => b.isDirectory - a.isDirectory || noisy.has(a.path) - noisy.has(b.path) || a.basename.localeCompare(b.basename),
+  dragAndDrop: { canDrop: () => false }, // rows drag out to a terminal (below); nothing moves on disk
+  unsafeCSS: '[data-file-tree-virtualized-scroll] { padding-bottom: 44px; }', // the last file scrolls clear of the sidebar's footer
+});
+tree.render({ fileTreeContainer: $('entries') });
 
-// One row per file or folder; open folders list their contents underneath, indented.
-async function rows(dir, entries, depth, dirs) {
-  return (await Promise.all(entries.map(async (e) => {
-    const path = join(dir, e.name), open = e.folder && expanded.has(path);
-    let kids = '';
-    if (open) {
-      dirs.push(path);
-      const list = await dt.ls(path);
-      kids = list.length ? await rows(path, list, depth + 1, dirs) : `<div class="entries-empty" style="--depth:${depth + 1}">Empty</div>`;
+// Every path the tree should hold: what's in each folder read so far, plus changed files deeper down
+// (so a closed folder still shows it has changes inside).
+function treeList(changed) {
+  const out = new Set();
+  noisy.clear();
+  for (const [dir, entries] of loaded) {
+    const pre = dir === treeRoot ? '' : relOf(dir) + '/';
+    for (const e of entries) {
+      const id = pre + e.name + (e.folder ? '/' : '');
+      out.add(id);
+      if (e.noise) noisy.add(pre + e.name);
     }
-    return `<div class="entry${e.noise ? ' noise' : ''}${path === shownFile() ? ' on' : ''}" draggable="true" style="--depth:${depth}"
-        data-path="${esc(path)}" data-folder="${e.folder}" title="${esc(e.name)}">
-      ${e.folder ? `<button class="twisty${open ? ' open' : ''}" aria-label="${open ? 'Collapse' : 'Expand'}">${icon("chevron-right")}</button>` : '<span class="twisty"></span>'}
-      ${e.folder ? `<span class="fi">${icon(open ? "folder-open" : "folder")}</span>` : fileIconHtml(e.name)}<span>${esc(e.name)}</span></div>${kids}`;
-  }))).join('');
+  }
+  for (const c of changed) out.add(c.path);
+  return out;
 }
+const readDir = async (dir) => loaded.set(dir, await dt.ls(dir));
+// A folder you open that hasn't been read yet: read it, add what's in it.
+tree.subscribe(() => {
+  if (!treeRoot) return;
+  const open = tree.getVisibleRows(0, tree.getVisibleCount() - 1).filter((r) => r.kind === 'directory' && r.isExpanded).map((r) => absOf(r.path));
+  for (const p of [...expanded]) if (p.startsWith(treeRoot + '/') && !open.includes(p) && tree.getItem(relOf(p) + '/')) expanded.delete(p);
+  const fresh = open.filter((p) => !expanded.has(p));
+  for (const p of fresh) expanded.add(p);
+  if (fresh.some((p) => !loaded.has(p))) refresh();
+  else if (fresh.length) { treeDirs = [treeRoot, ...expanded].filter((d) => d === treeRoot || d.startsWith(treeRoot + '/')); syncWatch(); }
+});
 
 async function refresh() {
   syncArrows();
-  const cwd = active()?.cwd;
+  const cwd = dirOfTab(tab()); // the workspace's folder, not wherever its terminal has gone
   if (!cwd) return;
-  const run = ++refreshing;
-  const r = await dt.dir(cwd);
-  const dirs = [cwd];
-  const tree = r.entries.length ? await rows(cwd, r.entries, 0, dirs) : '<div class="empty">This folder is empty.</div>';
-  if (run !== refreshing || cwd !== active()?.cwd) return; // switched panes, or a newer refresh, while reading
+  const run = ++refreshing, moved = cwd !== treeRoot;
+  const inside = [...expanded].filter((p) => p.startsWith(cwd + '/'));
+  const fresh = new Map();
+  const [r, changed] = await Promise.all([dt.dir(cwd), dt.gitFiles(cwd),
+    ...inside.map(async (p) => fresh.set(p, await dt.ls(p)))]);
+  if (run !== refreshing || cwd !== dirOfTab(tab())) return; // switched workspaces, or a newer refresh, while reading
   const { suggestions } = r;
   home = r.home;
-  treeDirs = dirs;
+  if (moved) loaded.clear();
+  treeRoot = cwd;
+  loaded.set(cwd, r.entries);
+  for (const [p, list] of fresh) loaded.set(p, list);
+  const next = treeList(changed);
+  if (moved) tree.resetPaths([...next], { initialExpandedPaths: inside.map((p) => relOf(p) + '/') });
+  else {
+    const ops = [...treePaths].filter((p) => !next.has(p)).map((path) => ({ type: 'remove', path, recursive: true }))
+      .concat([...next].filter((p) => !treePaths.has(p)).map((path) => ({ type: 'add', path })));
+    if (ops.length) tree.batch(ops);
+  }
+  treePaths = next;
+  tree.setGitStatus(changed);
+  const atHome = cwd === home; // your whole home folder isn't a project: offer a way into one instead
+  $('entries').hidden = atHome || !r.entries.length;
+  $('treeEmpty').hidden = atHome || !!r.entries.length;
+  $('homeEmpty').hidden = !atHome;
+  $('collapseAll').hidden = $('newFile').hidden = atHome;
+  if (atHome) drawHomeRecent();
+  treeDirs = [cwd, ...inside];
   syncWatch();
+  markShown();
 
   const parts = [];
   let base = '/', rest = cwd;
@@ -609,40 +833,190 @@ async function refresh() {
   $('crumbs').innerHTML = parts.map(([name, path], i) =>
     `${i ? '<span class="sep">›</span>' : ''}<button class="crumb" data-path="${esc(path)}">${esc(name)}</button>`).join('');
 
-  $('entries').innerHTML = tree;
-
   chips = suggestions;
   $('chips').innerHTML = suggestions.map((s, i) => `<button class="chip" data-i="${i}" title="${esc(s.cmd)}">${esc(s.label)}</button>`).join('');
   renderTabs();
+  if (moved) syncPvFolder();
 }
+
+// A Home workspace's Files: a few recent projects to move this workspace into (or Choose any folder).
+async function drawHomeRecent() {
+  const list = (await dt.recents()).filter((p) => p !== home && !tabs.some((t) => t.dir === p)).slice(0, 3);
+  $('homeRecent').innerHTML = list.length ? '<h3>Recent</h3>' + list.map((p) => `<button class="he-row" data-path="${esc(p)}" title="${esc(tilde(p))}">`
+    + `${ph('folder')}<span>${esc(p.split('/').pop() || '/')}</span></button>`).join('') : '';
+}
+// Point this workspace at a project folder: same tab, same terminals (the idle ones cd there), new name and files.
+function moveWorkspace(dir) {
+  const t = tab(), other = tabs.findIndex((x) => x !== t && x.dir === dir);
+  if (!t || !dir) return;
+  if (other >= 0) return goTab(other); // already open: go there
+  t.dir = dir;
+  dt.recents(dir);
+  dt.track('start_choice', { choice: 'from_home' });
+  for (const p of panesOf(t)) if (!p.busy && !isGame(p)) dt.write(p.id, `cd ${q(dir)}\r`);
+  t.git = null;
+  gitSoon(t);
+  renderTabs();
+  refresh();
+}
+$('homeChoose').onclick = async () => { const p = await dt.pickFolder(); if (p) moveWorkspace(p); };
+$('homeRecent').onclick = (e) => { const b = e.target.closest('.he-row'); if (b) moveWorkspace(b.dataset.path); };
 
 $('crumbs').onclick = (e) => {
   const b = e.target.closest('.crumb');
   if (b) { send(`cd ${q(b.dataset.path)}`, '', true); dt.track('folder_opened', { via: 'crumb' }); }
 };
-// ▸ opens a folder in place; its name moves there; a file opens in the preview panel
-// (or, with Settings → Links & files off, in whatever app the Mac uses for it).
-$('entries').onclick = (e) => {
-  const row = e.target.closest('.entry'); if (!row) return;
-  const { path } = row.dataset;
-  if (row.dataset.folder !== 'true') {
-    if (inFork()) return openFile(path);
-    dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon, where: 'app' }); // the type, never the name
-    return dt.openDefault(path);
-  }
-  if (e.target.closest('.twisty')) { expanded.has(path) ? expanded.delete(path) : expanded.add(path); return refresh(); }
+// A folder opens and closes in place; a file opens in the preview panel (or, with Settings → Links & files
+// off, in whatever app the Mac uses for it). Going into a folder in the terminal is on the right-click menu.
+const showFile = (path) => {
+  if (inFork()) return openFile(path);
+  dt.track('file_previewed', { kind: fileIcon(path.split('/').pop()).icon, where: 'app' }); // the type, never the name
+  dt.openDefault(path);
+};
+// --- Search: file names in this workspace, then the lines inside files that have the words (main.js
+// files:search). The results take the place of the info and files while there's something in the box; Esc or
+// an empty box brings them back. A result opens in the preview; a line opens there, highlighted.
+const searchIn = $('search');
+let found = null, foundIx = -1, searchTimer = 0, searchRun = 0;
+function focusSearch() {
+  closeSettings();
+  $('app').classList.remove('no-side');
+  searchIn.focus();
+  searchIn.select();
+}
+function endSearch() {
+  clearTimeout(searchTimer); searchRun++;
+  found = null; foundIx = -1;
+  $('findList').hidden = true; $('findList').innerHTML = '';
+  $('sideBody').hidden = false;
+}
+searchIn.oninput = () => {
+  clearTimeout(searchTimer);
+  const q = searchIn.value.trim();
+  if (!q) return endSearch();
+  searchTimer = setTimeout(() => runSearch(q), 120);
+};
+async function runSearch(q) {
+  const run = ++searchRun, root = dirOfTab(tab()) || treeRoot;
+  if (!root) return;
+  const r = await dt.searchFiles(root, q);
+  if (!r || run !== searchRun) return; // a newer search took over
+  found = { ...r, root, q }; foundIx = -1;
+  drawFound();
+}
+const baseOf = (p) => p.slice(p.lastIndexOf('/') + 1);
+const folderPart = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+function marked(text, q) {
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  return i < 0 ? esc(text) : esc(text.slice(0, i)) + `<mark>${esc(text.slice(i, i + q.length))}</mark>` + esc(text.slice(i + q.length));
+}
+function drawFound() {
+  const { names, hits, q } = found, box = $('findList');
+  let n = 0;
+  const row = (path, line, top, snip) => `<div class="fl-row" role="option" id="fl${n}" data-n="${n++}" data-path="${esc(path)}"${line ? ` data-line="${line}"` : ''}>`
+    + `<div class="fl-top">${fileIconHtml(baseOf(path))}${top}<small>${esc(folderPart(path))}</small></div>${snip || ''}</div>`;
+  const html = (names.length ? '<h3>Files</h3>' + names.map((p) => row(p, 0, `<b>${marked(baseOf(p), q)}</b>`)).join('') : '')
+    + (hits.length ? '<h3>In files</h3>' + hits.map((h) => row(h.path, h.line, `<b>${esc(baseOf(h.path))}<span>:${h.line}</span></b>`,
+      `<div class="fl-snip">${marked(h.text, q)}</div>`)).join('') : '');
+  box.innerHTML = html || `<div class="fl-empty">Nothing matches “${esc(q)}” in this folder.</div>`;
+  $('sideBody').hidden = true;
+  box.hidden = false;
+  box.scrollTop = 0;
+}
+function pickFound(i) {
+  const rows = $('findList').querySelectorAll('.fl-row');
+  if (!rows.length) return;
+  foundIx = (i + rows.length) % rows.length;
+  rows.forEach((r, k) => r.classList.toggle('on', k === foundIx));
+  rows[foundIx].scrollIntoView({ block: 'nearest' });
+  searchIn.setAttribute('aria-activedescendant', rows[foundIx].id);
+}
+async function openFound(row) {
+  if (!row || !found) return;
+  const path = join(found.root, row.dataset.path), line = +row.dataset.line || 0;
+  await showFile(path);
+  if (line) showLine(path, line);
+}
+// The preview's code view: select line n and bring it into view (its rows live in @pierre/diffs' shadow root).
+function showLine(path, n, tries = 20) {
+  if (pv.file !== path || !codeFile) return;
+  const host = [...$('pvFile').querySelectorAll('*')].find((el) => el.shadowRoot);
+  const el = host?.shadowRoot.querySelector(`[data-line="${n}"]`);
+  if (!el) return tries && setTimeout(() => showLine(path, n, tries - 1), 50);
+  codeFile.setSelectedLines({ start: n, end: n });
+  const view = $('pvFile'); // straight down to it, never sideways (scrollIntoView also scrolled the code left)
+  view.scrollTop += el.getBoundingClientRect().top - view.getBoundingClientRect().top - view.clientHeight / 2;
+}
+searchIn.onkeydown = (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); pickFound(foundIx + (e.key === 'ArrowDown' ? 1 : -1)); }
+  else if (e.key === 'Enter') { e.preventDefault(); openFound($('findList').querySelectorAll('.fl-row')[Math.max(0, foundIx)]); }
+  else if (e.key === 'Escape') { e.preventDefault(); searchIn.value = ''; endSearch(); searchIn.blur(); focusActive(); }
+};
+$('findList').onclick = (e) => openFound(e.target.closest('.fl-row'));
+
+const cdTo = (path) => {
   const cwd = active()?.cwd || '';
   send(`cd ${q(path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path)}`, '', true); // relative reads better
   dt.track('folder_opened', { via: 'sidebar' });
 };
-$('entries').ondragstart = (e) => {
-  const row = e.target.closest('.entry'); if (!row) return;
-  e.dataTransfer.setData('text/x-dt-path', row.dataset.path);
-  e.dataTransfer.effectAllowed = 'copy';
+// The row under a mouse event: Trees draws its rows in a shadow root, each with data-item-path.
+const rowAt = (e) => e.composedPath().find((n) => n.dataset?.itemPath != null);
+$('entries').addEventListener('click', (e) => { // a folder opens and closes by itself (Trees)
+  const row = rowAt(e);
+  if (row?.dataset.itemType === 'file') showFile(absOf(row.dataset.itemPath));
+});
+$('entries').addEventListener('keydown', (e) => { // Return on a file previews it, like a click
+  const id = tree.getFocusedPath();
+  if (e.key === 'Enter' && id && !id.endsWith('/')) showFile(absOf(id));
+});
+// Right-click: everything else you can do with it (main.js entry:menu draws the Mac menu).
+$('entries').oncontextmenu = async (e) => {
+  const row = rowAt(e); if (!row) return;
+  e.preventDefault();
+  const path = absOf(row.dataset.itemPath), folder = row.dataset.itemType === 'folder', ed = await dt.editor();
+  const pick = await dt.entryMenu({ folder, editor: ed?.label });
+  ({
+    cd: () => cdTo(path),
+    preview: () => showFile(path),
+    default: () => dt.openDefault(path),
+    editor: () => dt.openIn(path),
+    reveal: () => dt.reveal(path),
+    copy: () => dt.clipWrite(path),
+    type: () => { const p = activeTerm(); if (p) { dt.write(p.id, Preview.dropText([path])); p.term.focus(); } },
+  })[pick]?.();
 };
+$('collapseAll').onclick = () => { for (const p of expanded) tree.getItem(relOf(p) + '/')?.collapse(); expanded.clear(); };
+// + : name a new file, and Fork types `touch` for it in the folder you're in (so you see how it's done).
+$('newFile').onclick = () => {
+  if (!active()?.cwd || $('newEntry').firstChild) return;
+  const row = document.createElement('div');
+  row.className = 'entry new';
+  row.innerHTML = `${ph('file')}<input placeholder="New file name" aria-label="New file name" spellcheck="false">`;
+  $('newEntry').append(row);
+  const input = row.querySelector('input');
+  input.focus();
+  let over = false;
+  const done = (make) => {
+    if (over) return;
+    over = true;
+    const name = input.value.trim();
+    row.remove();
+    if (make && name && !name.includes('/')) send(`touch ${q(name)}`, '', true);
+    refresh();
+  };
+  input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); };
+  input.onblur = () => done(false);
+};
+// Drag a row onto a terminal to type its path (Trees starts the drag; it never moves anything, canDrop above).
+$('entries').addEventListener('dragstart', (e) => {
+  const row = rowAt(e); if (!row) return;
+  e.dataTransfer.setData('text/x-dt-path', absOf(row.dataset.itemPath));
+  e.dataTransfer.effectAllowed = 'copy';
+});
 // Something changed on disk (usually Claude at work): update the tree, and the file being previewed.
 dt.onFsChanged((paths) => {
   refresh();
+  gitSoon(tab());
   if (pv.file && paths.includes(pv.file)) openFile(pv.file, true);
 });
 // A file dropped anywhere but a pane does nothing (instead of Chromium trying to open it).
@@ -667,15 +1041,59 @@ function showPv(mode) {
   for (const b of $('pvSeg').children) b.classList.toggle('on', b.dataset.v === pv.mode);
   $('app').classList.add('has-pv');
   markShown();
+  syncPvFolder();
 }
-function hidePv() { $('app').classList.remove('has-pv'); markShown(); focusActive(); }
+function hidePv() { $('app').classList.remove('has-pv'); markShown(); syncPvFolder(); focusActive(); }
+// Changes and Design are the open workspace's: follow it while they're on screen. Design reads only then.
+function syncPvFolder() {
+  const on = pvOpen() && !$('app').classList.contains('in-settings'), dir = tab() && dirOfTab(tab()) !== home ? dirOfTab(tab()) : null;
+  if (on && pv.mode === 'changes') {
+    Changes.show(dir);
+    $('pvSeg').querySelector('[data-v="changes"]').classList.remove('new');
+    $('pvToggle').classList.remove('new');
+  }
+  if (on && pv.mode === 'design') Design.start(dir); else Design.stop();
+}
 function togglePv() { pvOpen() ? hidePv() : showPv(); dt.track('preview_toggled'); }
-function markShown() { for (const r of $('entries').querySelectorAll('.entry')) r.classList.toggle('on', r.dataset.path === shownFile()); }
+function markShown() { // the previewed file is the tree's selected row
+  const f = shownFile(), id = f?.startsWith(treeRoot + '/') ? relOf(f) : null;
+  for (const p of tree.getSelectedPaths()) if (p !== id) tree.getItem(p)?.deselect();
+  if (id) tree.getItem(id)?.select();
+}
 function syncWatch() { dt.watch([...new Set([...treeDirs, ...(pv.file ? [dirOf(pv.file)] : [])])]); }
 
-// Line numbers in their own column, so "line 42" is easy to tell Claude.
-const codeView = (r) => `<div class="pv-code"><pre class="gutter">${Array.from({ length: r.lines }, (_, i) => i + 1).join('\n')}</pre>` +
-  `<pre class="src"><code>${r.html}</code></pre></div>`;
+// Code: @pierre/diffs (vendor/diffs, loaded the first time a file needs it). Shiki's VS Code grammars, Pierre's
+// themes, its own line numbers. Click a line number (shift-click for a range) and "Put in terminal" types
+// file:line, so "line 42" is easy to tell Claude.
+let diffsLib, codeFile, picked = null;
+const codeTheme = () => (document.documentElement.dataset.mode === 'light' ? 'light' : 'dark');
+async function showCode(view, path, r) {
+  const D = await (diffsLib ??= import('./vendor/diffs/diffs.js'));
+  if (pv.file !== path) return false; // another file was clicked while it loaded
+  codeFile?.cleanUp();
+  view.innerHTML = '<div class="pv-code"></div>';
+  pickLines(null);
+  // Colouring happens in workers (vendor/diffs/worker.js): the plain text shows at once, colours follow.
+  const pool = D.getOrCreateWorkerPoolSingleton({
+    poolOptions: { workerFactory: () => new Worker('vendor/diffs/worker.js', { type: 'module' }), poolSize: 2 },
+    highlighterOptions: { theme: { dark: 'pierre-dark', light: 'pierre-light' } } });
+  codeFile = new D.File({ themeType: codeTheme(), disableFileHeader: true, tokenizeMaxLength: 1024 * 1024, // files.mjs MAX
+    enableLineSelection: true, onLineSelected: pickLines,
+    unsafeCSS: ':host { --diffs-dark-bg: var(--card); --diffs-light-bg: var(--card); }' }, pool); // the panel's colour, not Pierre's black
+  codeFile.render({ file: { name: path.split('/').pop(), contents: r.text, lang: r.lang }, containerWrapper: view.firstChild });
+  return true;
+}
+function pickLines(range) {
+  picked = range && pv.file ? { path: pv.file, a: Math.min(range.start, range.end), b: Math.max(range.start, range.end) } : null;
+  $('pvLine').hidden = !picked;
+  if (picked) $('pvLine').textContent = `Put ${pv.file.split('/').pop()}:${picked.a}${picked.b > picked.a ? '-' + picked.b : ''} in terminal`;
+}
+$('pvLine').onclick = () => {
+  const p = activeTerm(); if (!p || !picked) return;
+  const rel = picked.path.startsWith(p.cwd + '/') ? picked.path.slice(p.cwd.length + 1) : picked.path; // relative reads better
+  dt.write(p.id, Preview.dropText([rel]).trimEnd() + `:${picked.a}${picked.b > picked.a ? '-' + picked.b : ''} `);
+  p.term.focus();
+};
 
 async function openFile(path, changed) {
   if (Reader.kindOf(path)) return openBook(path, 'tree'); // a PDF or EPUB opens in Read
@@ -691,12 +1109,15 @@ async function openFile(path, changed) {
   $('pvName').title = path;
   $('pvPage').style.display = r.kind === 'html' ? '' : 'none';
   const src = fileUrl(path) + (changed ? `?v=${Date.now()}` : ''); // skip the image cache after an edit
+  if (r.kind === 'code' || r.kind === 'html') {
+    if (await showCode(view, path, r)) view.scrollTop = top;
+    return;
+  }
+  codeFile?.cleanUp(); codeFile = null; pickLines(null);
   view.innerHTML = {
     image: () => `<div class="pv-media"><img src="${src}" alt=""></div>`,
     video: () => `<div class="pv-media"><video src="${src}" controls loop></video></div>`,
     markdown: () => `<article class="pv-md">${DOMPurify.sanitize(r.html)}</article>`,
-    code: () => codeView(r),
-    html: () => codeView(r),
     other: () => `<div class="pv-msg"><b>${r.why === 'big' ? 'Too big to preview' : "Can't preview this kind of file"}</b>Open it with the button above.</div>`,
     missing: () => '<div class="pv-msg"><b>This file is gone</b>It was moved, renamed or deleted.</div>',
   }[r.kind]();
@@ -775,6 +1196,7 @@ $('pvUrl').onkeydown = (e) => {
 const offered = new Set();
 let readyUrl = null;
 function appFound(url, pane) {
+  if (pane && pane.url !== url) { pane.url = url; renderTabs(); } // its workspace shows it, until the command stops
   if (offered.has(url) || url === pv.url) return;
   offered.add(url);
   if (inFork() && pvOpen() && pv.mode === 'app') return loadApp(url);
@@ -898,6 +1320,52 @@ $('pv').addEventListener('drop', (e) => { const path = droppedBook(e); if (path)
 const readingBook = () => pvOpen() && pv.mode === 'read' && !!Reader.current() && $('pv').contains(document.activeElement);
 document.addEventListener('focusin', (e) => { if (!$('pv').contains(e.target)) Reader.clearDone(); });
 
+// --- Before and after: each agent turn as pictures of your app (main.js turn:start/finish, changes.js) -----
+// When an agent starts working, Fork pictures the app this workspace is serving (or the page the App view shows,
+// if it's that app, or the only app there is); when it stops, it waits a moment for the change to land and
+// pictures it again. main.js keeps the pair only if a frontend file changed and the page looks different.
+// No app running, or Settings → General turned it off: no pictures.
+function appUrlOf(t) {
+  const own = panesOf(t).find((x) => x.url)?.url, shown = pv.url && Preview.findLocalUrl(pv.url) ? pv.url : null;
+  const origin = (u) => { try { return new URL(u).origin; } catch { return null; } };
+  return shown && (!own || origin(shown) === origin(own)) ? shown : own || null;
+}
+async function turnStarted(pane) {
+  const t = tabOf(pane.id), dir = dirOfTab(t), url = t && appUrlOf(t);
+  if (settings.shots === 'off' || !url || !dir || dir === home || pane.turn) return;
+  const turn = pane.turn = { dir, url, at: Date.now(), agent: agentOf(pane)?.name || '' };
+  const r = await dt.turnStart(dir, url);
+  if (!r) { if (pane.turn === turn) pane.turn = null; return; } // the app didn't load
+  Object.assign(turn, r);
+  if (turn.ended) turnEnded(pane, turn); // it finished while the before was being taken
+}
+function turnEnded(pane, turn = pane.turn) {
+  if (!turn) return;
+  if (pane.turn === turn) pane.turn = null;
+  if (!turn.before) { turn.ended = true; return; }
+  setTimeout(async () => { // hot reload and any build step get a moment to catch up
+    const r = await dt.turnFinish(turn.dir, { before: turn.before, snap: turn.snap, url: turn.url, at: turn.at, agent: turn.agent });
+    if (!r) return;
+    dt.track('changes_captured', { files: r.turn.files.length });
+    const shown = Changes.added(turn.dir, r) && pvOpen() && pv.mode === 'changes';
+    if (!shown && turn.dir === dirOfTab(tab())) {
+      $('pvSeg').querySelector('[data-v="changes"]').classList.add('new');
+      $('pvToggle').classList.add('new');
+    }
+  }, 1500);
+}
+Changes.setup({
+  openIcon: icon('external-link'),
+  fileIcon: (name) => fileIconHtml(name.split('/').pop()),
+  openFile: (rel) => showFile(join(Changes.folder(), rel)),
+  openApp: (url) => (inFork() ? loadApp(url) : dt.openExternal(url)),
+});
+Design.setup({
+  copy: (text) => dt.clipWrite(text),
+  type: (text) => { const p = activeTerm(); if (p) { dt.write(p.id, text + ' '); p.term.focus(); } },
+  openAt: async (file, line) => { const path = join(Design.folder(), file); await openFile(path); if (line) showLine(path, line); },
+});
+
 // --- When something fails ------------------------------------------------------
 let fix = null;
 function showOops() {
@@ -905,9 +1373,7 @@ function showOops() {
   $('explainBtn').style.display = ''; $('fixBtn').style.display = 'none'; $('askAiBtn').style.display = 'none';
   $('oops').classList.add('show');
 }
-const oopsBlob = Blobs.mount($('oopsBlob'), { size: 40, expression: 'curious' });
-function reading(on) { $('oopsBlob').hidden = !on; on ? oopsBlob.start() : oopsBlob.stop(); }
-function hideOops() { $('oops').classList.remove('show'); reading(false); }
+function hideOops() { $('oops').classList.remove('show'); }
 // The failed command and what it printed: from its prompt line (at most 80 lines), or the last 40 lines.
 function lastLines() {
   const p = activeTerm(), b = p.term.buffer.active, end = b.baseY + b.cursorY, out = [];
@@ -938,9 +1404,7 @@ $('explainBtn').onclick = async () => {
 $('askAiBtn').onclick = async () => {
   $('askAiBtn').style.display = 'none'; $('fixBtn').style.display = 'none';
   $('oopsText').textContent = 'Reading the error…';
-  reading(true);
   const r = await dt.explainAI(failed.output, failed.cwd);
-  reading(false);
   explained(r, null);
   dt.track('error_explained', { source: 'ai', ok: !r.failed });
 };
@@ -951,7 +1415,7 @@ $('oopsClose').onclick = hideOops;
 // Every match is tinted with the theme's accent; the current one is also outlined in the text colour.
 let findPane = null;
 const findOpen = () => $('find').classList.contains('show');
-const hex6 = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#7c6cff');
+const hex6 = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : '#f8f8f7');
 const mix = (a, b, t) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex6(a).slice(i, i + 2), 16) * (1 - t)
   + parseInt(hex6(b).slice(i, i + 2), 16) * t).toString(16).padStart(2, '0')).join('');
 function findLooks() {
@@ -1006,6 +1470,7 @@ function snapshot(full) {
   const node = (n) => {
     if (n.dir) return { dir: n.dir, ratio: n.ratio ?? 0.5, a: node(n.a), b: node(n.b) };
     const p = panes.get(n.id), s = { cwd: p?.cwd || '' };
+    if (p?.name) s.name = p.name;
     if (isClaude(p)) s.claude = true;
     if (full && p) try { s.screen = p.serial.serialize({ scrollback: 1000 }); } catch {}
     return s;
@@ -1017,7 +1482,7 @@ function snapshot(full) {
   return {
     tabIx: Math.max(0, kept.findIndex(({ t }) => t === tab())),
     side: { hidden: $('app').classList.contains('no-side'), ...(width ? { width } : {}) },
-    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)) })),
+    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)), color: t.color, dir: t.dir })),
   };
 }
 function saveSoon() {
@@ -1046,11 +1511,15 @@ async function restore(saved) {
       if (n.dir) return { dir: n.dir, ratio: n.ratio, a: await build(n.a), b: await build(n.b) };
       const p = await newPane(n.cwd, { screen: n.screen, when: saved.savedAt });
       if (n.claude) { dt.write(p.id, 'claude --continue\r'); p.suggested = true; } // zsh holds it until the prompt is up
+      if (n.name) nameTerminal(p, null, n.name);
       ids.push(p.id);
       return { id: p.id };
     };
     const root = await build(t.root);
-    tabs.push({ root, activeId: ids[t.active] ?? ids[0] });
+    const tb = { root, activeId: ids[t.active] ?? ids[0], color: t.color ?? nextColor(),
+      dir: t.dir || panes.get(ids[t.active] ?? ids[0])?.cwd }; // saved before workspaces had a folder: where its terminal was
+    tabs.push(tb);
+    for (const id of ids) if (!panes.get(id).name) nameTerminal(panes.get(id), tb); // saved before terminals had names
   }
   if (saved.side.hidden) $('app').classList.add('no-side');
   if (saved.side.width) $('app').style.setProperty('--side', `${saved.side.width}px`);
@@ -1061,38 +1530,98 @@ async function restore(saved) {
   dt.track('session_restored', { tabs: tabs.length, panes: panes.size });
 }
 
-// --- Start screen: never a blank prompt ------------------------------------------
-async function openStart() {
-  const list = await dt.recents();
-  $('recents').innerHTML = list.length ? '<div class="label" style="margin-top:0">Recent</div>' + list.map((p) =>
-    `<button class="opt" data-path="${esc(p)}"><span class="ico">${icon("folder")}</span>
-      <span>${esc(p.split('/').pop())}<small>${esc(p)}</small></span></button>`).join('') : '';
+// --- The workspace picker: every workspace is a folder ------------------------------------
+// A recent one, your home folder, a new folder (made right here), any folder on your Mac, or a project from
+// GitHub. With no workspace open it can't be closed: a window always has a folder to work in.
+let pickRequired = false, newParent = '';
+const tilde = (p) => (home && (p === home || p.startsWith(home + '/')) ? '~' + p.slice(home.length) : p);
+const parentOf = (p) => p.slice(0, p.lastIndexOf('/')) || '/';
+const whereLabel = (p) => `in ${p === home ? 'your home folder' : tilde(p)}`;
+async function openPicker({ required = !tabs.length } = {}) {
+  pickRequired = required;
+  home ||= await dt.home();
+  const list = (await dt.recents()).slice(0, 5);
+  const row = (path, label, choice) => `<button class="opt" data-path="${esc(path)}" data-choice="${choice}"><span class="ico">${icon('folder')}</span>`
+    + `<span>${esc(label)}<small>${esc(tilde(path))}</small></span></button>`;
+  $('recents').innerHTML = (list.length ? '<div class="label" style="margin-top:0">Recent</div>' : '')
+    + list.map((p) => row(p, p === home ? 'Home' : p.split('/').pop() || '/', 'recent')).join('')
+    + (list.includes(home) ? '' : row(home, 'Home', 'home'));
+  try { newParent = localStorage.getItem('dt-new-parent') || ''; } catch {}
+  newParent ||= list[0] && list[0] !== home ? parentOf(list[0]) : home;
+  $('startTitle').textContent = tabs.length ? 'New workspace' : 'Where do you want to work?';
+  $('skip').hidden = required;
+  for (const id of ['newFolder', 'clone']) $(id).classList.remove('show');
+  $('newFolderName').value = ''; $('cloneUrl').value = ''; $('newFolderErr').hidden = true;
   $('usageNote').hidden = !(await dt.analytics());
   $('startOv').classList.add('show');
 }
+const openStart = () => openPicker(); // after the welcome cards
 function closeStart() {
+  if (pickRequired && !tabs.length) return; // nothing to go back to
+  pickRequired = false;
   $('startOv').classList.remove('show');
   focusActive();
   if (tourNext) { tourNext = false; setTimeout(runTour, 400); } // after the folder list and suggestions load
 }
-async function workIn(path) { await dt.recents(path); send(`cd ${q(path)}`, '', true); closeStart(); }
+// The last workspace closed: an empty window that asks where to work next.
+function noWorkspace() {
+  tabIx = 0;
+  $('term').replaceChildren();
+  treeRoot = ''; treePaths = new Set(); tree.resetPaths([]);
+  renderTabs();
+  openPicker({ required: true });
+}
+// Open dir as a workspace (or switch to it, if it's one already), then close the picker.
+async function openWorkspace(dir, { choice, start, run } = {}) {
+  dt.track('start_choice', { choice });
+  dt.recents(dir);
+  const same = start ? -1 : tabs.findIndex((t) => t.dir === dir);
+  if (same >= 0) goTab(same);
+  else {
+    if (tabs.length) dt.track('tab_opened');
+    const p = await newTab(dir, { start });
+    run?.(p);
+  }
+  closeStart();
+}
 
-$('recents').onclick = (e) => { const b = e.target.closest('.opt'); if (b) { workIn(b.dataset.path); dt.track('start_choice', { choice: 'recent' }); } };
-$('pick').onclick = async () => { const p = await dt.pickFolder(); if (p) { workIn(p); dt.track('start_choice', { choice: 'pick' }); } };
-$('cloneOpt').onclick = () => { $('clone').classList.add('show'); $('cloneUrl').focus(); };
+$('recents').onclick = (e) => { const b = e.target.closest('.opt'); if (b) openWorkspace(b.dataset.path, { choice: b.dataset.choice }); };
+$('pick').onclick = async () => { const p = await dt.pickFolder(); if (p) openWorkspace(p, { choice: 'pick' }); };
+// New folder: a name, and where it goes (the last place you made one, or next to your latest workspace).
+$('newFolderOpt').onclick = () => {
+  $('clone').classList.remove('show');
+  $('newFolder').classList.add('show');
+  $('newFolderWhere').textContent = whereLabel(newParent);
+  $('newFolderName').focus();
+};
+$('newFolderWhere').onclick = async () => {
+  const p = await dt.pickFolder();
+  if (p) { newParent = p; $('newFolderWhere').textContent = whereLabel(p); }
+  $('newFolderName').focus();
+};
+const FOLDER_ERRORS = { name: 'Give it a name, without a / in it.', 'exists-file': 'There’s already a file with that name there.',
+  failed: 'Couldn’t make a folder there. Try another place.' };
+$('newFolderGo').onclick = async () => {
+  const r = await dt.makeFolder(newParent, $('newFolderName').value);
+  if (r.error) { $('newFolderErr').textContent = FOLDER_ERRORS[r.error]; $('newFolderErr').hidden = false; return; }
+  try { localStorage.setItem('dt-new-parent', newParent); } catch {}
+  openWorkspace(r.path, { choice: 'new_folder' });
+};
+$('newFolderName').onkeydown = (e) => { if (e.key === 'Enter') $('newFolderGo').click(); };
+$('newFolderName').oninput = () => { $('newFolderErr').hidden = true; };
+$('cloneOpt').onclick = () => { $('newFolder').classList.remove('show'); $('clone').classList.add('show'); $('cloneUrl').focus(); };
+// A project from GitHub: the workspace is the folder it downloads into; its terminal fetches it there.
 $('cloneGo').onclick = async () => {
   const url = $('cloneUrl').value.trim();
   if (!url) return;
   const dest = await dt.pickFolder(); // where should the project live?
   if (!dest) return;
-  dt.track('start_choice', { choice: 'clone' });
   const name = url.replace(/\/+$/, '').split('/').pop().replace(/\.git$/, '');
-  closeStart();
-  send(`cd ${q(dest)} && git clone ${q(url)} && cd ${q(name)}`,
-    `Downloads ${name} into ${dest.split('/').pop()}, then moves into it.`, false);
+  openWorkspace(`${dest === '/' ? '' : dest}/${name}`, { choice: 'clone', start: dest, run: () =>
+    send(`git clone ${q(url)} && cd ${q(name)}`, `Downloads ${name} into ${dest.split('/').pop()}, then moves into it.`, false) });
 };
 $('cloneUrl').onkeydown = (e) => { if (e.key === 'Enter') $('cloneGo').click(); };
-$('skip').onclick = () => { closeStart(); dt.track('start_choice', { choice: 'skip' }); };
+$('skip').onclick = () => closeStart();
 
 // --- First run: welcome cards, then once they've picked where to work, the spotlight tour ---------
 // (onboarding.js). Skipping the cards skips the tour too. Settings → Help and the Help menu replay it.
@@ -1246,7 +1775,6 @@ $('palList').onclick = (e) => {
   drawPal();
   $('palList').querySelector('[data-f]')?.focus();
 };
-$('openPal').onclick = openPal;
 
 // --- Updates: a quiet pill once a newer Fork is downloaded, and What's new once after updating -----
 // ready: downloaded, Restart now swaps it in (or it installs when Fork quits). Not ready: the old way,
@@ -1324,18 +1852,13 @@ function installed(font) {
   const w = (f) => { c.font = `20px ${f}`; return c.measureText('mmmwwwiiil10O').width; };
   return w(`"${font}", monospace`) !== w('monospace') || w(`"${font}", serif`) !== w('serif');
 }
-// Appearance is Light, Dark or System; each side keeps its own theme, and System swaps them with macOS.
-const DEFAULTS = { mode: 'system', darkTheme: 'Designer', lightTheme: 'Catppuccin Latte',
-  font: installed('SF Mono') ? 'SF Mono' : 'Menlo', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', showNotch: 'off', smart: 'on' };
+// Appearance is Light, Dark or System (follows the Mac); each has one look while the UI is redesigned (themes.js).
+// Theme picks saved before the redesign (darkTheme, lightTheme) are left alone, unused.
+const DEFAULTS = { mode: 'system',
+  font: 'IBM Plex Mono', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', shots: 'on', alerts: 'on', sounds: 'on', showNotch: 'off', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
-  // Settings saved before Light/Dark/System had one `theme`: keep it, on its own side.
-  if (s.theme && !s.mode) {
-    const dark = THEMES.find((t) => t.name === s.theme)?.dark ?? true;
-    s.mode = dark ? 'dark' : 'light';
-    s[dark ? 'darkTheme' : 'lightTheme'] = s.theme;
-  }
   if (s.smoothing && s.smoothing !== 'off') s.smoothing = 'on'; // was Default / Thin / Off
   delete s.theme; delete s.frost; delete s.notch; // the notch was on for everyone before; now it's off until you turn it on
   return { ...DEFAULTS, ...s };
@@ -1344,11 +1867,12 @@ let settings = load();
 
 const sysDark = matchMedia('(prefers-color-scheme: dark)'); // macOS's own, while themeSource is 'system'
 const isDark = (s) => (s.mode === 'system' ? sysDark.matches : s.mode === 'dark');
-const themeOf = (name, dark) => THEMES.find((t) => t.name === name && t.dark === dark)
-  || themeOf(dark ? DEFAULTS.darkTheme : DEFAULTS.lightTheme, dark);
-const currentTheme = (s) => (isDark(s) ? themeOf(s.darkTheme, true) : themeOf(s.lightTheme, false));
+const currentTheme = (s) => THEMES[isDark(s) ? 'dark' : 'light'];
 const fontStack = (f) => `"${f}", Menlo, monospace`;
-const xtermOpts = (s) => ({ theme: currentTheme(s), fontFamily: fontStack(s.font), fontSize: s.size });
+// Medium (500), as in the design; a font without a 500 uses its regular.
+// Bold text keeps its colour (not the bright one), as in the design's prompt.
+const xtermOpts = (s) => ({ theme: currentTheme(s), fontFamily: fontStack(s.font), fontSize: s.size, fontWeight: 500, fontWeightBold: 700,
+  drawBoldTextInBrightColors: false });
 
 let applying = 0;
 async function applySettings(s) {
@@ -1357,21 +1881,22 @@ async function applySettings(s) {
     tree: t.dark ? '#e6e6e6' : t.foreground, // files and folders; #e6e6e6 would vanish on a light theme
     blue: t.blue, magenta: t.magenta, cyan: t.cyan, mono: fontStack(s.font), 'mono-size': `${s.size}px` }; // the last five: code previews
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(`--${k}`, v);
-  Blobs.setColor(t.accent, t.red);
   Games.setColors({ bg: t.background, ink: t.foreground, accent: t.accent, fontSize: s.size }); // its pixels follow the font
-  root.style.colorScheme = t.dark ? 'dark' : 'light'; // native bits (dropdowns, spinners) match the theme
+  root.style.colorScheme = root.dataset.mode = t.dark ? 'dark' : 'light'; // native bits match; CSS can say :root[data-mode=light]
+  codeFile?.setThemeType(codeTheme()); // the code preview: Pierre Light or Dark
   root.dataset.smooth = s.smoothing;
   root.dataset.translucent = s.translucent;
-  dt.appearance(s.mode); // the frosted sidebar follows too
+  dt.appearance(s.mode); // the frosted frame follows too
   dt.notchSetting(s.showNotch === 'on').then((n) => { $('notchRow').hidden = !n?.has; }); // its switch only on a Mac with a notch
   const run = ++applying;
-  await document.fonts.load(`${s.size}px "${s.font}"`).catch(() => {}); // else xterm measures the fallback font
+  await Promise.all([`500 ${s.size}px "${s.font}"`, `700 ${s.size}px "${s.font}"`, '450 13px "Inter Variable"']
+    .map((f) => document.fonts.load(f).catch(() => {}))); // else xterm measures the fallback font
   if (run !== applying) return; // a newer change (e.g. hovering the next swatch) already won
   for (const p of panes.values()) {
     if (isGame(p)) continue;
     Object.assign(p.term.options, xtermOpts(s));
     useGpu(p, s.smoothing === 'on');
-    if (p.el.offsetParent) { p.fit.fit(); dt.resize(p.id, p.term.cols, p.term.rows); } // hidden tabs refit when shown
+    refit(p);
   }
 }
 
@@ -1388,23 +1913,13 @@ const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
 const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
-const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setShots', 'shots'], ['setAlerts', 'alerts'], ['setSounds', 'sounds'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;
-    $('setLight').innerHTML = opts(THEMES.filter((t) => !t.dark).map((t) => t.name));
-    $('setDark').innerHTML = opts(THEMES.filter((t) => t.dark).map((t) => t.name));
     $('setFont').innerHTML = `<optgroup label="Included">${opts(BUNDLED)}</optgroup>
       <optgroup label="On your Mac">${opts(SYSTEM.filter(installed))}</optgroup>`;
   }
-  // Light or Dark: one "Theme" picker for that side. System: both, since macOS decides which shows.
-  const both = settings.mode === 'system';
-  $('lightRow').hidden = settings.mode === 'dark';
-  $('darkRow').hidden = settings.mode === 'light';
-  for (const [row, name] of [['lightRow', 'Light theme'], ['darkRow', 'Dark theme']])
-    $(row).querySelector('.theme-label').textContent = both ? name : 'Theme';
-  $('setLight').value = themeOf(settings.lightTheme, false).name;
-  $('setDark').value = themeOf(settings.darkTheme, true).name;
   $('setFont').value = settings.font;
   $('setSize').value = settings.size;
   for (const [id, key] of SWITCHES) $(id).checked = settings[key] === 'on';
@@ -1423,7 +1938,16 @@ function renderSettings() {
   ].join('\n') + `<div class="dots">${['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
     .flatMap((k) => [k, 'bright' + k[0].toUpperCase() + k.slice(1)]).map((k) => `<i style="background:${t[k]}"></i>`).join('')}</div>`;
 }
+// Settings has a tab per category (index.html .set-nav / .set-sec); it reopens on the last one you used.
+let settingsSec = 'appearance';
+function showSettingsSec(sec) {
+  settingsSec = sec;
+  for (const el of document.querySelectorAll('.set-nav .nav-item, .set-sec')) el.classList.toggle('on', el.dataset.sec === sec);
+  document.querySelector('.set-page').scrollTop = 0;
+}
+for (const b of document.querySelectorAll('.set-nav .nav-item')) b.onclick = () => showSettingsSec(b.dataset.sec);
 function openSettings() {
+  showSettingsSec(settingsSec);
   renderSettings();
   $('app').classList.add('in-settings');
   dt.analytics().then((on) => { $('setUsage').checked = on; });
@@ -1437,27 +1961,26 @@ function closeSettings() {
 
 const SIZE = [8, 32];
 const setSize = (n) => save({ size: clamp(Math.round(n) || settings.size, ...SIZE) });
-$('setLight').onchange = () => save({ lightTheme: $('setLight').value });
-$('setDark').onchange = () => save({ darkTheme: $('setDark').value });
 $('setFont').onchange = () => save({ font: $('setFont').value });
 $('setSize').oninput = () => { const n = +$('setSize').value; if (Number.isInteger(n) && n >= SIZE[0] && n <= SIZE[1]) save({ size: n }); }; // "1" on the way to "14" waits
 $('setSize').onchange = () => setSize(+$('setSize').value);
 $('sizeUp').onclick = () => setSize(settings.size + 1);
 $('sizeDown').onclick = () => setSize(settings.size - 1);
 for (const [id, key] of SWITCHES) $(id).onchange = () => save({ [key]: $(id).checked ? 'on' : 'off' });
+$('setSounds').addEventListener('change', () => { if ($('setSounds').checked) Sounds.play(Sounds.done); }); // hear what you turned on
 // Anonymous usage lives in the main process (analytics.mjs), not in settings: main is what sends it.
 $('setUsage').onchange = () => dt.analytics($('setUsage').checked);
 // So does reopening your tabs: main needs to know before any window exists.
 $('setRestore').onchange = () => { dt.sessionEnabled($('setRestore').checked); dt.track('setting_changed', { setting: 'restore', value: $('setRestore').checked ? 'on' : 'off' }); };
 $('usageOff').onclick = () => { dt.analytics(false); $('usageNote').hidden = true; };
 for (const [id, key] of SEGS) $(id).onclick = (e) => { const b = e.target.closest('button'); if (b) save({ [key]: b.dataset.v }); };
-$('openSettings').onclick = () => (inSettings() ? closeSettings() : openSettings());
-$('closeSettings').onclick = closeSettings;
 sysDark.addEventListener('change', () => {
   if (settings.mode !== 'system') return;
   applySettings(settings);
   if (inSettings()) renderSettings();
 });
+$('openSettings').onclick = () => (inSettings() ? closeSettings() : openSettings());
+$('closeSettings').onclick = closeSettings;
 window.addEventListener('storage', (e) => {
   if (e.key !== 'dt-settings') return;
   settings = load();
@@ -1466,7 +1989,7 @@ window.addEventListener('storage', (e) => {
 });
 
 // --- Keyboard: ⌘K, ⌘1–9, ⌘⌥ arrows, and hold ⌘ to reveal every shortcut ------------------
-// (⌘N/T/W/D and tab cycling live in the menu bar, see main.js.)
+// (⌘N workspace, ⌘T terminal, ⌘⇧N window, ⌘W/D and tab cycling live in the menu bar, see main.js.)
 let keysTimer;
 const hideKeys = () => { clearTimeout(keysTimer); document.body.classList.remove('show-keys'); };
 
@@ -1477,7 +2000,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   hideKeys();
-  if (e.metaKey && e.key === 'k') { e.preventDefault(); $('palOv').classList.contains('show') ? closePal() : openPal(); }
+  if (e.metaKey && e.code === 'KeyK' && e.shiftKey) { e.preventDefault(); $('palOv').classList.contains('show') ? closePal() : openPal(); }
+  else if (e.metaKey && e.code === 'KeyK') { e.preventDefault(); closePal(); focusSearch(); }
   if (e.metaKey && !e.altKey && /^[1-9]$/.test(e.key) && +e.key <= tabs.length) { e.preventDefault(); goTab(+e.key - 1); }
   if (e.metaKey && e.altKey && e.key.startsWith('Arrow') && active()) {
     e.preventDefault();
@@ -1502,7 +2026,7 @@ $('updOv').onclick = (e) => { if (e.target.id === 'updOv') closeUpdate(); };
 // Unless this window is reopening the way you left it: then it's straight back to work.
 applySettings(settings).then(async () => {
   const saved = await dt.sessionStart();
-  if (saved) return restore(saved);
-  await newTab();
-  firstRun ? runWelcome() : openStart();
+  home = await dt.home();
+  if (saved?.tabs?.length) return restore(saved);
+  firstRun ? runWelcome() : openPicker({ required: true }); // a window always works in a folder: pick one first
 });

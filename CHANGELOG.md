@@ -37,6 +37,26 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+**A new look for Fork.** Your work is organised into workspaces, one per project folder. Everything from before is still here, just easier to find.
+
+**New**
+- **Workspaces along the top.** Each workspace is a project folder with its own terminals. ⌘N opens another one (Home, a recent folder, a new folder, or a project from GitHub). ⌘T adds a terminal to the one you're in. The sidebar shows the workspace you're in: its folder, its files and search.
+- **See what your AI tool changed.** When Claude or another AI tool finishes while your app is running, Fork takes a picture of your app before and after. Open **Changes** (⌘P) to compare them side by side or with a slider, and see which files changed. You can turn this off in Settings → General.
+- **Design.** Your project's colours, spacing, type and corner radii, read from its CSS, Tailwind and code, in one place (⌘P → Design).
+- **A Files tree with colours.** Every file has a coloured icon, including logos for React, Tailwind, Next, Docker, Python and more. Files that changed are marked, like in your code editor.
+- **A better code preview.** Code is coloured more accurately, and you can pick lines to send to your AI tool.
+- **A soft chime** when something you were waiting on finishes. Turn it off in Settings → Notifications.
+
+**Better**
+- **Each workspace shows its state** with a small square: it ripples while something's working, and turns yellow or red when it needs you or something failed.
+- **Fork opens about twice as fast.** It no longer waits for your shell to finish loading before showing the window.
+- **Settings has four pages:** Appearance, General, Notifications and Privacy.
+- **Light, Dark or System** in Settings → Appearance.
+
+**Gone for now**
+- **The blob.** Workspaces show their state with the square instead.
+- **Colour themes for the terminal.** Fork uses one look for now; the themes will come back.
+
 ### 1.0.2 — 2026-10-04
 
 **New**

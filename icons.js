@@ -14,6 +14,8 @@ window.ICONS = {
   settings: '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   "volume-2": '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
   "volume-x": '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/>',
   "gamepad-2": '<path d="M6 11h4"/><path d="M8 9v4"/><path d="M15 12h.01"/><path d="M18 10h.01"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/>',
@@ -41,7 +43,10 @@ window.ICONS = {
   "file-archive": '<path d="M13.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v11.5"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 12v-1"/><path d="M8 18v-2"/><path d="M8 7V6"/><circle cx="8" cy="20" r="2"/>',
   "pen-tool": '<path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/><path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"/><path d="m2.3 2.3 7.286 7.286"/><circle cx="11" cy="11" r="2"/>',};
 
-window.icon = (name, cls = '') =>
+// With Central Icons on this Mac (window.CENTRAL, npm run icons) every name draws as its Central SVG,
+// a mask over the text colour like .ph; without them, Lucide as before.
+window.icon = (name, cls = '') => window.CENTRAL
+  ? `<i class="ph ic${cls ? ' ' + cls : ''}" style="--ph:url(icons/central/${name}.svg)" aria-hidden="true"></i>` :
   `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" ` +
   `stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -69,4 +74,19 @@ window.fileIcon = (() => {
     const dot = name.lastIndexOf('.');
     return (dot > 0 && BY_EXT[name.slice(dot + 1).toLowerCase()]) || { icon: 'file' };
   };
+})();
+
+// The redesign's file icons (Phosphor, icons/ph): FileMd and FileCode are the Figma file's, the rest the same set's
+// regular weight. Built on fileIcon's kinds, which the preview and analytics still use.
+window.phFile = (() => {
+  const BY_KIND = { 'file-image': 'file-image', 'file-video': 'file-video', 'file-audio': 'file-audio', 'pen-tool': 'pen-nib',
+    'file-code': 'file-code', 'file-braces': 'file-code', 'file-cog': 'file', 'file-text': 'file-text', 'book-open': 'book-open',
+    'file-type': 'text-aa', 'file-archive': 'file-zip', file: 'file' };
+  const BY_EXT = { md: 'file-md', mdx: 'file-md', markdown: 'file-md', pdf: 'file-pdf' };
+  const ph = (name) => {
+    const dot = name.lastIndexOf('.');
+    return (dot > 0 && BY_EXT[name.slice(dot + 1).toLowerCase()]) || BY_KIND[fileIcon(name).icon] || 'file';
+  };
+  ph.ALL = [...new Set([...Object.values(BY_KIND), ...Object.values(BY_EXT)])];
+  return ph;
 })();

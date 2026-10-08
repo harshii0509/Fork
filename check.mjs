@@ -2,10 +2,13 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { suggest } from './suggest.mjs';
+import { tokensFrom, tailwindTokens, tokenFiles, classify } from './design.mjs';
+import { changedFiles, isFrontend, shotStore } from './shots.mjs';
 
 const labels = (dir) => suggest(dir).map((s) => s.label);
 const fresh = () => mkdtempSync(join(tmpdir(), 'dt-'));
@@ -39,7 +42,7 @@ assert.ok(!labels('/').includes('Go up a folder'));
 // --- Split panes (panes.js is a browser script; run it with a window stub) ---
 const ctx = { window: {} };
 runInNewContext(readFileSync(new URL('./panes.js', import.meta.url), 'utf8'), ctx);
-const { split, remove, leaves, neighbor } = ctx.window.Panes;
+const { split, append, remove, leaves, neighbor } = ctx.window.Panes;
 
 let root = { id: 1 };
 root = split(root, 1, 2, 'row');      // [1 | 2]
@@ -55,24 +58,31 @@ const sized = { dir: 'row', ratio: 0.3, a: { id: 1 }, b: { id: 2 } };
 assert.equal(split(sized, 2, 3, 'col').ratio, 0.3);
 assert.equal(remove(split(sized, 2, 3, 'col'), 3).ratio, 0.3);
 
+// ⌘T adds a column on the right, every column an equal share; a stacked column counts as one.
+let cols = append({ id: 1 }, 2);
+assert.equal(cols.ratio, 1 / 2);
+cols = append(cols, 3);
+assert.equal(cols.ratio, 2 / 3);
+assert.deepEqual([...leaves(cols)], [1, 2, 3]);
+assert.equal(append({ dir: 'col', a: { id: 1 }, b: { id: 2 } }, 3).ratio, 1 / 2);
+assert.equal(append(append({ dir: 'col', a: { id: 1 }, b: { id: 2 } }, 3), 4).ratio, 2 / 3);
+
 const rects = { 1: { x: 0, y: 0, w: 50, h: 100 }, 2: { x: 50, y: 0, w: 50, h: 50 }, 3: { x: 50, y: 50, w: 50, h: 50 } };
 assert.equal(neighbor(rects, 1, 'ArrowRight'), '2'); // nearest center to the right
 assert.equal(neighbor(rects, 1, 'ArrowLeft'), null);
 assert.equal(neighbor(rects, 2, 'ArrowDown'), '3');
 assert.equal(neighbor(rects, 3, 'ArrowLeft'), '1');
 
-// --- Themes (generated data: catch a bad conversion) ---
+// --- The looks (themes.js): a full terminal palette each, dark and light ---
 runInNewContext(readFileSync(new URL('./themes.js', import.meta.url), 'utf8'), ctx);
 const { THEMES } = ctx.window;
 const COLORS = ['background', 'foreground', 'cursor', 'accent', 'onAccent', ...['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
   .flatMap((k) => [k, 'bright' + k[0].toUpperCase() + k.slice(1)])];
-assert.ok(THEMES.length >= 20);
-assert.equal(THEMES[0].name, 'Designer'); // the default
-assert.equal(new Set(THEMES.map((t) => t.name)).size, THEMES.length);
-assert.ok(THEMES.filter((t) => !t.dark).length >= 6);
-for (const t of THEMES) {
-  for (const k of COLORS) assert.match(t[k], /^#[0-9a-f]{6}$/, `${t.name}.${k}`);
-  assert.match(t.selectionBackground, /^#[0-9a-f]{6}([0-9a-f]{2})?$/, t.name);
+assert.equal(THEMES.dark.dark, true);
+assert.equal(THEMES.light.dark, false);
+for (const [name, look] of Object.entries(THEMES)) {
+  for (const k of COLORS) assert.match(look[k], /^#[0-9a-f]{6}$/, `${name}.${k}`);
+  assert.match(look.selectionBackground, /^#[0-9a-f]{6}([0-9a-f]{2})?$/, name);
 }
 
 // --- Preview helpers (preview.js, browser script) ---
@@ -182,6 +192,24 @@ for (const [name, icon] of Object.entries(kinds)) {
   assert.deepEqual({ ...ic.fileIcon(name) }, { icon }, name);
   assert.ok(ic.ICONS[icon], icon);
 }
+// The redesign's Phosphor icons: every one named in the page, the renderer or phFile has its SVG in icons/ph.
+const phs = [
+  ...[...src('./index.html').matchAll(/data-ph="([\w-]+)"/g)].map((m) => m[1]),
+  ...[...src('./renderer.js').matchAll(/ph\('([\w-]+)'/g)].map((m) => m[1]),
+  ...ic.phFile.ALL,
+];
+assert.ok(phs.length > 20);
+for (const name of phs) assert.ok(existsSync(new URL(`./icons/ph/${name}.svg`, import.meta.url)), `icons/ph/${name}.svg is missing`);
+for (const [name, ph] of Object.entries({ 'README.md': 'file-md', 'package.json': 'file-code', 'App.tsx': 'file-code', 'hero.png': 'file-image',
+  'spec.PDF': 'file-pdf', '.env': 'file', 'Makefile': 'file', 'site.zip': 'file-zip', 'md': 'file' })) assert.equal(ic.phFile(name), ph, name);
+// Central Icons (paid, scripts/icons.mjs): every icon name has a Central match, within the licence's 300 per style,
+// and none of the drawn SVGs is ever committed (the repo is public).
+const central = JSON.parse(src('./icons/central.json'));
+for (const name of new Set([...used, ...phs, ...Object.keys(ic.ICONS)])) assert.ok(central.icons[name], `icon "${name}" has no Central match in icons/central.json`);
+assert.ok(Object.keys(central.icons).length <= 300);
+assert.equal(execFileSync('git', ['ls-files', 'icons/central'], { encoding: 'utf8' }), '', 'Central Icons SVGs must never be committed');
+if (existsSync(new URL('./icons/central/ready.js', import.meta.url)))
+  for (const name of Object.keys(central.icons)) assert.ok(existsSync(new URL(`./icons/central/${name}.svg`, import.meta.url)), `icons/central/${name}.svg: run npm run icons`);
 
 // --- Files: tree listing and what the preview shows (files.mjs) ---
 const { list, readPreview, readBook } = await import('./files.mjs');
@@ -205,13 +233,12 @@ assert.equal(md.kind, 'markdown');
 assert.match(md.html, /<h1>Hello<\/h1>/);
 const ts = await readPreview(join(proj, 'app.ts'));
 assert.equal(ts.kind, 'code');
-assert.match(ts.html, /^<span class="line"><span style="color:var\(--code-token-keyword\)">const<\/span>/);
+assert.equal(ts.text, 'const x: number = 1;\n'); // the window colours it (@pierre/diffs)
 assert.equal(ts.lines, 1);
-// The line that made highlight.js colour the rest of a file as one long string.
-const tricky = join(proj, 'esc.js');
-writeFileSync(tricky, `const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '<': '&lt;', '"': '&quot;' }[c]));\nconst next = 1;\n`);
-assert.match((await readPreview(tricky)).html.split('\n')[1], /--code-token-keyword\)">const</);
-assert.equal((await readPreview(join(proj, 'notes'))).html, 'plain &lt;b&gt;text&lt;/b&gt;\n'); // unknown type: escaped, not rendered
+assert.equal(ts.lang, undefined); // known from the name
+writeFileSync(join(proj, 'Dockerfile'), 'FROM node\n');
+assert.equal((await readPreview(join(proj, 'Dockerfile'))).lang, 'dockerfile');
+assert.equal((await readPreview(join(proj, 'notes'))).text, 'plain <b>text</b>\n'); // the window escapes it
 assert.equal((await readPreview(join(proj, 'data.bin'))).kind, 'other');
 assert.equal((await readPreview(join(proj, 'huge.json'))).why, 'big');
 assert.equal((await readPreview(join(proj, 'gone.txt'))).kind, 'missing');
@@ -221,6 +248,45 @@ assert.equal(Buffer.from(readBook(join(proj, 'Book.PDF')).bytes).toString(), '%P
 assert.equal(readBook(join(proj, 'app.ts')).error, 'kind'); // never any other file
 assert.equal(readBook(join(proj, 'gone.epub')).error, 'missing');
 assert.equal(readBook(undefined).error, 'kind');
+// The sidebar's search: names first, then lines inside files; installed packages are never searched.
+{
+  const { searchFiles } = await import('./files.mjs');
+  const plain = fresh();
+  mkdirSync(join(plain, 'src')); mkdirSync(join(plain, 'node_modules', 'pkg'), { recursive: true });
+  writeFileSync(join(plain, 'src', 'checkout.js'), 'const total = 1;\nexport function Pay() {}\n');
+  writeFileSync(join(plain, 'pay-notes.md'), 'nothing here\n');
+  writeFileSync(join(plain, 'node_modules', 'pkg', 'pay.js'), 'pay pay pay\n');
+  writeFileSync(join(plain, 'blob.bin'), Buffer.from([0x70, 0x61, 0x79, 0]));
+  const r = await searchFiles(plain, 'PAY');
+  assert.deepEqual(r.names, ['pay-notes.md']); // case doesn't matter; node_modules is skipped
+  assert.deepEqual(r.hits, [{ path: 'src/checkout.js', line: 2, text: 'export function Pay() {}' }]); // binary skipped
+  assert.equal(r.git, false);
+  const repo = fresh();
+  execFileSync('git', ['init', '-q', repo]);
+  mkdirSync(join(repo, 'src')); mkdirSync(join(repo, 'build'));
+  writeFileSync(join(repo, '.gitignore'), 'build\n');
+  writeFileSync(join(repo, 'src', 'pay.ts'), 'a\nb\npay me\n');
+  writeFileSync(join(repo, 'build', 'pay.js'), 'pay\n');
+  const g = await searchFiles(repo, 'pay');
+  assert.equal(g.git, true);
+  assert.deepEqual(g.names, ['src/pay.ts']); // .gitignore'd build/ left out
+  assert.deepEqual(g.hits, [{ path: 'src/pay.ts', line: 3, text: 'pay me' }]);
+  assert.deepEqual(await searchFiles(repo, '  '), { names: [], hits: [] });
+  const ac = new AbortController(); ac.abort();
+  assert.equal(await searchFiles(repo, 'pay', { signal: ac.signal }), null); // overtaken by a newer search
+}
+// The workspace picker's New folder: made right inside the parent; one that's there just opens.
+{
+  const { makeFolder } = await import('./files.mjs');
+  const parent = fresh();
+  assert.deepEqual(makeFolder(parent, '  my-site '), { path: join(parent, 'my-site') });
+  assert.ok(existsSync(join(parent, 'my-site')));
+  assert.deepEqual(makeFolder(parent, 'my-site'), { path: join(parent, 'my-site') }); // already there: open it
+  for (const bad of ['', '  ', '.', '..', 'a/b', '../up']) assert.deepEqual(makeFolder(parent, bad), { error: 'name' }, bad);
+  writeFileSync(join(parent, 'notes'), 'x');
+  assert.deepEqual(makeFolder(parent, 'notes'), { error: 'exists-file' });
+  assert.deepEqual(makeFolder(join(parent, 'missing', 'deeper'), 'x'), { error: 'failed' });
+}
 
 // --- Shell integration (shell/.zshrc): a command's first word, even when it's the only word ---
 {
@@ -251,15 +317,18 @@ assert.equal(shelf.filter((b) => b.path === '/b/10.pdf').length, 1); // reopenin
 assert.equal(remember('broken', { path: '/x.pdf' }).map((b) => b.path).join(), '/x.pdf'); // damaged storage
 assert.deepEqual([percent(0.123), percent(undefined), percent(2)], ['12%', '0%', '100%']);
 
-// --- The Bloub mascot bundle (vendor/bloub/bloub.js): loads standalone and draws the thinking pose ---
-const bctx = { performance, setTimeout, clearTimeout };
-runInNewContext(readFileSync(new URL('./vendor/bloub/bloub.js', import.meta.url), 'utf8'), bctx);
-const bloub = new bctx.Bloub.BloubController({ state: 'thinking', color: '#7c6cff' });
-const pose = bloub.sample(1);
-assert.ok(pose.bodyPath.length > 20 && !/NaN|Infinity/.test(pose.bodyPath));
-assert.ok(pose.dots.length >= 2 && pose.dots.every((d) => Number.isFinite(d.x + d.r)));
-bloub.dispose();
-assert.equal(typeof bctx.Bloub.createPixelView, 'function'); // blob.js draws them as pixel art
+// --- Sounds (sounds.js, browser script): few, soft and short ---
+{
+  const sc = { window: {} };
+  runInNewContext(readFileSync(new URL('./sounds.js', import.meta.url), 'utf8'), sc);
+  const { done, length } = sc.window.Sounds;
+  assert.ok(done.layers.reduce((n, l) => n + l.gain, 0) <= 0.6);                     // gain budget
+  for (const l of done.layers) {
+    const f = l.source.frequency, fs = typeof f === 'number' ? [f] : [f.start, f.end];
+    assert.ok(fs.every((x) => x >= 20 && x <= 20000) && l.envelope.decay > 0 && l.envelope.attack > 0); // audible; never clicks
+  }
+  assert.ok(length(done) <= 3);
+}
 
 // --- Games (games.js, browser script): the rules of Snake, Stack and Space Run ---
 const gm = { window: {} };
@@ -324,8 +393,8 @@ runInNewContext(readFileSync(new URL('./onboarding.js', import.meta.url), 'utf8'
 const { CARDS, STEPS } = ob.window.Onboarding;
 const page = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 assert.equal(CARDS.length, 3);
-for (const c of CARDS) assert.ok(c.title && c.text && c.expression, c.title);
-assert.equal(STEPS.length, 6);
+for (const c of CARDS) assert.ok(c.title && c.text, c.title);
+assert.equal(STEPS.length, 5);
 for (const s of STEPS) {
   assert.ok(s.title && s.text && ['inside', 'right', 'below'].includes(s.place), s.title);
   for (const sel of s.targets) {
@@ -334,7 +403,7 @@ for (const s of STEPS) {
     assert.ok(page.includes(tag ? `<${tag} ${attr}` : attr), `tour target ${sel} is not in index.html`);
   }
 }
-for (const id of ['welcomeOv', 'welcomeBlob', 'welcomeTitle', 'welcomeText', 'welcomeDots', 'welcomeNext', 'welcomeSkip', 'replayTour'])
+for (const id of ['welcomeOv', 'welcomeTitle', 'welcomeText', 'welcomeDots', 'welcomeNext', 'welcomeSkip', 'replayTour'])
   assert.ok(page.includes(`id="${id}"`), id);
 
 // --- Anonymous usage (analytics.mjs): only allow-listed tools and plain values; nothing when off ---
@@ -406,12 +475,48 @@ assert.equal(countPanes(t2), 2);
 assert.equal(w.tabs[1].active, 1);                                 // active pane clamped to what exists
 for (const bad of [null, 'x', { v: 99, windows: good.windows }, { v: 1, windows: 'no' }, { v: 1, windows: [{ tabs: [{ root: {} }] }] }])
   assert.equal(clean(bad, ctx).windows.length, 0);
+// Each workspace's folder comes back (it's the workspace: its name, Files, Changes, Design), even when its
+// terminal had cd'd somewhere else. A folder that's gone, or a session from before workspaces had one, has none.
+const dirs = clean({ v: 1, windows: [{ tabs: [
+  { dir: here, root: { cwd: '/gone/away' } }, { dir: '/gone/away', root: { cwd: here } }, { root: { cwd: here } }, { dir: 7, root: { cwd: here } }] }] }, ctx).windows[0].tabs;
+assert.deepEqual(dirs.map((t) => t.dir), [here, undefined, undefined, undefined]);
+assert.equal(dirs[0].root.cwd, '/Users/me');                       // the terminal's own missing folder still -> home
 assert.equal(clean({ v: 1, enabled: false, windows: [] }, ctx).enabled, false);
 assert.equal(clean(null, ctx).enabled, true);                      // no file yet: on by default
 const long = 'line\n'.repeat(MAX_SCREEN / 4);
 const trimmed = clean({ v: 1, windows: [{ tabs: [{ root: { cwd: here, screen: long } }] }] }, ctx).windows[0].tabs[0].root.screen;
 assert.ok(trimmed.length <= MAX_SCREEN && trimmed.startsWith('line\n'));   // keeps the end, cut at a line
 assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 50 }, tabs: [{ root: { cwd: here } }] }] }, ctx).windows[0].bounds, undefined);
+// Terminal names and each workspace's colour come back; anything odd is dropped, never an error.
+const named = clean({ v: 1, windows: [{ tabs: [
+  { color: 2, root: { dir: 'row', a: { cwd: here, name: '  Dev server  ' }, b: { cwd: here, name: 'x'.repeat(99) } } },
+  { color: 7, root: { cwd: here, name: 42 } }, { color: '1', root: { cwd: here, name: '   ' } }] }] }, ctx).windows[0];
+assert.equal(named.tabs[0].color, 2);
+assert.equal(named.tabs[0].root.a.name, 'Dev server');              // trimmed
+assert.equal(named.tabs[0].root.b.name.length, 60);                 // capped
+assert.ok(!('color' in named.tabs[1]) && !('name' in named.tabs[1].root)); // out of range, not text
+assert.ok(!('color' in named.tabs[2]) && !('name' in named.tabs[2].root)); // not a number, blank
+
+// --- Workspace details (git.mjs): branch, files changed, lines added and removed ---
+{
+  const { gitInfo } = await import('./git.mjs');
+  assert.deepEqual(gitInfo('## feat/checkout-v2...origin/feat/checkout-v2 [ahead 1]\n M a.ts\n?? b.ts\n', ' 1 file changed, 8 insertions(+), 1 deletion(-)\n'),
+    { branch: 'feat/checkout-v2', files: 2, add: 8, del: 1 });
+  assert.deepEqual(gitInfo('## main\n', ''), { branch: 'main', files: 0, add: 0, del: 0 });        // clean
+  assert.deepEqual(gitInfo('## No commits yet on main\n?? x\n', null), { branch: 'main', files: 1, add: 0, del: 0 }); // new repo: no HEAD to diff
+  assert.equal(gitInfo('## HEAD (no branch)\n', '').branch, 'no branch');
+  assert.deepEqual(gitInfo('## main\n M a\n', ' 1 file changed, 3 deletions(-)\n'), { branch: 'main', files: 1, add: 0, del: 3 });
+
+  // The Files tree's badges: relative to the tree's folder, renames skip their old name, hidden names left out.
+  const { gitFiles } = await import('./git.mjs');
+  const st = [' M web/a.ts', '?? web/new/b.ts', 'A  web/c.ts', ' D web/d.ts', 'R  web/e.ts', 'web/old-e.ts', 'MM web/f.ts',
+    ' M api/x.ts', '?? web/.env', ''].join('\0');
+  assert.deepEqual(gitFiles(st, 'web/'), [
+    { path: 'a.ts', status: 'modified' }, { path: 'new/b.ts', status: 'untracked' }, { path: 'c.ts', status: 'added' },
+    { path: 'd.ts', status: 'deleted' }, { path: 'e.ts', status: 'renamed' }, { path: 'f.ts', status: 'modified' }]);
+  assert.equal(gitFiles(st).length, 7); // at the repo's top: everything but .env
+  assert.deepEqual(gitFiles(''), []);
+}
 
 }
 
@@ -516,6 +621,102 @@ assert.equal(clean({ v: 1, windows: [{ bounds: { x: 0, y: 0, width: 50, height: 
   assert.ok(sent.size > 20, 'found the events Fork sends');
   for (const e of sent) assert.ok(charted.has(e) || e in NOT_CHARTED,
     `Fork sends "${e}" but no dashboard chart shows it. Add it to scripts/dashboard-charts.mjs (or NOT_CHARTED with a reason).`);
+}
+
+// --- Design view (design.mjs): a project's tokens, read from its files without running them ---
+{
+  const css = `:root { --blue: #3b82f6; --primary: var(--blue); --bg: 0 0% 100%; --radius-lg: 12px; --space-4: 16px;
+    --font-sans: "Inter", sans-serif; --text-xl: 1.25rem; --text-xl--line-height: 1.75rem; --shadow-md: 0 4px 6px rgb(0 0 0 / .1);
+    --ease-out: cubic-bezier(0, 0, .2, 1); --fast: 150ms; --pic: url("x.png"); }
+  .dark { --blue: #60a5fa; --bg: 222 84% 5%; }
+  @media (prefers-color-scheme: dark) { :root:not(.light) { --radius-lg: 16px; } }
+  .button { --pad: 4px; }                                 /* a component's own: not a token */
+  @media (min-width: 640px) { :root { --space-4: 24px; } } /* a breakpoint's: not the token's value */
+  @theme { --color-brand: oklch(.6 .2 250); }`;
+  const { tokens, themes } = tokensFrom([{ path: 'app.css', text: css }]);
+  const by = Object.fromEntries(tokens.map((t) => [t.name, t]));
+  assert.deepEqual(themes, ['base', 'dark']);
+  assert.deepEqual(by['--blue'].v, { base: '#3b82f6', dark: '#60a5fa' });
+  assert.deepEqual(by['--primary'].v, { base: '#3b82f6', dark: '#60a5fa' }); // follows what it points at, per theme
+  assert.equal(by['--primary'].alias, '--blue');
+  assert.equal(by['--primary'].use, 'var(--primary)');
+  assert.deepEqual(by['--bg'].v, { base: 'hsl(0 0% 100%)', dark: 'hsl(222 84% 5%)' }); // shadcn's bare channels
+  assert.deepEqual(by['--radius-lg'].v, { base: '12px', dark: '16px' });
+  assert.equal(by['--space-4'].v.base, '16px');
+  assert.equal(by['--text-xl'].lh, '1.75rem'); // Tailwind's line-height pair joins its size
+  assert.ok(!by['--text-xl--line-height'] && !by['--pad']);
+  assert.equal(by['--pic'].kind, 'other'); // listed as text, never drawn (design.js only paints colours, sizes…)
+  assert.deepEqual(['--radius-lg', '--space-4', '--font-sans', '--text-xl', '--shadow-md', '--ease-out', '--fast', '--color-brand'].map((n) => by[n].kind),
+    ['radius', 'spacing', 'font', 'size', 'shadow', 'easing', 'duration', 'color']);
+  assert.equal(by['--blue'].line, 1);
+  // Sass, design-token JSON with references, and a dark-only token.
+  const more = tokensFrom([
+    { path: 'a.scss', text: '$brand: #e5484d; // main\n$brand-hover: $brand;\n.x { $local: 1px; }' },
+    { path: 'tokens.json', text: JSON.stringify({ color: { $type: 'color', ink: { $value: '#111' }, text: { $value: '{color.ink}' } } }) },
+    { path: 'b.css', text: '.dark { --glow: #fff; }' },
+  ]).tokens;
+  const m = Object.fromEntries(more.map((t) => [t.name, t]));
+  assert.equal(m.$brand.v.base, '#e5484d');
+  assert.equal(m['$brand-hover'].v.base, '#e5484d');
+  assert.ok(!m.$local);
+  assert.equal(m['color.text'].v.base, '#111');
+  assert.equal(m['color.text'].kind, 'color');
+  assert.deepEqual(m['--glow'].v, { dark: '#fff' });
+  // A Tailwind v3 config: plain values only; functions, spreads and variables are left out, never run.
+  const tw = tailwindTokens(`const x = require('x'); module.exports = { theme: { extend: {
+    colors: { brand: { DEFAULT: '#123456', 500: '#abcdef', soft: x.soft }, ...more },
+    fontSize: { xl: ['1.25rem', { lineHeight: '1.75rem' }] }, borderRadius: { DEFAULT: '4px', lg: '8px' }, boxShadow: (t) => ({}) } } }`);
+  assert.deepEqual(tw.map((t) => [t.name, t.value]), [['brand-500', '#abcdef'], ['brand', '#123456'], ['text-xl', '1.25rem'], ['rounded', '4px'], ['rounded-lg', '8px']]);
+  assert.equal(tw.find((t) => t.name === 'text-xl').lh, '1.75rem');
+  assert.deepEqual(tailwindTokens('module.exports = { theme: { extend: { colors: ) } } }'), []); // broken: nothing, and no hang
+  assert.deepEqual(tokenFiles(['src/app.css', 'node_modules/x/a.css', 'dist/a.css', 'tailwind.config.js', 'tokens.json', 'theme.d.ts', 'src/App.tsx', 'index.html']),
+    ['src/app.css', 'tailwind.config.js', 'tokens.json', 'index.html']);
+  assert.equal(classify('--text-muted', '#666'), 'color'); // a colour named text is still a colour
+  assert.equal(classify('--z-modal', '50'), 'other');
+}
+
+// --- Before and after (shots.mjs): which files a turn touched, and keeping the pictures ---
+{
+  assert.deepEqual(changedFiles({ 'a.css': 'M:1:1', 'b.ts': 'M:1:1' }, { 'a.css': 'M:2:1', 'b.ts': 'M:1:1', 'c.tsx': '??:3:3' }), ['a.css', 'c.tsx']);
+  assert.deepEqual(changedFiles({ 'a.css': 'M:1:1' }, {}), ['a.css']); // put back the way it was
+  assert.equal(changedFiles(null, {}), null); // outside git: can't tell
+  assert.ok(isFrontend('src/app.css') && isFrontend('components/Card.tsx') && isFrontend('public/logo.svg'));
+  assert.ok(!isFrontend('README.md') && !isFrontend('package.json') && !isFrontend('vite.config.ts') && !isFrontend('src/a.test.tsx'));
+  const store = shotStore(fresh()), dir = '/some/project';
+  const turn = (i, pinned = false) => ({ id: `t${i}`, at: i, before: store.write(dir, Buffer.from('b'), 'shot'), after: store.write(dir, Buffer.from('a'), 'shot'), pinned });
+  const first = turn(0, true);
+  store.add(dir, first);
+  for (let i = 1; i <= 21; i++) store.add(dir, turn(i));
+  const kept = store.list(dir);
+  assert.equal(kept.length, 21); // 20 newest, plus the pinned one
+  assert.equal(kept[0].id, 't21');
+  assert.ok(kept.some((t) => t.id === 't0') && !kept.some((t) => t.id === 't1'));
+  assert.ok(existsSync(first.before) && !existsSync(join(dirname(first.before), 'gone.png')));
+  store.remove(dir, 't0');
+  assert.ok(!existsSync(first.before) && !existsSync(first.after)); // its pictures go with it
+}
+
+// --- The docs keep up (docs/TECHNICAL.md, docs/IA.md): every script, library, dt call, panel tab and settings page is in them ---
+{
+  const tech = readFileSync('docs/TECHNICAL.md', 'utf8'), ia = readFileSync('docs/IA.md', 'utf8');
+  const missing = (what, names, doc, form) => {
+    const gone = names.filter((n) => !doc.includes(form(n)));
+    assert.deepEqual(gone, [], `${what} missing from the docs: ${gone.join(', ')}. Add ${gone.length > 1 ? 'them' : 'it'} (see CLAUDE.md).`);
+  };
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  missing('Libraries', [...Object.keys(pkg.dependencies), ...Object.keys(pkg.devDependencies)], tech, (n) => `\`${n}\``);
+  const { readdirSync } = await import('node:fs');
+  missing('Files', readdirSync('.').filter((f) => /\.(m|c)?js$/.test(f)), tech, (n) => `\`${n}\``);
+  const dtCalls = [...readFileSync('preload.cjs', 'utf8').matchAll(/^ {2}(\w+): \(/gm)].map((m) => m[1]);
+  assert.ok(dtCalls.length > 40, 'found the dt calls');
+  missing('dt calls', dtCalls, tech, (n) => `\`${n}\``);
+  const html = readFileSync('index.html', 'utf8');
+  const tabs = [...html.match(/<span class="seg" id="pvSeg">(.*?)<\/span>/)[1].matchAll(/>([^<]+)<\/button>/g)].map((m) => m[1]);
+  assert.ok(tabs.includes('File') && tabs.includes('Changes'), 'found the panel tabs');
+  missing('Panel tabs', tabs, ia, (n) => `**${n}**`);
+  const pages = [...html.matchAll(/class="nav-item[^"]*" data-sec="\w+">(?:<i [^>]*><\/i>)?([^<]+)</g)].map((m) => m[1]);
+  assert.ok(pages.length >= 4, 'found the settings pages');
+  missing('Settings pages', pages, ia, (n) => `**${n}**`);
 }
 
 console.log('check ok');

@@ -3,12 +3,12 @@
 // resolve when the person finishes or skips. renderer.js decides when each runs.
 window.Onboarding = (() => {
   const CARDS = [
-    { expression: 'happy', title: 'A terminal is a chat with your computer',
+    { title: 'A terminal is a chat with your computer',
       text: 'You type what you want and it does it. Fork shows you the words, so you never have to remember them.' },
-    { expression: 'curious', title: 'Fork does the typing for you',
+    { title: 'Fork does the typing for you',
       text: 'Click a folder, a file or a suggestion, and Fork puts the real command in the terminal. Anything that can’t be undone asks first.' },
-    { expression: 'excited', title: 'Stuck? Just ask',
-      text: 'Press ⌘K and say what you want in plain words. If something goes wrong, Fork explains it and suggests a fix.' },
+    { title: 'Stuck? Just ask',
+      text: 'Press ⌘⇧K and say what you want in plain words. If something goes wrong, Fork explains it and suggests a fix.' },
   ];
 
   // Each step lights up everything its targets cover. A step with nothing on screen (no suggestions
@@ -16,16 +16,14 @@ window.Onboarding = (() => {
   const STEPS = [
     { targets: ['#term'], place: 'inside', title: 'This is the terminal',
       text: 'Commands show up here, and so does whatever they print. You can type here too, then press Enter.' },
-    { targets: ['#chips'], place: 'right', title: 'Next steps for this folder',
-      text: 'Fork suggests what you’d likely do next. Click one and it types the real command for you, so you learn it as you go.' },
-    { targets: ['h3.folder', '#entries'], place: 'right', title: 'What’s in this folder',
-      text: 'Click a folder to go into it. Click a file to preview it.' },
-    { targets: ['#openPal'], place: 'right', title: 'Search for anything (⌘K)',
-      text: 'Say what you want in plain words, like “go back a folder”. Fork finds the command, or asks Claude.' },
+    { targets: ['.side-files'], place: 'right', title: 'What’s in this folder',
+      text: 'The files in the folder you’re in. Open folders in place, click a file to preview it, or drag one into the terminal to use its path. Right-click for more.' },
+    { targets: ['#searchBox'], place: 'right', title: 'Search this folder (⌘K)',
+      text: 'Type a word to find files by name, and the lines inside files that have it. Click one to see it. Want to do something instead? ⌘⇧K, in plain words.' },
     { targets: ['#pvToggle'], place: 'below', title: 'Preview (⌘P)',
       text: 'See a file, or your app while it’s running, right beside the terminal.' },
-    { targets: ['.sec', '#tabs'], place: 'right', title: 'Your terminals',
-      text: 'Each one is its own terminal. + opens another, and the split buttons at the top put two side by side.' },
+    { targets: ['#tabs', '#newTab'], place: 'below', title: 'Your workspaces',
+      text: 'Each tab is a folder you work in: its files, branch and what’s changed show in the sidebar, wherever its terminals go. + or ⌘N opens another folder, and ⌘T adds a terminal next to the ones you have.' },
   ];
 
   const $ = (id) => document.getElementById(id);
@@ -37,10 +35,8 @@ window.Onboarding = (() => {
   };
 
   // --- Welcome cards (#welcomeOv in index.html) -------------------------------------------------
-  let blob = null; // made once, reused when the tour is replayed
   function welcome() {
     return new Promise((resolve) => {
-      blob ??= Blobs.mount($('welcomeBlob'), { size: 72, state: 'idle', expression: CARDS[0].expression });
       let i = 0;
       const show = () => {
         const c = CARDS[i];
@@ -48,11 +44,9 @@ window.Onboarding = (() => {
         $('welcomeText').textContent = c.text;
         $('welcomeDots').innerHTML = CARDS.map((_, j) => `<i class="${j === i ? 'on' : ''}"></i>`).join('');
         $('welcomeNext').textContent = i === CARDS.length - 1 ? 'Get started' : 'Next';
-        blob.ctrl.setExpression(c.expression);
       };
       const end = (done) => {
         unkey();
-        blob.stop();
         $('welcomeOv').classList.remove('show');
         $('welcomeNext').onclick = $('welcomeSkip').onclick = null;
         resolve({ done, card: i + 1 });
@@ -63,7 +57,6 @@ window.Onboarding = (() => {
       $('welcomeNext').onclick = next;
       $('welcomeSkip').onclick = () => end(false);
       show();
-      blob.start();
       $('welcomeOv').classList.add('show');
     });
   }

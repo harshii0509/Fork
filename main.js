@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, dialog, nativeTheme, Menu, Notification, screen, shell, webContents } from 'electron';
-import { execFile, execFileSync, spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { chmodSync, existsSync, opendirSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -11,9 +11,12 @@ import { marked } from 'marked';
 import { suggest, PALETTE, shape, pm, scripts } from './suggest.mjs';
 import { diagnose, explainEntry, looksLikeCommand, ERRORS } from './errors.mjs';
 import { judge, commandQuestion, errorQuestion } from './jev.mjs';
-import { list, readPreview, readBook, findEditor } from './files.mjs';
+import { list, readPreview, readBook, findEditor, searchFiles, makeFolder } from './files.mjs';
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
+import { gitFiles, gitInfo } from './git.mjs';
+import { scanDesign } from './design.mjs';
+import { shotStore, hashOf, changedFiles, isFrontend } from './shots.mjs';
 import * as ai from './claude.mjs';
 import { clean, VERSION as SESSION_VERSION } from './session.mjs';
 
@@ -30,12 +33,22 @@ for (const k of Object.keys(process.env)) if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_
 
 // Opened from Finder or the Dock, the app gets a bare PATH; borrow the login shell's so `claude` resolves.
 // Interactive (-i) too, since ~/.zshrc is often where tools add themselves; markers skip anything it prints.
-try {
-  const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "<<PATH>>%s<<PATH>>" "$PATH"'],
-    { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
-  const path = out.split('<<PATH>>')[1];
-  if (path) process.env.PATH = path;
-} catch {} // keep the default PATH
+// In the background, so the window opens at once (a shell's setup can take a second or more). Terminals
+// don't need it (each is a login shell that builds its own PATH); the few things Fork runs itself
+// (Ask AI's claude, "is brew installed?") wait for pathReady. On any failure: keep the default PATH.
+const pathReady = new Promise((done) => {
+  let out = '';
+  const sh = spawn(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "<<PATH>>%s<<PATH>>" "$PATH"'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const timer = setTimeout(() => sh.kill(), 5000);
+  sh.stdout.on('data', (d) => { out += d; });
+  sh.on('error', () => { clearTimeout(timer); done(); });
+  sh.on('close', () => {
+    clearTimeout(timer);
+    const path = out.split('<<PATH>>')[1];
+    if (path) process.env.PATH = path;
+    done();
+  });
+});
 
 // Every terminal pane is one pty, owned by the window that asked for it.
 const ptys = new Map(); // id -> { pty, wc }
@@ -60,7 +73,7 @@ function createWindow(restore) {
   const win = new BrowserWindow({
     width: 1200, height: 760, ...(restore?.bounds && onScreen(restore.bounds) ? restore.bounds : {}),
     minWidth: 760, minHeight: 480,
-    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 15 }, // centred in the 44px top row
+    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 11 }, // centred in the 36px top strip (index.html --strip)
     backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'active',
     webPreferences: { preload: join(HERE, 'preload.cjs'), webviewTag: true }, // <webview> = the preview panel's app view
   });
@@ -83,16 +96,30 @@ function createWindow(restore) {
     collect([wc]).then(() => win.close());
   });
   win.on('closed', () => {
-    for (const [id, t] of ptys) if (t.wc === wc) { t.pty.kill(); ptys.delete(id); }
+    killPtys(wc);
     // One of several windows closed: that one's done. The last one is kept (see 'close' above), even
     // when it closes some other way, since closing the last window quits Fork.
     const others = forkWindows().some((w) => w !== win && !w.isDestroyed());
     if (!quitting && others) { sessions.delete(wcId); saveSoon(); }
     notchTabs.delete(wcId); sendNotchState();
-    if (!others) notchWin?.destroy(); // the notch alone mustn't keep Fork open
+    if (!others) { notchWin?.destroy(); shooter?.destroy(); } // the notch, or the picture taker, alone mustn't keep Fork open
   });
   win.loadFile(join(HERE, 'index.html'));
   return win;
+}
+
+const killPtys = (wc) => { for (const [id, t] of ptys) if (t.wc === wc) { t.pty.kill(); ptys.delete(id); } };
+// Reload Fork (⌘⇧R): save the window's tabs, splits and screens, end its shells, reload, and hand the page
+// that state back, like quitting and reopening. Claude resumes; anything still running stops. Restores even
+// with "Reopen your tabs" off: that's about launching Fork, not this.
+async function reloadWindow(win) {
+  if (!win || win.isDestroyed() || win === notchWin) return;
+  const wc = win.webContents;
+  await collect([wc]);
+  killPtys(wc);
+  const saved = sessions.get(wc.id);
+  if (saved) startWith.set(wc.id, saved);
+  wc.reload();
 }
 
 // Shortcuts live in the real menu bar, so every one is discoverable by browsing menus.
@@ -112,8 +139,9 @@ function buildMenu() {
       { role: 'quit', label: 'Quit Fork' },
     ] },
     { label: 'File', submenu: [
-      { id: 'new-window', label: 'New Window', accelerator: 'Cmd+N', click: () => createWindow() },
-      { label: 'New Tab', accelerator: 'Cmd+T', click: toRenderer('new-tab') },
+      { label: 'New Workspace…', accelerator: 'Cmd+N', click: toRenderer('new-workspace') },
+      { label: 'New Terminal', accelerator: 'Cmd+T', click: toRenderer('new-terminal') },
+      { id: 'new-window', label: 'New Window', accelerator: 'Cmd+Shift+N', click: () => createWindow() },
       { type: 'separator' },
       { label: 'Close', accelerator: 'Cmd+W', click: toRenderer('close') },
     ] },
@@ -142,7 +170,8 @@ function buildMenu() {
       { label: 'Toggle Sidebar', accelerator: 'Cmd+B', click: toRenderer('toggle-sidebar') },
       { label: 'Toggle Preview', accelerator: 'Cmd+P', click: toRenderer('toggle-preview') },
       { type: 'separator' },
-      { role: 'reload' }, { role: 'toggleDevTools' },
+      { id: 'reload-fork', label: 'Reload Fork', accelerator: 'Cmd+Shift+R', click: () => reloadWindow(BrowserWindow.getFocusedWindow() || forkWindows()[0]) },
+      { role: 'toggleDevTools' },
     ] },
     { role: 'windowMenu' },
     { role: 'help', submenu: [
@@ -152,8 +181,9 @@ function buildMenu() {
 }
 
 // Ask AI goes through the person's own Claude Code login, kept warm while it's likely to be used (claude.mjs).
-const askClaude = ai.ask;
-ipcMain.on('ai:warm', () => ai.warm());
+// Both wait for the login shell's PATH, or `claude` might not be found right after launch.
+const askClaude = async (...a) => { await pathReady; return ai.ask(...a); };
+ipcMain.on('ai:warm', () => { pathReady.then(() => ai.warm()); });
 
 ipcMain.handle('pty:create', (e, cwd) => createPty(e.sender, cwd));
 ipcMain.on('pty:write', (_, id, d) => ptys.get(id)?.pty.write(d));
@@ -162,6 +192,30 @@ ipcMain.on('pty:kill', (_, id) => { ptys.get(id)?.pty.kill(); ptys.delete(id); }
 
 ipcMain.handle('dir', (_, dir) => ({ entries: list(dir), suggestions: suggest(dir), home: homedir() }));
 ipcMain.handle('ls', (_, dir) => list(dir)); // an expanded folder in the sidebar tree
+// A workspace's branch and what's changed (git.mjs). null: not a git folder, or no git on this Mac.
+// --no-optional-locks: reading status never gets in the way of your own git commands.
+const git = (cwd, args) => new Promise((res) =>
+  execFile('git', ['--no-optional-locks', '-C', cwd, ...args], { timeout: 2000, maxBuffer: 8 << 20 }, (err, out) => res(err ? null : out)));
+// The sidebar's search box (files.mjs searchFiles). A new search stops the one before it.
+let finding = null;
+ipcMain.handle('files:search', async (_, root, query) => {
+  finding?.abort();
+  const ac = finding = new AbortController();
+  const r = await searchFiles(root, query, { signal: ac.signal }).catch(() => null);
+  return ac.signal.aborted ? null : r;
+});
+ipcMain.handle('git:info', async (_, cwd) => {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return null;
+  const status = await git(cwd, ['status', '--porcelain', '--branch']);
+  return status == null ? null : gitInfo(status, await git(cwd, ['diff', 'HEAD', '--shortstat']));
+});
+// The Files tree's badges (git.mjs gitFiles): each changed file under cwd, or [] outside a repo.
+ipcMain.handle('git:files', async (_, cwd) => {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return [];
+  const [status, prefix] = await Promise.all([git(cwd, ['status', '--porcelain', '-z', '--untracked-files=all']),
+    git(cwd, ['rev-parse', '--show-prefix'])]);
+  return status == null ? [] : gitFiles(status, (prefix || '').trim());
+});
 
 // The sidebar and preview follow changes Claude makes, without waiting for a `cd`. Each window watches
 // the folders it shows. Never recursive: the folder can be ~, and node_modules churns during installs.
@@ -189,11 +243,113 @@ ipcMain.on('watch', (e, dirs) => {
   }
 });
 
+// --- Before and after (shots.mjs): pictures of your app around each agent turn ----------------------
+// One hidden window, reused, takes them: the same cookies as the panel's app view (persist:preview), 1280 wide,
+// the whole page (up to 4000 tall), with animations jumped to their end so two pictures of the same page match.
+// It never shows and never touches the app view you're looking at. One picture at a time.
+const SHOT_W = 1280, SHOT_MAX_H = 4000;
+let shooter = null, shooting = Promise.resolve(), shotFiles = null;
+const shots = () => (shotFiles ??= shotStore(join(app.getPath('userData'), 'shots')));
+function shotWindow() {
+  if (shooter && !shooter.isDestroyed()) return shooter;
+  shooter = new BrowserWindow({ show: false, width: SHOT_W, height: 800, paintWhenInitiallyHidden: true,
+    webPreferences: { partition: 'persist:preview', sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  const wc = shooter.webContents;
+  wc.setAudioMuted(true);
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('will-navigate', (e, url) => { if (!/^https?:\/\//.test(url)) e.preventDefault(); });
+  return shooter;
+}
+const within = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+async function capture(url) {
+  const wc = shotWindow().webContents;
+  try {
+    await within(wc.loadURL(url), 20_000);
+    await wc.insertCSS('*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;'
+      + ' transition-duration: 0s !important; transition-delay: 0s !important; caret-color: transparent !important; } ::-webkit-scrollbar { display: none; }');
+    // Web fonts, then a moment for anything the page fetches after it loads.
+    await within(wc.executeJavaScript('document.fonts.ready.then(() => new Promise((r) => setTimeout(r, 700)))'), 8_000).catch(() => {});
+    const h = await wc.executeJavaScript('Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)').catch(() => 800);
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+    await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: SHOT_W, height: 800, deviceScaleFactor: 1, mobile: false });
+    const { data } = await within(wc.debugger.sendCommand('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true,
+      clip: { x: 0, y: 0, width: SHOT_W, height: Math.min(SHOT_MAX_H, Math.max(400, Number(h) || 800)), scale: 1 } }), 15_000);
+    return Buffer.from(data, 'base64');
+  } finally {
+    wc.loadURL('about:blank').catch(() => {}); // let go of the page: its scripts and its hot-reload connection
+  }
+}
+// A picture of url for this workspace: { path, hash }, or null if the app didn't load. Queued behind any other.
+function takeShot(dir, url) {
+  const run = shooting.then(async () => { const buf = await capture(url); return { path: shots().write(dir, buf, 'shot'), hash: hashOf(buf) }; })
+    .catch(() => null);
+  shooting = run;
+  return run;
+}
+const localApp = (url) => typeof url === 'string' && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(url);
+const okDir = (dir) => typeof dir === 'string' && dir.startsWith('/');
+// What's changed in a folder right now, to tell which files one turn touched: { path: 'status:mtime:size' }, or null outside git.
+async function snapOf(dir) {
+  const status = await git(dir, ['status', '--porcelain', '-z', '--untracked-files=all']);
+  if (status == null) return null;
+  const top = ((await git(dir, ['rev-parse', '--show-toplevel'])) || dir).trim(), snap = {};
+  await Promise.all(gitFiles(status).slice(0, 2000).map(async ({ path, status: s }) => {
+    const st = await stat(join(top, path)).catch(() => null);
+    snap[path] = `${s}:${st?.mtimeMs ?? 0}:${st?.size ?? 0}`;
+  }));
+  return snap;
+}
+// An agent started working: the before picture and what's changed so far. null if the app isn't showing anything.
+ipcMain.handle('turn:start', async (_, dir, url) => {
+  if (!okDir(dir) || !localApp(url)) return null;
+  const [before, snap] = await Promise.all([takeShot(dir, url), snapOf(dir)]);
+  return before && { before, snap };
+});
+// The turn ended. Keep it if it changed a frontend file (or we can't tell, outside git) and the page looks
+// different now. Returns { turn, turns } (newest first), or null when there was nothing to see.
+ipcMain.handle('turn:finish', async (_, dir, t) => {
+  if (!okDir(dir) || !localApp(t?.url) || !t.before?.path) return null;
+  const drop = (...ps) => { for (const p of ps) if (p) shots().drop(dir, p); };
+  const ui = changedFiles(t.snap, await snapOf(dir))?.filter(isFrontend);
+  if (ui && !ui.length) return drop(t.before.path), null;
+  const after = await takeShot(dir, t.url);
+  if (!after || after.hash === t.before.hash) return drop(t.before.path, after?.path), null;
+  const turn = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: t.at, done: Date.now(), url: t.url,
+    before: t.before.path, after: after.path, files: (ui || []).slice(0, 50), agent: String(t.agent || '').slice(0, 40), pinned: false };
+  return { turn, turns: shots().add(dir, turn) };
+});
+ipcMain.on('turn:drop', (_, dir, path) => okDir(dir) && typeof path === 'string' && shots().drop(dir, path)); // ended without its end (the agent quit)
+ipcMain.handle('turns:list', (_, dir) => (okDir(dir) ? shots().list(dir) : []));
+ipcMain.handle('turns:pin', (_, dir, id, on) => (okDir(dir) ? shots().pin(dir, id, on) : []));
+ipcMain.handle('turns:remove', (_, dir, id) => (okDir(dir) ? shots().remove(dir, id) : []));
+
+// The Design view (design.mjs): the folder's tokens. A new scan stops the one before it; an unchanged folder
+// answers from the last scan.
+let designing = null;
+ipcMain.handle('design:scan', async (_, dir) => {
+  if (!okDir(dir) || dir === homedir()) return null;
+  designing?.abort();
+  const ac = designing = new AbortController();
+  return scanDesign(dir, { signal: ac.signal }).catch(() => null);
+});
+
 ipcMain.handle('preview', (_, path) => readPreview(path));
 let editor; // looked up once
 ipcMain.handle('editor', () => (editor ??= findEditor()));
 ipcMain.on('open-in', (_, path) => { const ed = editor ?? findEditor(); execFile('open', ed ? ['-a', ed.app, path] : [path]); });
 ipcMain.on('reveal', (_, path) => shell.showItemInFolder(path));
+// Right-click a file or folder in the sidebar. Resolves with the picked item's id (renderer.js acts on it), or null.
+ipcMain.handle('entry:menu', (e, { folder, editor: ed } = {}) => new Promise((res) => {
+  const item = (label, id) => ({ label, click: () => res(id) });
+  Menu.buildFromTemplate([
+    ...(folder ? [item('Open in terminal', 'cd')] : [item('Preview', 'preview'), item('Open with default app', 'default')]),
+    ...(ed ? [item(`Open in ${ed}`, 'editor')] : []),
+    item('Show in Finder', 'reveal'),
+    { type: 'separator' },
+    item('Copy path', 'copy'),
+    item('Put path in terminal', 'type'),
+  ]).popup({ window: BrowserWindow.fromWebContents(e.sender), callback: () => setTimeout(() => res(null), 200) }); // closed without a pick
+}));
 // FORK_NO_OPEN=1 npm start: print what would open instead of opening it (for testing without a browser popping up).
 const opens = (fn) => (process.env.FORK_NO_OPEN ? (x) => console.log('[open]', x) : fn);
 const openUrl = opens((url) => shell.openExternal(url)), openPath = opens((path) => shell.openPath(path));
@@ -209,14 +365,14 @@ ipcMain.on('clip:write', (_, text) => { if (typeof text === 'string' && text.len
 let unread = 0;
 const shown = new Set(); // a notification that's garbage-collected forgets its click
 const KINDS = ['done', 'failed', 'app'];
-ipcMain.on('notify', (e, { kind, title, body, pane, url, alerts = true } = {}) => {
+ipcMain.on('notify', (e, { kind, title, body, pane, url, alerts = true, silent = false } = {}) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (!win || win.isFocused()) return;
   const m = { kind: KINDS.includes(kind) ? kind : 'done', title: String(title || 'Fork').slice(0, 120), body: String(body || '').slice(0, 300),
     pane, url: typeof url === 'string' ? url.slice(0, 300) : undefined, win: e.sender.id };
   if (notchShowing()) notchWin.webContents.send('notch:moment', m);
   else if (alerts && Notification.isSupported()) {
-    const n = new Notification({ title: m.title, body: m.body });
+    const n = new Notification({ title: m.title, body: m.body, silent: !!silent }); // silent: Fork chimed itself
     shown.add(n);
     n.on('click', () => { shown.delete(n); goTo(m); });
     n.on('close', () => shown.delete(n));
@@ -241,7 +397,7 @@ const NOTCH_W = 185; // Electron can't read the notch's width; it's about this o
 const NOTCH_BOX = { width: 420, height: 380 }; // room for the biggest shape: the list of tabs
 let notchWin = null, notchOn = false, forkActive = true; // off until the window says you turned it on
 const notchTabs = new Map(); // webContents id -> that window's tabs
-const forkWindows = () => BrowserWindow.getAllWindows().filter((w) => w !== notchWin);
+const forkWindows = () => BrowserWindow.getAllWindows().filter((w) => w !== notchWin && w !== shooter); // not the notch, nor the hidden one taking pictures
 // The built-in screen, if it has a notch: the menu bar there is taller (about 32pt, against 24).
 function notchScreen() {
   const d = screen.getAllDisplays().find((x) => x.internal);
@@ -318,9 +474,11 @@ ipcMain.handle('pick-folder', async (e) => {
   return r.canceled ? null : r.filePaths[0];
 });
 
+ipcMain.handle('folder:create', (_, parent, name) => makeFolder(parent, name)); // the picker's New folder
+ipcMain.handle('home', () => homedir());
 ipcMain.handle('recents', (_, add) => {
   let list = [];
-  try { list = JSON.parse(readFileSync(RECENTS(), 'utf8')); } catch {}
+  try { list = JSON.parse(readFileSync(RECENTS(), 'utf8')).filter((p) => existsSync(p)); } catch {} // moved or deleted ones drop off
   if (add) {
     list = [add, ...list.filter((p) => p !== add)].slice(0, 6);
     writeFileSync(RECENTS(), JSON.stringify(list));
@@ -351,6 +509,7 @@ const jevLog = app.isPackaged ? () => {} : console.log;
 const COMMAND_Q = commandQuestion(PALETTE.map((p) => ({ ...p, cmd: shape(p) }))), ERROR_Q = errorQuestion(ERRORS, (id) => explainEntry(id).text);
 // 1. Fork's library (instant). 2. Jev picks the closest known error, shown in Fork's own words. 3. null: "unusual".
 ipcMain.handle('explain', async (_, output, cwd, smart) => {
+  await pathReady; // errorContext asks "is brew / gh installed?"
   const ctx = errorContext(cwd);
   // macOS keeping Fork out of this folder (Downloads, Desktop…) makes tools fail in vague ways
   // ("An unknown error occurred"), so check the folder itself before reading the output.

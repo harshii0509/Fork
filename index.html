@@ -5,18 +5,22 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' file: data: https: blob:; media-src 'self' file:; font-src 'self' data: blob:; frame-src 'self' blob:; worker-src 'self' blob:">
 <title>Fork</title>
 <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+<link rel="stylesheet" href="colors.css"> <!-- the redesign's palette: every colour by its hex -->
 <link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/400.css">
 <link rel="stylesheet" href="node_modules/@fontsource/jetbrains-mono/700.css">
 <link rel="stylesheet" href="node_modules/@fontsource/geist-mono/400.css">
 <link rel="stylesheet" href="node_modules/@fontsource/geist-mono/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource-variable/inter/index.css"> <!-- the UI's font -->
 <link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/500.css">
+<link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/600.css">
 <link rel="stylesheet" href="node_modules/@fontsource/ibm-plex-mono/700.css">
 <link rel="stylesheet" href="node_modules/@fontsource/fira-code/400.css">
 <link rel="stylesheet" href="node_modules/@fontsource/fira-code/700.css">
 <style>
   :root {
-    /* Set from the theme (renderer.js applySettings). Defaults = the Designer theme. */
-    --bg: #141416; --text: #ececf1; --accent: #7c6cff; --on-accent: #fff;
+    /* Set from the chosen look (themes.js, via renderer.js applySettings). These defaults are the dark look's values. */
+    --bg: #141416; --text: #ececf1; --accent: #f8f8f7; --on-accent: #171716;
     --tree: #e6e6e6; /* files and folders: one gray, icon and name alike */
     --warn: #ffb454; --bad: #ff6b6b; --ok: #4ade80;
     /* Everything else is mixed from those, so light and dark themes both just work. */
@@ -27,125 +31,308 @@
     --hover: color-mix(in srgb, var(--text) 8%, transparent);
     --active: color-mix(in srgb, var(--text) 14%, transparent);
     --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+    --blue: #6c9cff; --magenta: #b18cff; --cyan: #5ad4e6; /* code previews (Shiki), also set from the look */
+    /* Fixed, whatever the look: white "paper" (your app, book pages, switch knobs), the tour's dimming, shadows. */
+    --paper: #fff;
+    --scrim: #0000008c;
+    --shadow-1: 0 1px 3px #0003;       /* the selected segment */
+    --shadow-2: 0 1px 4px #0003;       /* page-turn buttons */
+    --shadow-knob: 0 1px 3px #0004;    /* switch knobs */
+    --shadow-page: 0 1px 8px #0004;    /* PDF pages */
+    --shadow-media: 0 2px 12px #0003;  /* images and videos in the preview */
+    --shadow-float: 0 2px 10px #0005;  /* the reader's "done" pill */
+    --shadow-key: 0 2px 8px #0008;     /* hold-⌘ key hints */
+    --shadow-pop: 0 8px 24px rgb(0 0 0 / .25); /* the find bar */
+    --shadow-card: 0 24px 60px #0008;  /* cards: ⌘K, welcome, updates */
     --radius: 10px; --ease: cubic-bezier(.2, .8, .2, 1);
+    --strip: 36px; /* the top strip. Tabs are ~28px, centred: (36 - 28) / 2 = 4px between a tab and the card. main.js trafficLightPosition follows it */
+    /* The redesign's roles (Figma: Workspaces frame), from colors.css. Light has its own values below. */
+    --chrome: var(--gray-1000);     /* the outer frame: the top strip */
+    --card: var(--gray-975);        /* the rounded card holding the sidebar and terminals */
+    --card-line: var(--gray-900);   /* its edge, and the lines inside it */
+    --field: var(--gray-950); --field-line: var(--gray-900); /* search box, the open workspace tab */
+    --chip: var(--gray-925);        /* the active terminal's name chip */
+    --kbd: var(--gray-900);
+    --text-1: var(--gray-25);       /* names */
+    --text-2: var(--gray-500);      /* the active workspace's details */
+    --text-3: var(--gray-600);      /* other workspaces' details */
+    --text-4: var(--gray-700);      /* labels, placeholders, icons */
+    --plus: var(--green-500); --minus: var(--red-500);           /* +8 -1 */
+    --plus-dim: var(--green-600); --minus-dim: var(--red-600);   /* the same, on a workspace that isn't open */
+    --ws-1: var(--blue-700); --ws-2: var(--orange-700); --ws-3: var(--purple-700); /* each workspace's square */
+    --needs: var(--c-febc2e); --failed: var(--c-eb5757); /* its corner badge: needs you, failed */
+    --ease-out-quart: cubic-bezier(.165, .84, .44, 1); --ease-in-out-cubic: cubic-bezier(.645, .045, .355, 1);
+    --ui: "Inter Variable", -apple-system, BlinkMacSystemFont, sans-serif;
+    --ui-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  /* Light: a first pass from the palette, until a light frame sets these. */
+  :root[data-mode="light"] {
+    --chrome: var(--c-f1f1f0); --card: var(--c-ffffff); --card-line: var(--c-dddddd);
+    --field: var(--c-f5f5f5); --field-line: var(--c-dddddd); --chip: var(--c-eeeeee); --kbd: var(--c-e6e6e6);
+    --text-1: var(--c-1d1d1f); --text-2: var(--c-6f6f6f); --text-3: var(--c-858585); --text-4: var(--c-9e9e9e);
+    --plus: var(--c-19c332); --minus: var(--c-eb5757); --plus-dim: var(--c-4cb782); --minus-dim: var(--c-ff736a);
+    --ws-1: var(--c-628ca9); --ws-2: var(--c-b6764d); --ws-3: var(--c-a6a6f8);
+    --needs: var(--c-f0bf00); --failed: var(--c-eb5757);
   }
   * { box-sizing: border-box; }
-  /* Thin scrollbars on a clear track, so a long file list doesn't paint a white strip over the glass. */
-  ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--active); border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
-  ::-webkit-scrollbar-thumb:hover { background-color: var(--faint); }
-  ::-webkit-scrollbar-corner { background: transparent; }
+  /* No scrollbars: lists, the Files tree, settings and the preview scroll by trackpad or wheel without a bar.
+     The terminal keeps its own (xterm draws it, not a native bar). */
+  ::-webkit-scrollbar { display: none; }
   html, body { margin: 0; height: 100%; background: transparent; color: var(--text);
-    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; overflow: hidden; }
+    font: 13px/1.4 var(--ui); overflow: hidden; }
+  /* Thinner, grayscale-smoothed text everywhere, as Figma draws it (Settings → Font smoothing Off still sharpens the terminal). */
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  /* A Mac app: labels, rows and buttons can't be selected like a web page. Selection stays where people
+     copy things: the terminal, the preview, error explanations, ⌘K's command, release notes, text fields. */
+  body { user-select: none; }
+  .xterm, .pv-body, .oops p, .pal .answer, .upd-card .pv-md, input, textarea, [contenteditable] { user-select: text; }
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
   /* Shortcut hints: a soft pill, readable but never louder than the label beside it. Each key is its
      own span, so ⌘ and the key get a little room between them. */
-  kbd { display: inline-flex; align-items: center; gap: 3px; font: 500 11px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  kbd { display: inline-flex; align-items: center; gap: 3px; font: 500 11px/1 var(--ui);
     padding: 3px 7px; border-radius: 999px; background: var(--hover); color: var(--dim); }
   /* Icons (icons.js, Lucide): 14px with a 1.5px line everywhere. non-scaling-stroke makes 1.5 mean
      screen pixels, not Lucide's 24px grid, so the line is the same weight at any icon size. */
   .ic { width: 14px; height: 14px; flex: none; display: block; stroke-width: 1.5; }
   .ic * { vector-effect: non-scaling-stroke; }
-  .twisty .ic, .tclose .ic { width: 12px; height: 12px; }
+  .ph.ic { width: 14px; height: 14px; } /* a Lucide name drawn from Central keeps .ic's sizes (before the overrides below) */
+  .tclose .ic { width: 12px; height: 12px; }
   .arrows .ic { width: 10px; height: 10px; }
+  /* The redesign's icons (Phosphor, from the Figma file, icons/ph): each SVG is a mask over currentColor,
+     so the files stay as exported and any state can recolour them. */
+  .ph { flex: none; display: block; width: 16px; height: 16px; background: currentColor;
+    -webkit-mask: var(--ph) center / contain no-repeat; }
+  .ph.big { width: 20px; height: 20px; }
+  .ph.small { width: 14px; height: 14px; }
   .fi { flex: none; display: grid; } /* a file's type icon: never squeezed by a long name */
   .pv-name .fi { display: inline-grid; vertical-align: -3px; margin-right: 7px; }
 
-  .app { --pvw: 0px; display: grid; grid-template: 44px 1fr auto / var(--side, 232px) 1fr var(--pvw); height: 100%; }
+  /* The window: a top strip (traffic lights, your workspaces as tabs, the split and preview buttons) over a
+     rounded card that holds the sidebar, the terminals and the preview. With Translucent on, the strip is
+     frosted glass and the card stays solid. */
+  #app { display: grid; grid-template: var(--strip) 1fr / 1fr; height: 100%; background: var(--chrome); }
+  :root[data-translucent="on"] #app { background: transparent; }
+  .stage { --pvw: 0px; grid-area: 2 / 1; margin: 0 8px 8px; min-width: 0; min-height: 0; overflow: hidden;
+    display: grid; grid-template: 1fr auto / var(--side, 224px) 1fr var(--pvw);
+    background: var(--card); border: .5px solid var(--card-line); border-radius: 12px; }
   /* ⌘P opens the preview panel on the right. --pv is the dragged width. */
-  .app.has-pv { --pvw: clamp(320px, var(--pv, 42vw), calc(100vw - 420px)); }
-  .app.in-settings { --pvw: 0px; }
-  /* ⌘B hides the sidebar. A class rule, not --side, so the dragged width comes back. */
-  .app.no-side { grid-template-columns: 0 1fr var(--pvw); }
+  .has-pv .stage { --pvw: clamp(320px, var(--pv, 42vw), calc(100vw - 480px)); }
+  .in-settings .stage { --pvw: 0px; }
+  /* ⌘B hides the sidebar. A class rule, not --side, so the dragged width comes back. The strip's sidebar
+     button only shows then, to bring it back. */
+  .no-side .stage { grid-template-columns: 0 1fr var(--pvw); }
   .no-side .side, .no-side .side-grip { display: none; }
-  .no-side .top { padding-left: 76px; } /* clear the traffic lights; #sideShow lands where #sideToggle was */
+  #crumbs { display: none !important; } /* where you are is in the sidebar */
   #sideShow { display: none; }
   .no-side #sideShow { display: grid; }
-  .side-grip { grid-row: 1 / 4; grid-column: 1; justify-self: end; width: 6px; margin-right: -3px;
-    cursor: col-resize; z-index: 2; -webkit-app-region: no-drag; }
+  .side-grip { grid-row: 1 / 3; grid-column: 1; justify-self: end; width: 6px; margin-right: -3px;
+    cursor: col-resize; z-index: 2; }
 
-  /* Top bar: where am I. Drag region, room for the traffic lights. */
-  .top { grid-column: 2; display: flex; align-items: center; gap: 2px; padding: 0 16px; background: var(--bg);
-    border-bottom: 1px solid var(--line); -webkit-app-region: drag; min-width: 0; }
+  /* Top strip: traffic lights on the left (main.js places them), your workspaces, then the split and preview
+     buttons on the right. The strip drags the window; the tabs and buttons don't. */
+  .top { grid-area: 1 / 1; display: flex; align-items: center; gap: 2px; padding: 0 12px 0 74px;
+    -webkit-app-region: drag; min-width: 0; }
   .top button { -webkit-app-region: no-drag; }
+  .tbtn { width: 24px; height: 24px; padding: 0; border-radius: 6px; display: grid; place-items: center; color: var(--text-4); }
+  .tbtn:hover { background: var(--field); color: var(--text-1); }
+  #splitR .ph { transform: rotate(-90deg) scaleY(-1); }
+  #splitD .ph { transform: rotate(-90deg) scaleY(-1); }
+  #pvToggle .ph { transform: scaleX(-1); } /* the sidebar icon, mirrored: the panel on the right */
+  .has-pv #pvToggle { color: var(--text-1); }
   .crumb { padding: 4px 8px; border-radius: 6px; color: var(--dim); white-space: nowrap; }
-  .crumb:hover { background: var(--line); color: var(--text); }
-  .crumb:last-of-type { color: var(--text); font-weight: 600; }
   .sep { color: var(--faint); }
-  .top .spacer { flex: 1; }
 
-  /* Sidebar: what is in this folder. */
-  .side { grid-row: 1 / 4; grid-column: 1; position: relative; border-right: 1px solid var(--hover);
-    display: flex; flex-direction: column; min-height: 0; }
-  .side-scroll { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
-  /* Top row, lined up with the main top bar: traffic lights, sidebar toggle, ← →. */
-  .side-top { flex: none; height: 44px; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 76px;
-    -webkit-app-region: drag; }
-  .side-top button { -webkit-app-region: no-drag; }
+  /* Workspaces, one tab each: a square in the workspace's colour and the folder's name, × on hover. The square
+     is the status: a rippling lattice while something works; yellow (needs you, or finished while you were
+     away) or red (failed), pulsing, until it's seen to; then its own colour again. Many workspaces: tabs
+     shrink to 96px, then the row scrolls sideways. */
+  .tabstrip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 0 12px; }
+  #tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab { -webkit-app-region: no-drag; position: relative; flex: 0 1 auto; width: 200px; min-width: 96px; display: flex; align-items: center;
+    gap: 6px; padding: 6px 8px; border-radius: 8px; background: var(--card); cursor: default; transition: background-color .12s ease; }
+  .tab:hover { background: color-mix(in srgb, var(--field) 60%, var(--card)); }
+  .tab.active { background: var(--field); }
+  .tab.enter { animation: tab-in 150ms var(--ease-out-quart); }
+  @keyframes tab-in { from { opacity: 0; transform: scale(.96); } }
+  @media (prefers-reduced-motion: reduce) { .tab { transition: none; } .tab.enter { animation: none; } }
+  .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 450 13px/1.2 var(--ui); color: var(--text-3); }
+  .tab:hover .tname { color: var(--text-2); }
+  .tab.active .tname { color: var(--text-1); }
+  .tclose { flex: none; display: grid; place-items: center; width: 12px; height: 12px; padding: 0; border-radius: 3px;
+    color: var(--text-4); opacity: 0; transition: opacity .12s ease; }
+  .tclose .ph { width: 12px; height: 12px; }
+  .tab:hover .tclose, .tclose:focus-visible { opacity: 1; }
+  .tclose:hover { color: var(--text-1); }
+  @media (prefers-reduced-motion: reduce) { .tclose { transition: none; } }
+  .tnew { width: 26px; height: 26px; flex: none; border-radius: 8px; }
+  /* The square: nine 3px tiles that touch (9px, in a 12px spot). While something works they separate into a
+     3×3 lattice in the same colour and a wave runs through them from the top left (whimsically.app's "lattice"
+     loader: 2.1s, each column 233ms behind, each row 117ms). --phase keeps the wave going across redraws.
+     Needs you / failed: the tiles take the yellow or red (150ms), and a copy of the square grows and fades
+     behind them three times (ease-out, 2s with a rest), then the square holds still; back to the
+     workspace's colour takes 200ms. */
+  .ws-sq { --sq: var(--tab-c, var(--ws-1)); flex: none; position: relative; width: 12px; height: 12px; display: grid; place-items: center; }
+  .ws-sq[data-s="done"] { --sq: var(--needs); }
+  .ws-sq[data-s="failed"] { --sq: var(--failed); }
+  .ws-cubes { position: relative; display: grid; grid-template: repeat(3, 3px) / repeat(3, 3px); }
+  .ws-cubes i { background: var(--sq); transition: transform 250ms var(--ease-in-out-cubic), background-color 200ms ease; }
+  .ws-sq[data-s] .ws-cubes i { transition-duration: 250ms, 150ms; }
+  .ws-cubes.working i { transform: scale(.75); animation: ws-lattice 2.1s ease-in-out infinite;
+    animation-delay: calc(var(--phase) + var(--c) * 233ms + var(--r) * 117ms); }
+  @keyframes ws-lattice { 0%, 50%, 100% { opacity: .3; } 25% { opacity: 1; } }
+  /* Three pulses, then the coloured square holds still: a pulse that never stopped kept the Mac redrawing
+     the whole (translucent) window, about 16% of a CPU core for as long as nobody looked. */
+  .ws-sq[data-s]::before { content: ''; position: absolute; inset: 1.5px; background: var(--sq);
+    animation: ws-pulse 2s var(--ease-out-quart) 3 forwards; }
+  @keyframes ws-pulse { 0% { transform: scale(1); opacity: .55; } 70%, 100% { transform: scale(2.2); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ws-cubes i, .ws-cubes.working i { transition: none; animation: none; opacity: 1; }
+    .ws-sq[data-s]::before { display: none; }
+  }
+
+  /* Sidebar: the open workspace. Its name, search, what it's on (branch, what changed, the app it serves),
+     then its files; What's new, Settings and Help sit at the bottom, over the files, which fade out under them. */
+  .side { grid-row: 1 / 3; grid-column: 1; position: relative; border-right: .5px solid var(--card-line);
+    display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .side-top { flex: none; height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; }
+  .brand { font: 500 18px/1 var(--ui-mono); letter-spacing: -.36px; color: var(--text-1); }
+  .side-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 10px 0; }
+  .side-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .side-body[hidden] { display: none; }
+  .parked { display: none; } /* ← →, suggestions: kept working, not in this design yet */
   .ibtn:disabled { opacity: .35; cursor: default; background: none; color: var(--dim); }
-  .brand { margin: 2px 8px 12px; font: 700 15px/1.2 "IBM Plex Mono", monospace; letter-spacing: -.01em; }
-  /* Search and Settings: icon rows, then a thin divider. */
-  .srow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 6px;
-    color: var(--tree); text-align: left; }
-  .srow:hover { background: var(--hover); }
-  .srow kbd { margin-left: auto; }
-  .side-div { height: 1px; margin: 8px 8px 14px; background: var(--hover); }
-  .side h3 { margin: 4px 8px 6px; font-size: 12px; font-weight: 500; color: var(--dim); }
-  /* The folder tree: ▸ expands in place, the name moves there (folders) or previews it (files). */
-  .entry { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px 5px calc(2px + var(--depth, 0) * 14px);
-    border-radius: 6px; cursor: default; white-space: nowrap; overflow: hidden; color: var(--tree); }
-  .entry:hover { background: var(--hover); }
-  .entry.on { background: color-mix(in srgb, var(--text) 10%, transparent); }
-  .entry.noise { opacity: .45; }
-  .entry svg { flex: none; }
+  /* Search: file names in this workspace, then the lines inside files (files.mjs searchFiles). ⌘K jumps here. */
+  .search { flex: none; display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 4px; border-radius: 8px;
+    background: var(--field); border: .5px solid var(--field-line); color: var(--text-4); cursor: text;
+    font: 450 12px/1.2 var(--ui); transition: border-color .12s ease; }
+  .search:hover { color: var(--text-2); }
+  .search:focus-within { border-color: color-mix(in srgb, var(--text-1) 20%, transparent); color: var(--text-2); }
+  .search input { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; outline: 0;
+    font: inherit; color: var(--text-1); }
+  .search input::placeholder { color: var(--text-4); }
+  .search kbd { gap: 2px; padding: 2px; border-radius: 4px; background: var(--kbd); color: var(--text-4); font: 450 10px/1 var(--ui); }
+  .search:focus-within kbd { visibility: hidden; }
+  .side h3 { margin: 0; font: 600 12px/1.2 var(--ui-mono); letter-spacing: .48px; text-transform: uppercase; color: var(--text-4); }
+  .sec { display: flex; align-items: center; justify-content: space-between; height: 14px; margin: 20px 0 12px; }
+  .ws-info { display: flex; flex-direction: column; gap: 4px; }
+  .ws-line { display: flex; align-items: center; gap: 8px; min-width: 0; font: 450 13px/1.2 var(--ui); color: var(--text-2); white-space: nowrap; }
+  .ws-line span { overflow: hidden; text-overflow: ellipsis; }
+  .ws-line span:last-child { flex: 1; min-width: 0; }
+  .ws-line .plus { color: var(--plus); } .ws-line .minus { color: var(--minus); }
+  /* Search results, in place of the info and files while there's something in the box. */
+  .find-list { flex: 1; min-height: 0; overflow-y: auto; margin: 8px -4px 0; padding-bottom: 56px; scrollbar-width: none; }
+  .find-list[hidden] { display: none; }
+  .find-list h3 { margin: 12px 4px 6px; }
+  .fl-row { display: flex; flex-direction: column; gap: 3px; padding: 6px 4px; border-radius: 8px; cursor: default; }
+  .fl-row:hover, .fl-row.on { background: var(--hover); }
+  .fl-top { display: flex; align-items: center; gap: 8px; min-width: 0; font: 450 13px/1.2 var(--ui); color: var(--text-2); white-space: nowrap; }
+  .fl-top b { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; font-weight: 450; color: var(--text-1); }
+  .fl-top small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--text-4); }
+  .fl-snip { padding-left: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 450 12px/1.3 var(--ui-mono); color: var(--text-4); }
+  .fl-top b span { color: var(--text-4); } /* :line */
+  .find-list mark { background: none; color: var(--text-1); }
+  .fl-top b mark { background: color-mix(in srgb, var(--text-1) 14%, transparent); border-radius: 2px; }
+  .fl-empty { padding: 8px 4px; color: var(--text-4); font: 450 13px/1.3 var(--ui); }
+  /* The footer: What's new on the left, Settings and Help on the right, over the bottom of the files. The files
+     fade out under it (the gradient reaches the card's colour at --foot-fade) and blur a touch as they go. */
+  .side-foot { --foot-fade: 55%; position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; height: 56px;
+    display: flex; align-items: flex-end; justify-content: space-between; padding: 0 10px 12px; pointer-events: none;
+    background: linear-gradient(to bottom, transparent, var(--card) var(--foot-fade)); }
+  .side-foot::before { content: ''; position: absolute; inset: 0; z-index: -1; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+    -webkit-mask: linear-gradient(to bottom, transparent, #000 60%); }
+  .side-foot span { display: flex; gap: 8px; }
+  .fbtn { position: relative; pointer-events: auto; width: 14px; height: 14px; padding: 0; display: grid; place-items: center;
+    color: var(--text-4); transition: color .12s ease; }
+  .fbtn::after { content: ''; position: absolute; inset: -5px; } /* a 24px target for a 14px icon */
+  .fbtn:hover, .in-settings #openSettings { color: var(--text-1); }
+  @media (prefers-reduced-motion: reduce) { .fbtn { transition: none; } }
+  /* Files: the folder the open terminal is in, as a tree. A folder opens in place; a file previews; drag
+     either into a terminal to type its path; right-click for the rest (renderer.js entryMenu). */
+  .files-head { flex: none; display: flex; align-items: center; justify-content: space-between; height: 14px; margin: 24px 0 12px; }
+  .files-head span { display: flex; gap: 6px; }
+  .hbtn { display: grid; place-items: center; width: 14px; height: 14px; padding: 0; color: var(--text-4); }
+  .hbtn:hover { color: var(--text-1); }
+  /* The tree itself is @pierre/trees in a shadow root: only its --trees-* variables reach in. They take Fork's
+     tokens, so Light and Dark follow. It scrolls itself (virtual rows), so it fills what's left of the sidebar. */
+  .side-files { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  /* Rows bleed 4px past the sidebar's padding, like workspace rows; the background is the card's, solid, because
+     a long name's "…" covers the cut text with it. */
+  #entries { flex: 1; min-height: 0; margin: 0 -4px;
+    --trees-padding-inline-override: 0px; --trees-item-margin-x-override: 0px; --trees-item-padding-x-override: 4px;
+    --trees-scrollbar-gutter-override: 0px;
+    --trees-bg-override: var(--card); --trees-fg-override: var(--text-2); --trees-fg-muted-override: var(--text-4);
+    --trees-font-family-override: var(--ui); --trees-font-size-override: 13px; --trees-border-radius-override: 8px;
+    --trees-selected-bg-override: var(--hover); --trees-selected-fg-override: var(--text-1);
+    --trees-selected-focused-border-color-override: transparent; --trees-focus-ring-color-override: var(--text-4);
+    --trees-indent-guide-bg-override: transparent; --trees-scrollbar-thumb-override: transparent;
+    --trees-git-added-color-override: var(--plus); --trees-git-untracked-color-override: var(--plus);
+    --trees-git-modified-color-override: var(--warn); --trees-git-renamed-color-override: var(--warn);
+    --trees-git-deleted-color-override: var(--minus); --trees-git-ignored-color-override: var(--text-4); }
+  #entries[hidden] { display: none !important; } /* @pierre/trees puts display: flex inline on it */
+  #newEntry .entry { margin-bottom: 12px; }
+  .entry { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 16px; padding-left: calc(var(--depth, 0) * 20px);
+    cursor: default; white-space: nowrap; overflow: hidden; font: 450 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-2); }
+  .entry:hover, .entry.on { color: var(--text-1); }
   .entry span { overflow: hidden; text-overflow: ellipsis; }
-  .twisty { flex: none; width: 16px; height: 16px; padding: 0; display: grid; place-items: center; border-radius: 4px; color: var(--dim); }
-  button.twisty:hover { background: var(--active); color: var(--text); }
-  .twisty svg { transition: transform .12s var(--ease); }
-  .twisty.open svg { transform: rotate(90deg); }
-  .empty { color: var(--dim); padding: 4px 8px; }
-  .entries-empty { padding: 3px 8px 3px calc(24px + var(--depth, 0) * 14px); color: var(--faint); }
-
-  /* Terminals list in the sidebar (one row per tab). */
-  .sec { display: flex; align-items: center; justify-content: space-between; margin: 4px 4px 6px 8px; }
-  .sec h3 { margin: 0; }
-  .side h3.folder { margin-top: 20px; }
-  .add { width: 22px; height: 22px; padding: 0; border-radius: 6px; color: var(--dim); display: grid; place-items: center; }
-  .add:hover { background: var(--hover); color: var(--text); }
-  .tab { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: default; }
-  .tab:hover { background: var(--hover); }
-  .tab.active { background: color-mix(in srgb, var(--text) 10%, transparent); }
-  /* Each tab's blob (blob.js) shows its state: ready, running, failed, finished while away, dozing. */
-  .tblob { display: grid; place-items: center; flex: none; width: 16px; height: 16px; }
-  .tblob > * { margin: -3px; } /* 22px blob, 16px slot: the blob fills it without making the row taller */
-  .tname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tcount { font-size: 11px; color: var(--dim); white-space: nowrap; }
-  .tclose { opacity: 0; color: var(--dim); padding: 2px; border-radius: 4px; }
-  .tab:hover .tclose { opacity: 1; }
-  .tclose:hover { color: var(--text); }
+  .entry input { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--text-1); }
+  .empty { color: var(--text-4); font: 450 13px/1.2 var(--ui); }
+  .hbtn[hidden] { display: none; }
+  /* A Home workspace: no tree of your whole home folder, just a way into a project (renderer.js moveWorkspace). */
+  .home-empty { display: flex; flex-direction: column; align-items: flex-start; font: 450 13px/1.4 var(--ui); letter-spacing: -.13px; }
+  .home-empty[hidden] { display: none; }
+  .home-empty > .ph { color: var(--text-4); margin-bottom: 12px; }
+  .he-title { margin: 0; color: var(--text-1); }
+  .he-body { margin: 2px 0 16px; color: var(--text-4); }
+  .he-choose { width: 100%; height: 32px; border-radius: 8px; background: var(--field); color: var(--text-1);
+    transition: background-color .12s ease, transform .12s ease; }
+  .he-choose:hover { background: var(--hover); }
+  .he-choose:active { transform: scale(.97); }
+  #homeRecent { align-self: stretch; }
+  #homeRecent h3 { margin: 24px 0 12px; }
+  .he-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 0; margin-bottom: 12px;
+    font: 450 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-2); text-align: left; transition: color .12s ease; }
+  .he-row:hover { color: var(--text-1); }
+  .he-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) { .he-choose, .he-row { transition: none; } .he-choose:active { transform: none; } }
 
   /* Panes: the active tab's split tree. */
-  .term { grid-area: 2 / 2; background: var(--bg); min-width: 0; min-height: 0; display: flex; }
+  .term { grid-area: 1 / 2; min-width: 0; min-height: 0; display: flex; }
   .term > *, .split > * { flex: 1 1 0; min-width: 0; min-height: 0; }
   .split { display: flex; }
   .split.col { flex-direction: column; }
-  .split > .divider { flex: 0 0 1px; background: var(--line); position: relative; z-index: 1; transition: background .15s; }
+  .split > .divider { flex: 0 0 .5px; background: var(--card-line); position: relative; z-index: 1; transition: background .15s; }
   .divider::before { content: ''; position: absolute; inset: 0 -3px; }
   .split.col > .divider::before { inset: -3px 0; }
   .split.row > .divider { cursor: col-resize; }
   .split.col > .divider { cursor: row-resize; }
   .divider:hover, .divider.dragging { background: var(--accent); }
   .pane { position: relative; transition: opacity .15s; }
-  .pane-inner { position: absolute; inset: 10px 4px 0 14px; }
-  .term.multi .pane:not(.active) { opacity: .5; }
-  .term.multi .pane.active { box-shadow: inset 0 2px 0 var(--accent); }
+  .pane-inner { position: absolute; inset: 60px 4px 4px 8px; }
+  .term.multi .pane:not(.active) { opacity: .4; }
+  /* Each terminal's name, top left, on a chip with an icon: a terminal, or console-sparkle while an AI agent
+     (Claude, Codex…) is open in it. The open one has a ×; double-click to rename. */
+  .pane-title { position: absolute; top: 0; left: 0; right: 0; display: flex; padding: 8px; }
+  .pane-chip { display: flex; align-items: center; gap: 6px; width: 180px; max-width: 100%; padding: 8px 10px; border-radius: 6px;
+    background: var(--chip);
+    font: 500 13px/1.2 var(--ui); letter-spacing: -.13px; color: var(--text-1); }
+  .pane-chip > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pane-ico.enter { animation: ico-in 150ms var(--ease-out-quart); }
+  @keyframes ico-in { from { opacity: 0; transform: scale(.85); } }
+  @media (prefers-reduced-motion: reduce) { .pane-ico.enter { animation: none; } }
+  .pane-chip .x { display: none; place-items: center; padding: 0; color: var(--text-4); border-radius: 4px; }
+  .pane-chip .x:hover { color: var(--text-1); }
+  .pane.active .pane-chip .x { display: grid; }
+  .pane-chip input { width: 160px; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: inherit; color: inherit; }
   /* Dragging a file over a pane: dropping types its path at the cursor. */
   .pane.drop { opacity: 1 !important; box-shadow: inset 0 0 0 2px var(--accent) !important; }
   #hidden { display: none; }
   /* ⌘F: find in the active pane, floating over the terminal's top-right corner. */
-  .find { grid-area: 2 / 2; justify-self: end; align-self: start; z-index: 5; margin: 10px 14px; display: none; align-items: center;
+  .find { grid-area: 1 / 2; justify-self: end; align-self: start; z-index: 5; margin: 10px 14px; display: none; align-items: center;
     gap: 2px; padding: 3px 3px 3px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    box-shadow: 0 8px 24px rgb(0 0 0 / .25); }
+    box-shadow: var(--shadow-pop); }
   .find.show { display: flex; }
   .find input { width: 180px; padding: 4px 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; }
   .find-count { min-width: 64px; padding-right: 6px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -158,24 +345,23 @@
   [data-key] { position: relative; }
   [data-key]::after { content: attr(data-key); position: absolute; top: -6px; right: -6px; z-index: 5;
     font: 600 10px/1 -apple-system, sans-serif; padding: 3px 5px; border-radius: 5px; white-space: nowrap;
-    background: var(--accent); color: var(--on-accent); box-shadow: 0 2px 8px #0008; pointer-events: none;
+    background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-key); pointer-events: none;
     opacity: 0; transform: scale(.85); transition: opacity .12s, transform .12s var(--ease); }
   .show-keys [data-key]::after { opacity: 1; transform: none; }
-  .tab[data-key]::after { top: 50%; right: 6px; transform: translateY(-50%) scale(.85); }
+  .tab[data-key]::after { top: 50%; right: 6px; transform: translateY(-50%) scale(.85); } /* inside: the strip clips */
   .show-keys .tab[data-key]::after { transform: translateY(-50%); }
-  .show-keys .tab .tclose, .show-keys .tab .tcount { visibility: hidden; }
-  .ibtn[data-key]::after { top: calc(100% + 4px); right: 50%; transform: translateX(50%) scale(.85); }
-  .show-keys .ibtn[data-key]::after { transform: translateX(50%); }
-  .keys-legend { display: none; gap: 16px; color: var(--dim); flex-wrap: wrap; }
+  .show-keys .tab .tclose { visibility: hidden; }
+  .tbtn[data-key]::after { top: calc(100% + 4px); right: 50%; transform: translateX(50%) scale(.85); }
+  .show-keys .tbtn[data-key]::after { transform: translateX(50%); }
+  .keys-legend { display: none !important; } /* the bottom bar is gone; the key badges on each button stay */
   .keys-legend b { color: var(--text); font-weight: 600; }
-  .show-keys .keys-legend { display: flex; }
   .show-keys .hint { display: none; }
 
   /* Dock: what can I do here. */
-  .dock { grid-area: 3 / 2; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 14px 12px; gap: 8px; }
+  .dock { grid-area: 2 / 2; border-top: .5px solid var(--card-line); padding: 10px 14px 12px; gap: 8px; }
   /* Only takes space when it has something to say, so the terminal gets the full height otherwise. */
   .dock { display: none; }
-  .dock:has(.show), .working .dock, .show-keys .dock { display: grid; }
+  .dock:has(.show) { display: grid; } /* only for its notes: what went wrong, your app is running */
   .hint { display: none; align-items: center; gap: 8px; color: var(--dim); }
   .hint.show { display: flex; }
   .hint.warn { color: var(--warn); }
@@ -189,10 +375,6 @@
   /* Files stay usable while something runs (that's when Claude is working); moving folders waits. */
   .busy .chips .chip, .busy .crumb { opacity: .35; pointer-events: none; }
   .running { display: none; align-items: center; gap: 10px; color: var(--dim); }
-  .working .running { display: flex; }
-  /* The Bloub mascot (blob.js) marks work in progress; its SVG sizes the box. */
-  .blob { display: inline-grid; place-items: center; flex: none; margin: -10px -6px; } /* dots sit mid-SVG: don't grow the row */
-  .blob[hidden] { display: none; }
   .stop { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); }
   .stop:hover { border-color: var(--bad); color: var(--bad); }
 
@@ -219,18 +401,18 @@
   .has-pv .pv { display: flex; }
   .has-pv .pv-grip { display: block; }
   .in-settings .pv { visibility: hidden; } /* not display:none: the app view would reload */
-  .pv { grid-row: 1 / 4; grid-column: 3; min-width: 0; min-height: 0; flex-direction: column;
-    background: var(--bg); border-left: 1px solid var(--line); }
-  .pv-grip { grid-row: 1 / 4; grid-column: 3; justify-self: start; width: 6px; margin-left: -3px;
+  .pv { grid-row: 1 / 3; grid-column: 3; min-width: 0; min-height: 0; flex-direction: column;
+    border-left: .5px solid var(--card-line); }
+  .pv-grip { grid-row: 1 / 3; grid-column: 3; justify-self: start; width: 6px; margin-left: -3px;
     cursor: col-resize; z-index: 2; }
   .in-settings .pv-grip { display: none; }
-  .pv-head { height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 10px;
-    border-bottom: 1px solid var(--line); -webkit-app-region: drag; min-width: 0; }
-  .pv-head button, .pv-head input, .pv-head .seg { -webkit-app-region: no-drag; }
+  .pv-head { height: 48px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 10px;
+    border-bottom: .5px solid var(--card-line); min-width: 0; }
   .pv-head .seg { width: auto; flex: none; margin-right: 6px; }
   .pv-head .seg button { padding: 3px 10px; font-size: 12px; }
   .pv-bar { display: none; flex: 1; align-items: center; gap: 4px; min-width: 0; }
-  .pv[data-mode="file"] .pv-bar.file, .pv[data-mode="app"] .pv-bar.app, .pv[data-mode="read"] .pv-bar.read { display: flex; }
+  .pv[data-mode="file"] .pv-bar.file, .pv[data-mode="app"] .pv-bar.app, .pv[data-mode="read"] .pv-bar.read,
+  .pv[data-mode="changes"] .pv-bar.changes, .pv[data-mode="design"] .pv-bar.design { display: flex; }
   .pv-name { flex: 1; min-width: 0; color: var(--tree); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pv-name small { color: var(--dim); margin-left: 6px; }
   .pv-act { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 6px; color: var(--dim); white-space: nowrap; font-size: 12px; }
@@ -242,8 +424,89 @@
   .pv-view { position: absolute; inset: 0; overflow: auto; }
   /* The hidden view keeps its size, so the app keeps its state and hot reload while a file is shown. */
   .pv:not([data-mode="app"]) #pvApp, .pv:not([data-mode="app"]) .pv-appmsg, .pv:not([data-mode="file"]) #pvFile,
-  .pv:not([data-mode="read"]) #pvRead { visibility: hidden; pointer-events: none; }
-  #pvApp { position: absolute; inset: 0; background: #fff; }
+  .pv:not([data-mode="read"]) #pvRead, .pv:not([data-mode="changes"]) #pvChanges, .pv:not([data-mode="design"]) #pvDesign { visibility: hidden; pointer-events: none; }
+  /* A new before-and-after you haven't looked at: a dot on Changes, and on the panel button while the panel's shut. */
+  #pvSeg button[data-v="changes"].new::after, #pvToggle.new::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 5px;
+    border-radius: 50%; background: var(--needs); vertical-align: 2px; }
+  #pvToggle { position: relative; }
+  #pvToggle.new::after { position: absolute; top: 3px; right: 3px; margin: 0; }
+  .has-pv #pvToggle.new::after { display: none; }
+
+  /* Changes: before and after (changes.js). */
+  .ch-bar { display: flex; align-items: center; gap: 4px; margin: 0 0 10px; }
+  .ch-bar .seg { width: auto; margin-right: auto; }
+  .ch-bar .seg button { padding: 3px 10px; font-size: 12px; white-space: nowrap; }
+  .pv-act.on { color: var(--text); }
+  .ch { padding: 12px 12px 20px; }
+  .ch img { display: block; width: 100%; height: auto; background: var(--paper); }
+  .ch-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+  .ch-side figure { margin: 0; min-width: 0; }
+  .ch-side figcaption, .ch-files h3, .ds-group h3 { margin: 0 0 6px; font: 600 11px/1.2 var(--ui-mono); letter-spacing: .44px; text-transform: uppercase; color: var(--text-4); }
+  .ch-side img, .ch-slide { border-radius: 6px; outline: .5px solid var(--card-line); }
+  .ch-slide { --at: 50%; position: relative; overflow: hidden; cursor: ew-resize; touch-action: none; user-select: none; }
+  .ch-slide .ch-after { position: absolute; inset: 0; height: 100%; object-fit: cover; object-position: top; clip-path: inset(0 0 0 var(--at)); }
+  .ch-handle { position: absolute; top: 0; bottom: 0; left: var(--at); width: 2px; margin-left: -1px; background: var(--accent); outline: none; }
+  .ch-handle::after { content: ""; position: sticky; top: 40%; display: block; width: 14px; height: 28px; margin-left: -6px; border-radius: 7px;
+    background: var(--accent); box-shadow: var(--shadow-2); }
+  .ch-handle:focus-visible::after { outline: 2px solid var(--text-1); outline-offset: 2px; }
+  .ch-tag { position: absolute; top: 8px; padding: 2px 6px; border-radius: 4px; background: var(--scrim); color: #fff; font: 500 11px/1.3 var(--ui); pointer-events: none; }
+  .ch-tag.l { left: 8px; } .ch-tag.r { right: 8px; }
+  .ch-files { margin-top: 16px; }
+  .ch-files button { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 4px 6px; margin: 0 -6px; border-radius: 6px;
+    font: 450 13px/1.2 var(--ui); color: var(--text-2); text-align: left; white-space: nowrap; }
+  .ch-files button:hover { background: var(--hover); color: var(--text-1); }
+  .ch-files button span { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+  .ch-files button small { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-4); font-size: 12px; }
+  .ch-files p { margin: 4px 0 0; color: var(--text-4); font: 450 12px/1.2 var(--ui); }
+  .ch-strip { display: flex; gap: 8px; margin-top: 16px; overflow-x: auto; padding-bottom: 2px; }
+  .ch-strip button { flex: none; width: 88px; padding: 0; text-align: left; color: var(--text-4); }
+  .ch-strip img { height: 56px; object-fit: cover; object-position: top; border-radius: 4px; outline: .5px solid var(--card-line); }
+  .ch-strip button.on img { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .ch-strip button:hover small, .ch-strip button.on small { color: var(--text-2); }
+  .ch-strip small { display: block; margin-top: 4px; font: 450 11px/1.2 var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Design: the project's tokens (design.js). */
+  .ds { padding: 4px 12px 24px; }
+  .ds-hint { margin: 8px 0 4px; color: var(--text-4); font: 450 11px/1.3 var(--ui); }
+  #dsRefresh.spin .ic, #dsRefresh.spin .ph { animation: ds-spin .6s linear infinite; }
+  @keyframes ds-spin { to { transform: rotate(360deg); } }
+  .ds-group { margin-top: 18px; }
+  .ds-group h3 { display: flex; align-items: center; gap: 6px; }
+  .ds-group h3 small { color: var(--text-4); opacity: .7; font-weight: 500; }
+  .ds-themes { display: flex; gap: 4px; margin-left: auto; text-transform: none; letter-spacing: 0; font: 450 11px/1 var(--ui); }
+  .ds-themes span { padding: 2px 6px; border-radius: 4px; background: var(--hover); color: var(--text-3); }
+  .ds-other summary { list-style: none; cursor: default; }
+  .ds-other summary::-webkit-details-marker { display: none; }
+  .ds-tok { min-width: 0; border-radius: 6px; cursor: default; outline: none; }
+  .ds-tok:hover, .ds-tok:focus-visible { background: var(--hover); }
+  .ds-name, .ds-val { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ds-name { font: 450 12px/1.3 var(--ui-mono); color: var(--text-1); }
+  .ds-val { font: 450 11px/1.3 var(--ui-mono); color: var(--text-4); }
+  .ds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 4px; margin: 0 -6px 6px; }
+  .ds-grid .ds-tok { padding: 6px; }
+  .ds-list { display: grid; margin: 0 -6px 6px; }
+  .ds-row { display: grid; grid-template-columns: minmax(48px, 30%) 1fr auto; align-items: center; gap: 4px 10px; padding: 5px 6px; }
+  .ds-row > :first-child:last-child, .ds-row > .ds-name:first-child { grid-column: 1 / 3; }
+  .ds-row .ds-val { text-align: right; }
+  .ds-sw { display: flex; height: 44px; margin-bottom: 6px; border-radius: 6px; overflow: hidden; outline: .5px solid var(--card-line); outline-offset: -.5px;
+    background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 10px 10px; } /* checks behind see-through colours */
+  .ds-sw i { flex: 1; }
+  .ds-sw i.bad { background: repeating-linear-gradient(45deg, var(--hover) 0 4px, transparent 4px 8px); }
+  .ds-sample { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: clip; color: var(--text-1); font-size: 18px; line-height: 1.2; }
+  .ds-bar { height: 8px; } .ds-bar i { display: block; height: 100%; min-width: 1px; border-radius: 2px; background: var(--ws-1); }
+  .ds-corner { display: block; width: 44px; height: 44px; margin-bottom: 6px; border: 1.5px solid var(--text-3); border-radius: 0; background: var(--hover); }
+  .ds-paper .ds-card { display: block; height: 44px; margin: 6px 6px 12px; border-radius: 6px; background: var(--paper); }
+  .ds-paper { background: var(--c-f1f1f0, #f1f1f0); }
+  .ds-paper:hover, .ds-paper:focus-visible { background: var(--c-e6e6e6, #e6e6e6); }
+  .ds-paper .ds-name { color: #1d1d1f; }
+  .ds-track { --d: .6s; --e: ease; position: relative; height: 10px; border-radius: 5px; background: var(--hover); }
+  .ds-track i { position: absolute; top: 1px; left: 1px; width: 8px; height: 8px; border-radius: 50%; background: var(--ws-1);
+    transition: left var(--d) var(--e); }
+  .ds-tok:hover .ds-track i, .ds-tok:focus-visible .ds-track i { left: calc(100% - 9px); }
+  .ds-row:has(.ds-curve) { grid-template-columns: minmax(48px, 30%) 28px 1fr auto; }
+  .ds-curve { width: 28px; height: 30px; fill: none; stroke: var(--text-3); stroke-width: 1.5; }
+  @media (prefers-reduced-motion: reduce) { .ds-track i { transition: none; } #dsRefresh.spin .ic, #dsRefresh.spin .ph { animation: none; } }
+  #pvApp { position: absolute; inset: 0; background: var(--paper); }
   #pvApp.blank { visibility: hidden; }
   .pv-appmsg { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 12px; padding: 24px;
     color: var(--dim); background: var(--bg); }
@@ -256,23 +519,23 @@
   #pvRead { overflow: hidden; outline: none; }
   .rd-stage { position: absolute; inset: 0; }
   .rd:not(.has-book) .rd-stage, .rd.has-book .rd-empty { display: none; }
-  .rd-epub { position: absolute; inset: 0; background: #fff; padding: 28px 44px 32px; }
+  .rd-epub { position: absolute; inset: 0; background: var(--paper); padding: 28px 44px 32px; }
   .rd.scroll .rd-epub { padding: 0 0 0 28px; }
   .rd-pdf { position: absolute; inset: 0; overflow: auto; outline: none; padding: 16px 0; }
-  .rd-page { margin: 0 auto 16px; background: #fff; box-shadow: 0 1px 8px #0004; }
+  .rd-page { margin: 0 auto 16px; background: var(--paper); box-shadow: var(--shadow-page); }
   .rd-page canvas { display: block; width: 100%; height: 100%; }
   .rd.pages .rd-pdf { overflow: hidden; display: grid; place-items: center; padding: 0; }
   .rd.pages .rd-page:not(.on) { display: none; }
   .rd.pages .rd-page { margin: 0; }
   .rd-turn { position: absolute; top: 50%; margin-top: -16px; width: 32px; height: 32px; border-radius: 50%; display: none;
     place-items: center; background: var(--panel); color: var(--text); border: 1px solid var(--line); opacity: 0;
-    box-shadow: 0 1px 4px #0003; transition: opacity .15s; }
+    box-shadow: var(--shadow-2); transition: opacity .15s; }
   .rd-turn.prev { left: 6px; } .rd-turn.next { right: 6px; }
   .rd.pages.has-book .rd-turn { display: grid; }
   .rd:hover .rd-turn { opacity: .75; } .rd .rd-turn:hover { opacity: 1; }
   .rd-done { position: absolute; top: 10px; left: 50%; z-index: 1; transform: translate(-50%, -6px); opacity: 0; pointer-events: none;
     padding: 6px 13px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; white-space: nowrap;
-    box-shadow: 0 2px 10px #0005; transition: opacity .2s, transform .2s; }
+    box-shadow: var(--shadow-float); transition: opacity .2s, transform .2s; }
   .rd-done.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
   .rd-done u { text-underline-offset: 2px; }
   .rd.loading .rd-stage { opacity: 0; }
@@ -294,12 +557,11 @@
   .pv-msg b { display: block; color: var(--text); margin-bottom: 6px; font-weight: 600; }
   .pv-media { min-height: 100%; display: grid; place-items: center; padding: 24px;
     background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 16px 16px; } /* shows transparency */
-  .pv-media img, .pv-media video { max-width: 100%; max-height: calc(100vh - 100px); box-shadow: 0 2px 12px #0003; }
-  .pv-code { display: flex; min-width: min-content; font: var(--mono-size, 13px)/1.5 var(--mono, Menlo, monospace); }
-  .pv-code pre { margin: 0; padding: 12px 0; }
-  .pv-code .gutter { flex: none; padding: 12px 12px 12px 16px; text-align: right; color: var(--faint); user-select: none;
-    position: sticky; left: 0; background: var(--bg); }
-  .pv-code .src { padding-right: 24px; tab-size: 2; }
+  .pv-media img, .pv-media video { max-width: 100%; max-height: calc(100vh - 100px); box-shadow: var(--shadow-media); }
+  /* Code is @pierre/diffs in a shadow root (renderer.js showCode): Pierre's theme, Fork's font and size. */
+  .pv-code { --diffs-font-family: var(--mono, Menlo, monospace); --diffs-font-size: var(--mono-size, 13px);
+    --diffs-line-height: 1.6; }
+  #pvLine:not([hidden]) { white-space: nowrap; }
   .pv-md { max-width: 720px; margin: 0 auto; padding: 20px 28px 48px; line-height: 1.6; font-size: 14px; }
   .pv-md h1, .pv-md h2 { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .pv-md a { color: var(--accent); }
@@ -310,11 +572,6 @@
   .pv-md blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--line); color: var(--dim); }
   .pv-md table { border-collapse: collapse; }
   .pv-md th, .pv-md td { border: 1px solid var(--line); padding: 5px 10px; }
-  /* Syntax colours (Shiki's css-variables theme, files.mjs) come from the terminal theme, so every theme works. */
-  .pv-code { --code-foreground: var(--text); --code-token-comment: var(--dim); --code-token-keyword: var(--magenta);
-    --code-token-string: var(--ok); --code-token-string-expression: var(--ok); --code-token-constant: var(--warn);
-    --code-token-function: var(--blue); --code-token-parameter: var(--cyan); --code-token-punctuation: var(--dim);
-    --code-token-link: var(--accent); color: var(--text); }
 
   /* Overlays: start screen + palette. */
   .overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 70%, transparent);
@@ -324,7 +581,7 @@
   /* Dialogs sit in the middle. ⌘K stays near the top: its list changes height as you type. */
   #welcomeOv, #startOv, #updOv { align-items: center; padding: 24px 0; }
   .card { width: min(560px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 14px; box-shadow: 0 24px 60px #0008; transform: scale(.98); transition: transform .16s var(--ease); }
+    border-radius: 14px; box-shadow: var(--shadow-card); transform: scale(.98); transition: transform .16s var(--ease); }
   .overlay.show .card { transform: none; }
 
   .start { padding: 28px; }
@@ -332,7 +589,8 @@
   .start > p { margin: 0 0 20px; color: var(--dim); }
   .opt { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 12px; border-radius: var(--radius); text-align: left; color: var(--tree); }
   .opt:hover { background: var(--line); }
-  .opt small { display: block; color: var(--dim); }
+  .opt small { display: block; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opt > span:last-child { min-width: 0; } /* a long path ends in … instead of wrapping */
   .opt .ico { width: 32px; height: 32px; border-radius: 8px; background: var(--hover); color: var(--tree);
     display: grid; place-items: center; flex: none; }
   .label { margin: 16px 12px 6px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
@@ -342,6 +600,13 @@
     border-radius: 8px; padding: 8px 10px; outline: none; }
   input:focus { border-color: var(--accent); }
   .go { padding: 8px 14px; border-radius: 8px; background: var(--accent); color: var(--on-accent); }
+  /* New folder, under its row: a name, where it goes (click to change), Create. Opens without motion: you're typing. */
+  .newf { display: none; flex-direction: column; gap: 8px; margin: 4px 12px 8px 56px; }
+  .newf.show { display: flex; }
+  .newf-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .newf-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 0; color: var(--dim); font-size: 12px; }
+  .newf-where:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+  .newf-err { color: var(--bad); font-size: 12px; }
   .skip { margin-top: 16px; color: var(--dim); padding: 6px 12px; }
   .skip:hover { color: var(--text); }
   .usage-note { margin: 14px 12px 0; font-size: 11px; color: var(--faint); }
@@ -351,7 +616,6 @@
   /* First run (onboarding.js): welcome cards, then a spotlight that walks through the app. */
   #welcomeOv { z-index: 12; } /* above the start screen and What's new */
   .welcome { padding: 32px 32px 20px; text-align: center; }
-  .welcome .blob { margin: 0 0 12px; }
   .welcome h1 { margin: 0 0 8px; font-size: 22px; text-wrap: balance; }
   .welcome p { margin: 0 auto; max-width: 400px; color: var(--dim); line-height: 1.5; min-height: 3em; text-wrap: pretty; }
   .wdots { display: flex; justify-content: center; gap: 6px; margin: 22px 0 14px; }
@@ -362,7 +626,7 @@
   .tour { position: fixed; inset: 0; z-index: 20; opacity: 0; transition: opacity .2s var(--ease); }
   .tour.show { opacity: 1; }
   .tour-block { position: absolute; inset: 0; -webkit-app-region: no-drag; } /* nothing underneath is clickable mid-tour */
-  .spot { position: absolute; border-radius: 10px; pointer-events: none; box-shadow: 0 0 0 9999px #0000008c;
+  .spot { position: absolute; border-radius: 10px; pointer-events: none; box-shadow: 0 0 0 9999px var(--scrim);
     outline: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 0;
     transition: top .25s var(--ease), left .25s var(--ease), width .25s var(--ease), height .25s var(--ease); }
   .tour-tip { position: absolute; width: 300px; padding: 16px 16px 12px; transform: none;
@@ -404,7 +668,7 @@
   .upd { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; margin-right: 6px; border-radius: 999px;
     background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; white-space: nowrap; }
   .upd[hidden] { display: none; }
-  .upd svg { width: 14px; height: 14px; }
+  .upd .ic { width: 14px; height: 14px; }
   .upd:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
   #updOv { z-index: 11; } /* above the start screen */
   .upd-card { padding: 24px 28px; }
@@ -438,7 +702,6 @@
     background: color-mix(in srgb, var(--bg) 80%, transparent); }
   .game-msg h2 { margin: 8px 0 0; font-size: 14px; color: var(--text); text-transform: uppercase; letter-spacing: .08em; }
   .game-msg p { margin: 0 0 10px; color: var(--dim); }
-  .game-blob { display: grid; place-items: center; }
   .game-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; }
   .game-btns button { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; color: var(--text); }
   .game-btns button:hover { background: var(--hover); }
@@ -464,11 +727,13 @@
 
   /* Settings mode: the sidebar lists sections, the main area shows the page. Terminals keep running, hidden. */
   .set-nav, .set-page { display: none; }
-  .in-settings .side-scroll, .in-settings .top, .in-settings .term, .in-settings .dock { display: none; }
+  .in-settings .side-scroll, .in-settings .term, .in-settings .dock, .in-settings .top > :not(.tabstrip) { display: none; }
   .in-settings .set-nav { display: block; flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
-  .in-settings .set-page { display: block; grid-row: 1 / 4; grid-column: 2; min-width: 0; overflow-y: auto;
-    background: var(--bg); padding: 0 32px 40px; }
-  .set-drag { height: 44px; -webkit-app-region: drag; }
+  .in-settings .set-page { display: block; grid-row: 1 / 3; grid-column: 2; min-width: 0; overflow-y: auto;
+    padding: 0 32px 40px; }
+  .set-drag { height: 24px; }
+  .set-sec:not(.on) { display: none; }
+  .set-sec > :first-child + h4, .set-sec > h1 + .set-list { margin-top: 0; }
   .set-page h1, .set-page h4, .set-list, .sample { max-width: 620px; margin-left: auto; margin-right: auto; }
   .set-page h1 { margin-top: 8px; margin-bottom: 20px; font-size: 22px; }
   .set-page h4 { margin-top: 28px; margin-bottom: 8px; font-size: 11px; font-weight: 600; color: var(--dim);
@@ -491,7 +756,7 @@
   .arrows button:hover { color: var(--text); background: var(--hover); }
   .seg { display: flex; width: 220px; padding: 2px; border-radius: 8px; background: var(--hover); }
   .seg button { flex: 1; padding: 5px; border-radius: 6px; color: var(--dim); }
-  .seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px #0003; }
+  .seg button.on { background: var(--bg); color: var(--text); box-shadow: var(--shadow-1); }
   .sample { padding: 16px 18px; border-radius: var(--radius); border: 1px solid var(--line); line-height: 1.25;
     white-space: pre; overflow: hidden; }
   .sample .dots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
@@ -500,14 +765,13 @@
   /* Font smoothing Off: panes switch from WebGL back to DOM text (renderer.js useGpu), so plain CSS reaches it. */
   [data-smooth="off"] .xterm, [data-smooth="off"] .sample { -webkit-font-smoothing: none; }
 
-  /* Settings → Translucent sidebar: Off. visualEffectState can't change at runtime, so paint over the glass. */
-  :root[data-translucent="off"] .side { background: var(--panel); }
+  /* Settings → Translucent: Off paints the frame (#app, above), since the window's glass can't be switched off at runtime. */
   .switch { appearance: none; flex: none; position: relative; width: 36px; height: 22px; margin: 0; padding: 0; border: 0;
     border-radius: 999px; background: var(--active); cursor: pointer; transition: background .15s; }
   .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
-    background: #fff; box-shadow: 0 1px 3px #0004; transition: transform .15s var(--ease); }
+    background: var(--paper); box-shadow: var(--shadow-knob); transition: transform .15s var(--ease); }
   .switch:checked { background: var(--accent); }
-  .switch:checked::after { transform: translateX(14px); }
+  .switch:checked::after { transform: translateX(14px); background: var(--on-accent); }
   .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -516,36 +780,67 @@
 <body>
 <div class="app" id="app">
   <header class="top">
-    <button class="ibtn" id="sideShow" title="Show sidebar (⌘B)" aria-label="Show sidebar"><i data-icon="panel-left"></i></button>
-    <nav id="crumbs" style="display:flex;align-items:center;gap:2px;overflow:hidden"></nav>
-    <div class="spacer"></div>
+    <button class="tbtn" id="sideShow" title="Show sidebar (⌘B)" aria-label="Show sidebar"><i class="ph" data-ph="sidebar-simple"></i></button>
+    <nav id="crumbs"></nav>
+    <div class="tabstrip">
+      <div id="tabs" role="tablist" aria-label="Workspaces"></div>
+      <button class="tbtn tnew" id="newTab" data-key="⌘N" title="New workspace (⌘N)" aria-label="New workspace"><i class="ph small" data-ph="plus"></i></button>
+    </div>
     <button class="upd" id="updPill" hidden title="A new version of Fork"><i data-icon="download"></i><span id="updPillV"></span></button>
-    <button class="ibtn" id="splitR" data-key="⌘D" title="Split right (⌘D)"><i data-icon="columns-2"></i></button>
-    <button class="ibtn" id="splitD" data-key="⌘⇧D" title="Split down (⌘⇧D)"><i data-icon="rows-2"></i></button>
-    <button class="ibtn" id="pvToggle" data-key="⌘P" title="Preview (⌘P)"><i data-icon="panel-right"></i></button>
+    <button class="tbtn" id="splitR" data-key="⌘D" title="Split right (⌘D)" aria-label="Split right"><i class="ph" data-ph="square-split-vertical"></i></button>
+    <button class="tbtn" id="splitD" data-key="⌘⇧D" title="Split down (⌘⇧D)" aria-label="Split down"><i class="ph" data-ph="square-split-horizontal"></i></button>
+    <button class="tbtn" id="pvToggle" data-key="⌘P" title="Preview (⌘P)" aria-label="Preview"><i class="ph" data-ph="sidebar-simple"></i></button>
   </header>
 
+  <div class="stage">
   <aside class="side">
     <div class="side-top">
-      <button class="ibtn" id="sideToggle" data-key="⌘B" title="Hide sidebar (⌘B)" aria-label="Hide sidebar"><i data-icon="panel-left"></i></button>
-      <button class="ibtn" id="back" data-key="⌘[" title="Back (⌘[)" aria-label="Back" disabled><i data-icon="arrow-left"></i></button>
-      <button class="ibtn" id="fwd" data-key="⌘]" title="Forward (⌘])" aria-label="Forward" disabled><i data-icon="arrow-right"></i></button>
+      <div class="brand" aria-label="Fork">F0RK</div>
+      <button class="tbtn" id="sideToggle" data-key="⌘B" title="Hide sidebar (⌘B)" aria-label="Hide sidebar"><i class="ph" data-ph="sidebar-simple"></i></button>
     </div>
     <div class="side-scroll">
-      <div class="brand">Fork</div>
-      <button class="srow" id="openPal"><i data-icon="search"></i><span>Search</span><kbd><span>⌘</span><span>K</span></kbd></button>
-      <button class="srow" id="openSettings"><i data-icon="settings"></i><span>Settings</span><kbd><span>⌘</span><span>,</span></kbd></button>
-      <div class="side-div"></div>
-      <div class="chips" id="chips"></div>
-      <div class="sec"><h3>Terminals</h3><button class="add" id="newTab" data-key="⌘T" title="New tab (⌘T)" aria-label="New tab"><i data-icon="plus"></i></button></div>
-      <div id="tabs"></div>
-      <h3 class="folder">In this folder</h3>
-      <div id="entries"></div>
+      <div class="parked">
+        <button class="ibtn" id="back" data-key="⌘[" title="Back (⌘[)" aria-label="Back" disabled><i data-icon="arrow-left"></i></button>
+        <button class="ibtn" id="fwd" data-key="⌘]" title="Forward (⌘])" aria-label="Forward" disabled><i data-icon="arrow-right"></i></button>
+        <div class="chips" id="chips"></div>
+      </div>
+      <label class="search" id="searchBox"><i class="ph" data-ph="magnifying-glass"></i><input id="search" placeholder="Search..." spellcheck="false" autocomplete="off" aria-label="Search the files in this workspace" aria-controls="findList"><kbd><span>⌘</span><span>K</span></kbd></label>
+      <div class="side-body" id="sideBody">
+      <div class="side-info">
+        <div class="sec"><h3>Workspace info</h3></div>
+        <div class="ws-info" id="wsInfo"></div>
+      </div>
+      <div class="side-files">
+        <div class="files-head"><h3 class="folder">Files</h3>
+          <span><button class="hbtn" id="collapseAll" title="Collapse all folders" aria-label="Collapse all folders"><i class="ph small" data-ph="arrows-in-line-vertical"></i></button><button class="hbtn" id="newFile" title="New file" aria-label="New file"><i class="ph small" data-ph="plus"></i></button></span></div>
+        <div id="newEntry"></div>
+        <div id="entries"></div>
+        <div class="empty" id="treeEmpty" hidden>This folder is empty.</div>
+        <div class="home-empty" id="homeEmpty" hidden>
+          <i class="ph" data-ph="folder"></i>
+          <p class="he-title">This is your home folder</p>
+          <p class="he-body">Pick a project folder to see its files here.</p>
+          <button class="he-choose" id="homeChoose">Choose a project folder</button>
+          <div id="homeRecent"></div>
+        </div>
+      </div>
+      </div>
+      <div class="find-list" id="findList" role="listbox" aria-label="Search results" hidden></div>
     </div>
+    <footer class="side-foot">
+      <button class="fbtn" id="railNew" title="What's new" aria-label="What's new"><i class="ph small" data-ph="gift"></i></button>
+      <span>
+        <button class="fbtn" id="openSettings" title="Settings (⌘,)" aria-label="Settings"><i class="ph small" data-ph="gear"></i></button>
+        <button class="fbtn" id="railHelp" title="Welcome tour" aria-label="Welcome tour"><i class="ph small" data-ph="question"></i></button>
+      </span>
+    </footer>
     <nav class="set-nav">
       <button class="nav-back" id="closeSettings"><i data-icon="chevron-left"></i>Back to terminal</button>
       <h3>Settings</h3>
-      <button class="nav-item on"><i data-icon="sun"></i>Appearance</button>
+      <button class="nav-item on" data-sec="appearance"><i data-icon="sun"></i>Appearance</button>
+      <button class="nav-item" data-sec="general"><i data-icon="settings"></i>General</button>
+      <button class="nav-item" data-sec="notifications"><i data-icon="bell"></i>Notifications</button>
+      <button class="nav-item" data-sec="privacy"><i data-icon="lock"></i>Privacy</button>
     </nav>
   </aside>
   <div class="side-grip" id="sideGrip"></div>
@@ -562,9 +857,10 @@
   <div class="pv-grip" id="pvGrip"></div>
   <section class="pv" id="pv" data-mode="file">
     <header class="pv-head">
-      <span class="seg" id="pvSeg"><button data-v="file">File</button><button data-v="app">App</button><button data-v="read">Read</button></span>
+      <span class="seg" id="pvSeg"><button data-v="file">File</button><button data-v="app">App</button><button data-v="changes">Changes</button><button data-v="design">Design</button><button data-v="read">Read</button></span>
       <div class="pv-bar file">
         <span class="pv-name" id="pvName"></span>
+        <button class="pv-act" id="pvLine" hidden></button>
         <button class="pv-act" id="pvPage" style="display:none">View as page</button>
         <button class="pv-act" id="pvOpen"></button>
         <button class="pv-act" id="pvReveal" title="Show in Finder" aria-label="Show in Finder"><i data-icon="folder-search"></i></button>
@@ -575,6 +871,11 @@
         <button class="pv-act" id="pvReload" title="Reload" aria-label="Reload"><i data-icon="rotate-cw"></i></button>
         <input id="pvUrl" placeholder="localhost:3000" spellcheck="false" autocomplete="off">
         <button class="pv-act" id="pvBrowser" title="Open in your browser" aria-label="Open in your browser"><i data-icon="external-link"></i></button>
+      </div>
+      <div class="pv-bar changes"><span class="pv-name" id="chName"></span></div>
+      <div class="pv-bar design">
+        <span class="pv-name" id="dsName"></span>
+        <button class="pv-act" id="dsRefresh" title="Read the project again" aria-label="Read the project again"><i data-icon="rotate-cw"></i></button>
       </div>
       <div class="pv-bar read">
         <span class="pv-name" id="rdName"></span>
@@ -587,6 +888,8 @@
       <div class="pv-view" id="pvFile"><div class="pv-msg"><b>Nothing to preview yet</b>Click a file in the sidebar to see it here.</div></div>
       <webview id="pvApp" class="blank" partition="persist:preview" allowpopups></webview>
       <div class="pv-appmsg show" id="pvAppMsg"></div>
+      <div class="pv-view ch" id="pvChanges"></div>
+      <div class="pv-view ds" id="pvDesign"></div>
       <div class="pv-view rd pages" id="pvRead" tabindex="-1">
         <div class="rd-empty">
           <i data-icon="book-open"></i>
@@ -606,61 +909,72 @@
 
   <section class="set-page">
     <div class="set-drag"></div>
-    <h1>Appearance</h1>
-    <div class="set-list">
-      <div class="set-row"><span>Appearance<small>System follows your Mac's light or dark setting</small></span>
-        <span class="seg" id="setMode"><button data-v="light">Light</button><button data-v="dark">Dark</button><button data-v="system">System</button></span></div>
-      <label class="set-row" id="lightRow"><span><span class="theme-label">Light theme</span><small>Colours for the terminal and the whole app</small></span><select id="setLight"></select></label>
-      <label class="set-row" id="darkRow"><span><span class="theme-label">Dark theme</span><small>Colours for the terminal and the whole app</small></span><select id="setDark"></select></label>
-      <label class="set-row"><span>Font</span><select id="setFont"></select></label>
-      <div class="set-row"><span>Font size</span>
-        <span class="stepper"><input type="number" id="setSize" min="8" max="32" aria-label="Font size">
-          <span class="arrows"><button id="sizeUp" aria-label="Bigger"><i data-icon="chevron-up"></i></button><button id="sizeDown" aria-label="Smaller"><i data-icon="chevron-down"></i></button></span>px</span></div>
-      <label class="set-row"><span>Font smoothing<small>Off draws sharp, unsmoothed text</small></span>
-        <input type="checkbox" class="switch" id="setSmooth"></label>
+    <!-- One page per tab in the settings sidebar (renderer.js showSettingsSec). -->
+    <div class="set-sec on" data-sec="appearance">
+      <h1>Appearance</h1>
+      <div class="set-list">
+        <div class="set-row"><span>Appearance<small>System follows your Mac's light or dark setting</small></span>
+          <span class="seg" id="setMode"><button data-v="light">Light</button><button data-v="dark">Dark</button><button data-v="system">System</button></span></div>
+        <label class="set-row"><span>Font</span><select id="setFont"></select></label>
+        <div class="set-row"><span>Font size</span>
+          <span class="stepper"><input type="number" id="setSize" min="8" max="32" aria-label="Font size">
+            <span class="arrows"><button id="sizeUp" aria-label="Bigger"><i data-icon="chevron-up"></i></button><button id="sizeDown" aria-label="Smaller"><i data-icon="chevron-down"></i></button></span>px</span></div>
+        <label class="set-row"><span>Font smoothing<small>Off draws sharp, unsmoothed text</small></span>
+          <input type="checkbox" class="switch" id="setSmooth"></label>
+      </div>
+      <h4>Window</h4>
+      <div class="set-list">
+        <label class="set-row"><span>Translucent frame<small>See your desktop through the top bar</small></span>
+          <input type="checkbox" class="switch" id="setTranslucent"></label>
+      </div>
+      <h4>Preview</h4>
+      <div class="sample" id="preview"></div>
     </div>
-    <h4>Sidebar</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Translucent sidebar<small>See your desktop through the sidebar</small></span>
-        <input type="checkbox" class="switch" id="setTranslucent"></label>
+    <div class="set-sec" data-sec="general">
+      <h1>General</h1>
+      <h4>Links &amp; files</h4>
+      <div class="set-list">
+        <label class="set-row"><span>Open links and files inside Fork<small>Off: websites and your app open in your browser, files open in their own app</small></span>
+          <input type="checkbox" class="switch" id="setInFork"></label>
+        <label class="set-row"><span>Before and after pictures of your app<small>When an agent changes your app, Fork keeps a picture from before and after. They stay on this Mac</small></span>
+          <input type="checkbox" class="switch" id="setShots"></label>
+      </div>
+      <h4>Startup</h4>
+      <div class="set-list">
+        <label class="set-row"><span>Reopen your tabs when Fork starts<small>Tabs, splits, folders and what was on screen. Claude picks up where it left off</small></span>
+          <input type="checkbox" class="switch" id="setRestore"></label>
+      </div>
+      <h4>Help</h4>
+      <div class="set-list">
+        <div class="set-row"><span>Welcome tour<small>The intro cards and a quick look around the app</small></span>
+          <button class="set-btn" id="replayTour">Show again</button></div>
+      </div>
     </div>
-    <h4>Links &amp; files</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Open links and files inside Fork<small>Off: websites and your app open in your browser, files open in their own app</small></span>
-        <input type="checkbox" class="switch" id="setInFork"></label>
+    <div class="set-sec" data-sec="notifications">
+      <h1>Notifications</h1>
+      <div class="set-list">
+        <label class="set-row"><span>Tell me when something's done<small>While you're in another app: when Claude, OpenCode or another tool finishes or needs you, or a long command ends</small></span>
+          <input type="checkbox" class="switch" id="setAlerts"></label>
+        <label class="set-row"><span>Play a sound when something finishes<small>A soft chime when Claude or a long command is done, in Fork or not</small></span>
+          <input type="checkbox" class="switch" id="setSounds"></label>
+        <label class="set-row" id="notchRow" hidden><span>Show what's happening in the notch<small>While you're in another app, the notch grows to show what's working, what's done and what failed. Hover it to see every tab</small></span>
+          <input type="checkbox" class="switch" id="setNotch"></label>
+      </div>
     </div>
-    <h4>Preview</h4>
-    <div class="sample" id="preview"></div>
-    <h4>Startup</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Reopen your tabs when Fork starts<small>Tabs, splits, folders and what was on screen. Claude picks up where it left off</small></span>
-        <input type="checkbox" class="switch" id="setRestore"></label>
-    </div>
-    <h4>Notifications</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Tell me when something's done<small>While you're in another app: when Claude, OpenCode or another tool finishes or needs you, or a long command ends</small></span>
-        <input type="checkbox" class="switch" id="setAlerts"></label>
-      <label class="set-row" id="notchRow" hidden><span>Show what's happening in the notch<small>While you're in another app, the notch grows to show what's working, what's done and what failed. Hover it to see every tab</small></span>
-        <input type="checkbox" class="switch" id="setNotch"></label>
-    </div>
-    <h4>Privacy</h4>
-    <div class="set-list">
-      <label class="set-row"><span>Share anonymous usage<small>Which features get used, never your files, commands or names</small></span>
-        <input type="checkbox" class="switch" id="setUsage"></label>
-      <label class="set-row"><span>Smarter matching<small>Sends what you type in ⌘K, and errors Fork doesn't recognise, to TypeSafe to find the right answer. Never in the background</small></span>
-        <input type="checkbox" class="switch" id="setSmart"></label>
-    </div>
-    <h4>Help</h4>
-    <div class="set-list">
-      <div class="set-row"><span>Welcome tour<small>The intro cards and a quick look around the app</small></span>
-        <button class="set-btn" id="replayTour">Show again</button></div>
+    <div class="set-sec" data-sec="privacy">
+      <h1>Privacy</h1>
+      <div class="set-list">
+        <label class="set-row"><span>Share anonymous usage<small>Which features get used, never your files, commands or names</small></span>
+          <input type="checkbox" class="switch" id="setUsage"></label>
+        <label class="set-row"><span>Smarter matching<small>Sends what you type in ⌘K, and errors Fork doesn't recognise, to TypeSafe to find the right answer. Never in the background</small></span>
+          <input type="checkbox" class="switch" id="setSmart"></label>
+      </div>
     </div>
   </section>
   <div id="hidden"></div>
 
   <footer class="dock">
     <div class="oops" id="oops">
-      <span class="blob" id="oopsBlob" hidden></span>
       <p id="oopsText">That didn't work.</p>
       <button id="explainBtn">What went wrong?</button>
       <button id="fixBtn" style="display:none">Type the fix</button>
@@ -670,14 +984,14 @@
     <div class="ready" id="ready"><span class="dot"></span><p>Your app is running at <b id="readyUrl"></b></p>
       <button class="go" id="readyShow">Show it</button><button class="x" id="readyClose" aria-label="Dismiss"><i data-icon="x"></i></button></div>
     <div class="hint" id="hint"></div>
-    <div class="running"><span class="blob" id="runBlob"></span><span id="runText">Something is running.</span> <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button><button class="play" id="playGame"><i data-icon="gamepad-2"></i>Play a game while you wait</button></div>
-    <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next tab</span><span><b>⌘F</b> find</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
+    <div class="running"><span id="runText">Something is running.</span> <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button><button class="play" id="playGame"><i data-icon="gamepad-2"></i>Play a game while you wait</button></div>
+    <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next workspace</span><span><b>⌘F</b> find</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new workspace</span><span><b>⌘T</b> new terminal</span><span><b>⌘⇧N</b> new window</span><span><b>⌘`</b> switch windows</span></div>
   </footer>
+  </div>
 </div>
 
 <div class="overlay" id="welcomeOv">
   <div class="card welcome" role="dialog" aria-live="polite">
-    <span class="blob" id="welcomeBlob"></span>
     <h1 id="welcomeTitle"></h1>
     <p id="welcomeText"></p>
     <div class="wdots" id="welcomeDots"></div>
@@ -686,14 +1000,20 @@
 </div>
 <div class="overlay" id="startOv">
   <div class="card start">
-    <h1>Where do you want to work?</h1>
-    <p>Pick a folder. You can always move around later from the sidebar.</p>
+    <h1 id="startTitle">Where do you want to work?</h1>
+    <p>A workspace is a folder: its files, its branch, its terminals.</p>
     <div id="recents"></div>
     <div class="label">Or</div>
-    <button class="opt" id="pick"><span class="ico"><i data-icon="folder-plus"></i></span><span>Choose a folder…<small>Any folder on your Mac</small></span></button>
+    <button class="opt" id="newFolderOpt"><span class="ico"><i data-icon="folder-plus"></i></span><span>New folder<small>Start something fresh</small></span></button>
+    <div class="newf" id="newFolder">
+      <input id="newFolderName" placeholder="Name it, e.g. my-site" spellcheck="false" autocomplete="off" aria-label="Folder name">
+      <div class="newf-row"><button class="newf-where" id="newFolderWhere" title="Change where it goes"></button><button class="go" id="newFolderGo">Create</button></div>
+      <div class="newf-err" id="newFolderErr" role="alert" hidden></div>
+    </div>
+    <button class="opt" id="pick"><span class="ico"><i data-icon="folder-search"></i></span><span>Choose a folder…<small>Any folder on your Mac</small></span></button>
     <button class="opt" id="cloneOpt"><span class="ico"><i data-icon="download"></i></span><span>Get a project from GitHub<small>Paste the link, pick where it goes</small></span></button>
     <div class="clone" id="clone"><input id="cloneUrl" placeholder="https://github.com/team/project"><button class="go" id="cloneGo">Next</button></div>
-    <button class="skip" id="skip">Just open the terminal →</button>
+    <button class="skip" id="skip">Cancel</button>
     <p class="usage-note" id="usageNote" hidden>Fork shares anonymous usage (never your files, commands or names) so it can get better. <button id="usageOff">Turn off</button></p>
   </div>
 </div>
@@ -727,16 +1047,21 @@
 <script src="node_modules/@xterm/addon-webgl/lib/addon-webgl.js"></script>
 <script src="node_modules/@xterm/addon-image/lib/addon-image.js"></script>
 <script src="node_modules/dompurify/dist/purify.min.js"></script>
+<script src="vendor/trees.js"></script>
 <script src="panes.js"></script>
+<!-- Central Icons, drawn by `npm run icons` and never committed (paid set). Missing in a clone without the
+     licence key, which is fine: the open icons draw instead. -->
+<script src="icons/central/ready.js"></script>
 <script src="icons.js"></script>
 <script src="preview.js"></script>
 <script src="protocols.js"></script>
 <script src="themes.js"></script>
-<script src="vendor/bloub/bloub.js"></script>
-<script src="blob.js"></script>
 <script src="onboarding.js"></script>
 <script src="games.js"></script>
 <script src="reader.js"></script>
+<script src="changes.js"></script>
+<script src="design.js"></script>
+<script src="sounds.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>
