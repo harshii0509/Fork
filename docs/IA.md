@@ -66,6 +66,8 @@ flowchart TB
 ## 3. Each place
 
 ### Top strip
+36px tall: the traffic lights, tabs and buttons on one line, each tab 4px above the card.
+
 | Element | For | Get there | Notes |
 |---|---|---|---|
 | Workspace tabs | Switching projects | Click, ⌘1–9, ⌘⇧[ / ⌘⇧] | The square is the status: solid = ready, rippling lattice = working, yellow pulse = needs you or finished while you were away, red = failed. × closes the workspace. |
@@ -167,4 +169,5 @@ While Fork isn't in front: the **notch** (on a Mac with one) grows to show what'
 ---
 
 ## Log
+- **9 Oct 2026**: The top strip is 36px (was 44), so a workspace tab sits 4px above the card (was 8) and reads as part of it. `--strip` in index.html; the traffic lights follow (main.js).
 - **7 Oct 2026**: First version, covering all of Fork on `ui-redesign`, including the new Changes and Design tabs in the panel and the Before and after setting.

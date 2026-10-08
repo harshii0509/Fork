@@ -73,7 +73,7 @@ function createWindow(restore) {
   const win = new BrowserWindow({
     width: 1200, height: 760, ...(restore?.bounds && onScreen(restore.bounds) ? restore.bounds : {}),
     minWidth: 760, minHeight: 480,
-    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 15 }, // centred in the 44px top strip
+    titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 13, y: 11 }, // centred in the 36px top strip (index.html --strip)
     backgroundColor: '#00000000', vibrancy: 'sidebar', visualEffectState: 'active',
     webPreferences: { preload: join(HERE, 'preload.cjs'), webviewTag: true }, // <webview> = the preview panel's app view
   });
