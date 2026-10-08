@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, dialog, nativeTheme, Menu, Notification, screen, shell, webContents } from 'electron';
-import { execFile, execFileSync, spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { chmodSync, existsSync, opendirSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -31,12 +31,22 @@ for (const k of Object.keys(process.env)) if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_
 
 // Opened from Finder or the Dock, the app gets a bare PATH; borrow the login shell's so `claude` resolves.
 // Interactive (-i) too, since ~/.zshrc is often where tools add themselves; markers skip anything it prints.
-try {
-  const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "<<PATH>>%s<<PATH>>" "$PATH"'],
-    { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
-  const path = out.split('<<PATH>>')[1];
-  if (path) process.env.PATH = path;
-} catch {} // keep the default PATH
+// In the background, so the window opens at once (a shell's setup can take a second or more). Terminals
+// don't need it (each is a login shell that builds its own PATH); the few things Fork runs itself
+// (Ask AI's claude, "is brew installed?") wait for pathReady. On any failure: keep the default PATH.
+const pathReady = new Promise((done) => {
+  let out = '';
+  const sh = spawn(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "<<PATH>>%s<<PATH>>" "$PATH"'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const timer = setTimeout(() => sh.kill(), 5000);
+  sh.stdout.on('data', (d) => { out += d; });
+  sh.on('error', () => { clearTimeout(timer); done(); });
+  sh.on('close', () => {
+    clearTimeout(timer);
+    const path = out.split('<<PATH>>')[1];
+    if (path) process.env.PATH = path;
+    done();
+  });
+});
 
 // Every terminal pane is one pty, owned by the window that asked for it.
 const ptys = new Map(); // id -> { pty, wc }
@@ -169,8 +179,9 @@ function buildMenu() {
 }
 
 // Ask AI goes through the person's own Claude Code login, kept warm while it's likely to be used (claude.mjs).
-const askClaude = ai.ask;
-ipcMain.on('ai:warm', () => ai.warm());
+// Both wait for the login shell's PATH, or `claude` might not be found right after launch.
+const askClaude = async (...a) => { await pathReady; return ai.ask(...a); };
+ipcMain.on('ai:warm', () => { pathReady.then(() => ai.warm()); });
 
 ipcMain.handle('pty:create', (e, cwd) => createPty(e.sender, cwd));
 ipcMain.on('pty:write', (_, id, d) => ptys.get(id)?.pty.write(d));
@@ -406,6 +417,7 @@ const jevLog = app.isPackaged ? () => {} : console.log;
 const COMMAND_Q = commandQuestion(PALETTE.map((p) => ({ ...p, cmd: shape(p) }))), ERROR_Q = errorQuestion(ERRORS, (id) => explainEntry(id).text);
 // 1. Fork's library (instant). 2. Jev picks the closest known error, shown in Fork's own words. 3. null: "unusual".
 ipcMain.handle('explain', async (_, output, cwd, smart) => {
+  await pathReady; // errorContext asks "is brew / gh installed?"
   const ctx = errorContext(cwd);
   // macOS keeping Fork out of this folder (Downloads, Desktop…) makes tools fail in vague ways
   // ("An unknown error occurred"), so check the folder itself before reading the output.
