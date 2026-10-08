@@ -3,7 +3,8 @@
 // damaged or old file can never stop Fork from starting: at worst it starts fresh.
 //
 // { v: 1, enabled, savedAt, windows: [{ bounds, tabIx, side: { hidden, width }, tabs: [{ active, root }] }] }
-// { …, tabs: [{ active, root, color? }] }: color is the workspace's square (0–2).
+// { …, tabs: [{ active, root, color?, dir? }] }: color is the workspace's square (0–2), dir its folder
+// (gone from the Mac, or saved before workspaces had one: the renderer uses its terminal's folder).
 // root is a split { dir: 'row'|'col', ratio, a, b } or a pane { cwd, name?, claude?, screen? }; name is the terminal's.
 
 export const VERSION = 1;
@@ -47,6 +48,7 @@ function win(w, ctx) {
     const n = countPanes(root);
     const tab = { root, active: Number.isInteger(t.active) ? clamp(t.active, 0, n - 1) : 0 };
     if (Number.isInteger(t.color) && t.color >= 0 && t.color < 3) tab.color = t.color;
+    if (typeof t.dir === 'string' && t.dir && ctx.exists(t.dir)) tab.dir = t.dir;
     return tab;
   }).filter(Boolean);
   if (!tabs.length) return null;

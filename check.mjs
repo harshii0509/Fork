@@ -473,6 +473,12 @@ assert.equal(countPanes(t2), 2);
 assert.equal(w.tabs[1].active, 1);                                 // active pane clamped to what exists
 for (const bad of [null, 'x', { v: 99, windows: good.windows }, { v: 1, windows: 'no' }, { v: 1, windows: [{ tabs: [{ root: {} }] }] }])
   assert.equal(clean(bad, ctx).windows.length, 0);
+// Each workspace's folder comes back (it's the workspace: its name, Files, Changes, Design), even when its
+// terminal had cd'd somewhere else. A folder that's gone, or a session from before workspaces had one, has none.
+const dirs = clean({ v: 1, windows: [{ tabs: [
+  { dir: here, root: { cwd: '/gone/away' } }, { dir: '/gone/away', root: { cwd: here } }, { root: { cwd: here } }, { dir: 7, root: { cwd: here } }] }] }, ctx).windows[0].tabs;
+assert.deepEqual(dirs.map((t) => t.dir), [here, undefined, undefined, undefined]);
+assert.equal(dirs[0].root.cwd, '/Users/me');                       // the terminal's own missing folder still -> home
 assert.equal(clean({ v: 1, enabled: false, windows: [] }, ctx).enabled, false);
 assert.equal(clean(null, ctx).enabled, true);                      // no file yet: on by default
 const long = 'line\n'.repeat(MAX_SCREEN / 4);
