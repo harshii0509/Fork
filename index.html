@@ -170,7 +170,8 @@
      3×3 lattice in the same colour and a wave runs through them from the top left (whimsically.app's "lattice"
      loader: 2.1s, each column 233ms behind, each row 117ms). --phase keeps the wave going across redraws.
      Needs you / failed: the tiles take the yellow or red (150ms), and a copy of the square grows and fades
-     behind them (ease-out, 2s with a rest); back to the workspace's colour takes 200ms. */
+     behind them three times (ease-out, 2s with a rest), then the square holds still; back to the
+     workspace's colour takes 200ms. */
   .ws-sq { --sq: var(--tab-c, var(--ws-1)); flex: none; position: relative; width: 12px; height: 12px; display: grid; place-items: center; }
   .ws-sq[data-s="done"] { --sq: var(--needs); }
   .ws-sq[data-s="failed"] { --sq: var(--failed); }
@@ -180,8 +181,10 @@
   .ws-cubes.working i { transform: scale(.75); animation: ws-lattice 2.1s ease-in-out infinite;
     animation-delay: calc(var(--phase) + var(--c) * 233ms + var(--r) * 117ms); }
   @keyframes ws-lattice { 0%, 50%, 100% { opacity: .3; } 25% { opacity: 1; } }
+  /* Three pulses, then the coloured square holds still: a pulse that never stopped kept the Mac redrawing
+     the whole (translucent) window, about 16% of a CPU core for as long as nobody looked. */
   .ws-sq[data-s]::before { content: ''; position: absolute; inset: 1.5px; background: var(--sq);
-    animation: ws-pulse 2s var(--ease-out-quart) infinite; }
+    animation: ws-pulse 2s var(--ease-out-quart) 3 forwards; }
   @keyframes ws-pulse { 0% { transform: scale(1); opacity: .55; } 70%, 100% { transform: scale(2.2); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
     .ws-cubes i, .ws-cubes.working i { transition: none; animation: none; opacity: 1; }
