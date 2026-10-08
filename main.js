@@ -15,6 +15,8 @@ import { list, readPreview, readBook, findEditor, searchFiles, makeFolder } from
 import { createAnalytics, POSTHOG_KEY, POSTHOG_HOST } from './analytics.mjs';
 import { newer } from './version.mjs';
 import { gitFiles, gitInfo } from './git.mjs';
+import { scanDesign } from './design.mjs';
+import { shotStore, hashOf, changedFiles, isFrontend } from './shots.mjs';
 import * as ai from './claude.mjs';
 import { clean, VERSION as SESSION_VERSION } from './session.mjs';
 
@@ -100,7 +102,7 @@ function createWindow(restore) {
     const others = forkWindows().some((w) => w !== win && !w.isDestroyed());
     if (!quitting && others) { sessions.delete(wcId); saveSoon(); }
     notchTabs.delete(wcId); sendNotchState();
-    if (!others) notchWin?.destroy(); // the notch alone mustn't keep Fork open
+    if (!others) { notchWin?.destroy(); shooter?.destroy(); } // the notch, or the picture taker, alone mustn't keep Fork open
   });
   win.loadFile(join(HERE, 'index.html'));
   return win;
@@ -241,6 +243,96 @@ ipcMain.on('watch', (e, dirs) => {
   }
 });
 
+// --- Before and after (shots.mjs): pictures of your app around each agent turn ----------------------
+// One hidden window, reused, takes them: the same cookies as the panel's app view (persist:preview), 1280 wide,
+// the whole page (up to 4000 tall), with animations jumped to their end so two pictures of the same page match.
+// It never shows and never touches the app view you're looking at. One picture at a time.
+const SHOT_W = 1280, SHOT_MAX_H = 4000;
+let shooter = null, shooting = Promise.resolve(), shotFiles = null;
+const shots = () => (shotFiles ??= shotStore(join(app.getPath('userData'), 'shots')));
+function shotWindow() {
+  if (shooter && !shooter.isDestroyed()) return shooter;
+  shooter = new BrowserWindow({ show: false, width: SHOT_W, height: 800, paintWhenInitiallyHidden: true,
+    webPreferences: { partition: 'persist:preview', sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  const wc = shooter.webContents;
+  wc.setAudioMuted(true);
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('will-navigate', (e, url) => { if (!/^https?:\/\//.test(url)) e.preventDefault(); });
+  return shooter;
+}
+const within = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+async function capture(url) {
+  const wc = shotWindow().webContents;
+  try {
+    await within(wc.loadURL(url), 20_000);
+    await wc.insertCSS('*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;'
+      + ' transition-duration: 0s !important; transition-delay: 0s !important; caret-color: transparent !important; } ::-webkit-scrollbar { display: none; }');
+    // Web fonts, then a moment for anything the page fetches after it loads.
+    await within(wc.executeJavaScript('document.fonts.ready.then(() => new Promise((r) => setTimeout(r, 700)))'), 8_000).catch(() => {});
+    const h = await wc.executeJavaScript('Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)').catch(() => 800);
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+    await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: SHOT_W, height: 800, deviceScaleFactor: 1, mobile: false });
+    const { data } = await within(wc.debugger.sendCommand('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true,
+      clip: { x: 0, y: 0, width: SHOT_W, height: Math.min(SHOT_MAX_H, Math.max(400, Number(h) || 800)), scale: 1 } }), 15_000);
+    return Buffer.from(data, 'base64');
+  } finally {
+    wc.loadURL('about:blank').catch(() => {}); // let go of the page: its scripts and its hot-reload connection
+  }
+}
+// A picture of url for this workspace: { path, hash }, or null if the app didn't load. Queued behind any other.
+function takeShot(dir, url) {
+  const run = shooting.then(async () => { const buf = await capture(url); return { path: shots().write(dir, buf, 'shot'), hash: hashOf(buf) }; })
+    .catch(() => null);
+  shooting = run;
+  return run;
+}
+const localApp = (url) => typeof url === 'string' && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(url);
+const okDir = (dir) => typeof dir === 'string' && dir.startsWith('/');
+// What's changed in a folder right now, to tell which files one turn touched: { path: 'status:mtime:size' }, or null outside git.
+async function snapOf(dir) {
+  const status = await git(dir, ['status', '--porcelain', '-z', '--untracked-files=all']);
+  if (status == null) return null;
+  const top = ((await git(dir, ['rev-parse', '--show-toplevel'])) || dir).trim(), snap = {};
+  await Promise.all(gitFiles(status).slice(0, 2000).map(async ({ path, status: s }) => {
+    const st = await stat(join(top, path)).catch(() => null);
+    snap[path] = `${s}:${st?.mtimeMs ?? 0}:${st?.size ?? 0}`;
+  }));
+  return snap;
+}
+// An agent started working: the before picture and what's changed so far. null if the app isn't showing anything.
+ipcMain.handle('turn:start', async (_, dir, url) => {
+  if (!okDir(dir) || !localApp(url)) return null;
+  const [before, snap] = await Promise.all([takeShot(dir, url), snapOf(dir)]);
+  return before && { before, snap };
+});
+// The turn ended. Keep it if it changed a frontend file (or we can't tell, outside git) and the page looks
+// different now. Returns { turn, turns } (newest first), or null when there was nothing to see.
+ipcMain.handle('turn:finish', async (_, dir, t) => {
+  if (!okDir(dir) || !localApp(t?.url) || !t.before?.path) return null;
+  const drop = (...ps) => { for (const p of ps) if (p) shots().drop(dir, p); };
+  const ui = changedFiles(t.snap, await snapOf(dir))?.filter(isFrontend);
+  if (ui && !ui.length) return drop(t.before.path), null;
+  const after = await takeShot(dir, t.url);
+  if (!after || after.hash === t.before.hash) return drop(t.before.path, after?.path), null;
+  const turn = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: t.at, done: Date.now(), url: t.url,
+    before: t.before.path, after: after.path, files: (ui || []).slice(0, 50), agent: String(t.agent || '').slice(0, 40), pinned: false };
+  return { turn, turns: shots().add(dir, turn) };
+});
+ipcMain.on('turn:drop', (_, dir, path) => okDir(dir) && typeof path === 'string' && shots().drop(dir, path)); // ended without its end (the agent quit)
+ipcMain.handle('turns:list', (_, dir) => (okDir(dir) ? shots().list(dir) : []));
+ipcMain.handle('turns:pin', (_, dir, id, on) => (okDir(dir) ? shots().pin(dir, id, on) : []));
+ipcMain.handle('turns:remove', (_, dir, id) => (okDir(dir) ? shots().remove(dir, id) : []));
+
+// The Design view (design.mjs): the folder's tokens. A new scan stops the one before it; an unchanged folder
+// answers from the last scan.
+let designing = null;
+ipcMain.handle('design:scan', async (_, dir) => {
+  if (!okDir(dir) || dir === homedir()) return null;
+  designing?.abort();
+  const ac = designing = new AbortController();
+  return scanDesign(dir, { signal: ac.signal }).catch(() => null);
+});
+
 ipcMain.handle('preview', (_, path) => readPreview(path));
 let editor; // looked up once
 ipcMain.handle('editor', () => (editor ??= findEditor()));
@@ -305,7 +397,7 @@ const NOTCH_W = 185; // Electron can't read the notch's width; it's about this o
 const NOTCH_BOX = { width: 420, height: 380 }; // room for the biggest shape: the list of tabs
 let notchWin = null, notchOn = false, forkActive = true; // off until the window says you turned it on
 const notchTabs = new Map(); // webContents id -> that window's tabs
-const forkWindows = () => BrowserWindow.getAllWindows().filter((w) => w !== notchWin);
+const forkWindows = () => BrowserWindow.getAllWindows().filter((w) => w !== notchWin && w !== shooter); // not the notch, nor the hidden one taking pictures
 // The built-in screen, if it has a notch: the menu bar there is taller (about 32pt, against 24).
 function notchScreen() {
   const d = screen.getAllDisplays().find((x) => x.internal);

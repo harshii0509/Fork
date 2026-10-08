@@ -16,6 +16,14 @@ contextBridge.exposeInMainWorld('dt', {
   watch: (dirs) => ipcRenderer.send('watch', dirs),
   onFsChanged: (fn) => ipcRenderer.on('fs:changed', (_, paths) => fn(paths)),
   preview: (path) => ipcRenderer.invoke('preview', path),
+  // Before and after (shots.mjs): an agent's turn, from its start to its end, as pictures of your app.
+  turnStart: (dir, url) => ipcRenderer.invoke('turn:start', dir, url), // { before: { path, hash }, snap } or null
+  turnFinish: (dir, t) => ipcRenderer.invoke('turn:finish', dir, t), // { turn, turns } or null: nothing to see
+  turnDrop: (dir, path) => ipcRenderer.send('turn:drop', dir, path),
+  turns: (dir) => ipcRenderer.invoke('turns:list', dir), // newest first
+  turnPin: (dir, id, on) => ipcRenderer.invoke('turns:pin', dir, id, on),
+  turnRemove: (dir, id) => ipcRenderer.invoke('turns:remove', dir, id),
+  designScan: (dir) => ipcRenderer.invoke('design:scan', dir), // { tokens, themes, files, at } or null (design.mjs)
   searchFiles: (root, query) => ipcRenderer.invoke('files:search', root, query), // { names, hits: [{ path, line, text }] } or null if overtaken
   editor: () => ipcRenderer.invoke('editor'),
   openIn: (path) => ipcRenderer.send('open-in', path),

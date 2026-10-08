@@ -87,6 +87,14 @@ async function walk(root, signal) {
   return out;
 }
 
+// Every file in a project, relative to root: what git tracks plus new files it doesn't ignore, or a capped walk
+// outside git. null if aborted. The Design view (design.mjs) reads its token files from this.
+export async function projectFiles(root, signal) {
+  const listed = await gitIn(root, ['ls-files', '-co', '--exclude-standard', '-z'], signal);
+  const files = listed != null ? listed.split('\0').filter(Boolean) : await walk(root, signal);
+  return signal?.aborted ? null : files;
+}
+
 // One line of a hit, cut to a readable length around the match.
 function snippet(text, at, q) {
   const line = text.replace(/\t/g, '  ');

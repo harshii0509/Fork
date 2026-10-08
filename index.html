@@ -109,8 +109,8 @@
   /* The window: a top strip (traffic lights, your workspaces as tabs, the split and preview buttons) over a
      rounded card that holds the sidebar, the terminals and the preview. With Translucent on, the strip is
      frosted glass and the card stays solid. */
-  .app { display: grid; grid-template: 44px 1fr / 1fr; height: 100%; background: var(--chrome); }
-  :root[data-translucent="on"] .app { background: transparent; }
+  #app { display: grid; grid-template: 44px 1fr / 1fr; height: 100%; background: var(--chrome); }
+  :root[data-translucent="on"] #app { background: transparent; }
   .stage { --pvw: 0px; grid-area: 2 / 1; margin: 0 8px 8px; min-width: 0; min-height: 0; overflow: hidden;
     display: grid; grid-template: 1fr auto / var(--side, 224px) 1fr var(--pvw);
     background: var(--card); border: .5px solid var(--card-line); border-radius: 12px; }
@@ -410,7 +410,8 @@
   .pv-head .seg { width: auto; flex: none; margin-right: 6px; }
   .pv-head .seg button { padding: 3px 10px; font-size: 12px; }
   .pv-bar { display: none; flex: 1; align-items: center; gap: 4px; min-width: 0; }
-  .pv[data-mode="file"] .pv-bar.file, .pv[data-mode="app"] .pv-bar.app, .pv[data-mode="read"] .pv-bar.read { display: flex; }
+  .pv[data-mode="file"] .pv-bar.file, .pv[data-mode="app"] .pv-bar.app, .pv[data-mode="read"] .pv-bar.read,
+  .pv[data-mode="changes"] .pv-bar.changes, .pv[data-mode="design"] .pv-bar.design { display: flex; }
   .pv-name { flex: 1; min-width: 0; color: var(--tree); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pv-name small { color: var(--dim); margin-left: 6px; }
   .pv-act { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 6px; color: var(--dim); white-space: nowrap; font-size: 12px; }
@@ -422,7 +423,88 @@
   .pv-view { position: absolute; inset: 0; overflow: auto; }
   /* The hidden view keeps its size, so the app keeps its state and hot reload while a file is shown. */
   .pv:not([data-mode="app"]) #pvApp, .pv:not([data-mode="app"]) .pv-appmsg, .pv:not([data-mode="file"]) #pvFile,
-  .pv:not([data-mode="read"]) #pvRead { visibility: hidden; pointer-events: none; }
+  .pv:not([data-mode="read"]) #pvRead, .pv:not([data-mode="changes"]) #pvChanges, .pv:not([data-mode="design"]) #pvDesign { visibility: hidden; pointer-events: none; }
+  /* A new before-and-after you haven't looked at: a dot on Changes, and on the panel button while the panel's shut. */
+  #pvSeg button[data-v="changes"].new::after, #pvToggle.new::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 5px;
+    border-radius: 50%; background: var(--needs); vertical-align: 2px; }
+  #pvToggle { position: relative; }
+  #pvToggle.new::after { position: absolute; top: 3px; right: 3px; margin: 0; }
+  .has-pv #pvToggle.new::after { display: none; }
+
+  /* Changes: before and after (changes.js). */
+  .ch-bar { display: flex; align-items: center; gap: 4px; margin: 0 0 10px; }
+  .ch-bar .seg { width: auto; margin-right: auto; }
+  .ch-bar .seg button { padding: 3px 10px; font-size: 12px; white-space: nowrap; }
+  .pv-act.on { color: var(--text); }
+  .ch { padding: 12px 12px 20px; }
+  .ch img { display: block; width: 100%; height: auto; background: var(--paper); }
+  .ch-side { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+  .ch-side figure { margin: 0; min-width: 0; }
+  .ch-side figcaption, .ch-files h3, .ds-group h3 { margin: 0 0 6px; font: 600 11px/1.2 var(--ui-mono); letter-spacing: .44px; text-transform: uppercase; color: var(--text-4); }
+  .ch-side img, .ch-slide { border-radius: 6px; outline: .5px solid var(--card-line); }
+  .ch-slide { --at: 50%; position: relative; overflow: hidden; cursor: ew-resize; touch-action: none; user-select: none; }
+  .ch-slide .ch-after { position: absolute; inset: 0; height: 100%; object-fit: cover; object-position: top; clip-path: inset(0 0 0 var(--at)); }
+  .ch-handle { position: absolute; top: 0; bottom: 0; left: var(--at); width: 2px; margin-left: -1px; background: var(--accent); outline: none; }
+  .ch-handle::after { content: ""; position: sticky; top: 40%; display: block; width: 14px; height: 28px; margin-left: -6px; border-radius: 7px;
+    background: var(--accent); box-shadow: var(--shadow-2); }
+  .ch-handle:focus-visible::after { outline: 2px solid var(--text-1); outline-offset: 2px; }
+  .ch-tag { position: absolute; top: 8px; padding: 2px 6px; border-radius: 4px; background: var(--scrim); color: #fff; font: 500 11px/1.3 var(--ui); pointer-events: none; }
+  .ch-tag.l { left: 8px; } .ch-tag.r { right: 8px; }
+  .ch-files { margin-top: 16px; }
+  .ch-files button { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 4px 6px; margin: 0 -6px; border-radius: 6px;
+    font: 450 13px/1.2 var(--ui); color: var(--text-2); text-align: left; white-space: nowrap; }
+  .ch-files button:hover { background: var(--hover); color: var(--text-1); }
+  .ch-files button span { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+  .ch-files button small { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-4); font-size: 12px; }
+  .ch-files p { margin: 4px 0 0; color: var(--text-4); font: 450 12px/1.2 var(--ui); }
+  .ch-strip { display: flex; gap: 8px; margin-top: 16px; overflow-x: auto; padding-bottom: 2px; }
+  .ch-strip button { flex: none; width: 88px; padding: 0; text-align: left; color: var(--text-4); }
+  .ch-strip img { height: 56px; object-fit: cover; object-position: top; border-radius: 4px; outline: .5px solid var(--card-line); }
+  .ch-strip button.on img { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .ch-strip button:hover small, .ch-strip button.on small { color: var(--text-2); }
+  .ch-strip small { display: block; margin-top: 4px; font: 450 11px/1.2 var(--ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Design: the project's tokens (design.js). */
+  .ds { padding: 4px 12px 24px; }
+  .ds-hint { margin: 8px 0 4px; color: var(--text-4); font: 450 11px/1.3 var(--ui); }
+  #dsRefresh.spin .ic, #dsRefresh.spin .ph { animation: ds-spin .6s linear infinite; }
+  @keyframes ds-spin { to { transform: rotate(360deg); } }
+  .ds-group { margin-top: 18px; }
+  .ds-group h3 { display: flex; align-items: center; gap: 6px; }
+  .ds-group h3 small { color: var(--text-4); opacity: .7; font-weight: 500; }
+  .ds-themes { display: flex; gap: 4px; margin-left: auto; text-transform: none; letter-spacing: 0; font: 450 11px/1 var(--ui); }
+  .ds-themes span { padding: 2px 6px; border-radius: 4px; background: var(--hover); color: var(--text-3); }
+  .ds-other summary { list-style: none; cursor: default; }
+  .ds-other summary::-webkit-details-marker { display: none; }
+  .ds-tok { min-width: 0; border-radius: 6px; cursor: default; outline: none; }
+  .ds-tok:hover, .ds-tok:focus-visible { background: var(--hover); }
+  .ds-name, .ds-val { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ds-name { font: 450 12px/1.3 var(--ui-mono); color: var(--text-1); }
+  .ds-val { font: 450 11px/1.3 var(--ui-mono); color: var(--text-4); }
+  .ds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 4px; margin: 0 -6px 6px; }
+  .ds-grid .ds-tok { padding: 6px; }
+  .ds-list { display: grid; margin: 0 -6px 6px; }
+  .ds-row { display: grid; grid-template-columns: minmax(48px, 30%) 1fr auto; align-items: center; gap: 4px 10px; padding: 5px 6px; }
+  .ds-row > :first-child:last-child, .ds-row > .ds-name:first-child { grid-column: 1 / 3; }
+  .ds-row .ds-val { text-align: right; }
+  .ds-sw { display: flex; height: 44px; margin-bottom: 6px; border-radius: 6px; overflow: hidden; outline: .5px solid var(--card-line); outline-offset: -.5px;
+    background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 10px 10px; } /* checks behind see-through colours */
+  .ds-sw i { flex: 1; }
+  .ds-sw i.bad { background: repeating-linear-gradient(45deg, var(--hover) 0 4px, transparent 4px 8px); }
+  .ds-sample { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: clip; color: var(--text-1); font-size: 18px; line-height: 1.2; }
+  .ds-bar { height: 8px; } .ds-bar i { display: block; height: 100%; min-width: 1px; border-radius: 2px; background: var(--ws-1); }
+  .ds-corner { display: block; width: 44px; height: 44px; margin-bottom: 6px; border: 1.5px solid var(--text-3); border-radius: 0; background: var(--hover); }
+  .ds-paper .ds-card { display: block; height: 44px; margin: 6px 6px 12px; border-radius: 6px; background: var(--paper); }
+  .ds-paper { background: var(--c-f1f1f0, #f1f1f0); }
+  .ds-paper:hover, .ds-paper:focus-visible { background: var(--c-e6e6e6, #e6e6e6); }
+  .ds-paper .ds-name { color: #1d1d1f; }
+  .ds-track { --d: .6s; --e: ease; position: relative; height: 10px; border-radius: 5px; background: var(--hover); }
+  .ds-track i { position: absolute; top: 1px; left: 1px; width: 8px; height: 8px; border-radius: 50%; background: var(--ws-1);
+    transition: left var(--d) var(--e); }
+  .ds-tok:hover .ds-track i, .ds-tok:focus-visible .ds-track i { left: calc(100% - 9px); }
+  .ds-row:has(.ds-curve) { grid-template-columns: minmax(48px, 30%) 28px 1fr auto; }
+  .ds-curve { width: 28px; height: 30px; fill: none; stroke: var(--text-3); stroke-width: 1.5; }
+  @media (prefers-reduced-motion: reduce) { .ds-track i { transition: none; } #dsRefresh.spin .ic, #dsRefresh.spin .ph { animation: none; } }
   #pvApp { position: absolute; inset: 0; background: var(--paper); }
   #pvApp.blank { visibility: hidden; }
   .pv-appmsg { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 12px; padding: 24px;
@@ -682,7 +764,7 @@
   /* Font smoothing Off: panes switch from WebGL back to DOM text (renderer.js useGpu), so plain CSS reaches it. */
   [data-smooth="off"] .xterm, [data-smooth="off"] .sample { -webkit-font-smoothing: none; }
 
-  /* Settings → Translucent: Off paints the frame (.app, above), since the window's glass can't be switched off at runtime. */
+  /* Settings → Translucent: Off paints the frame (#app, above), since the window's glass can't be switched off at runtime. */
   .switch { appearance: none; flex: none; position: relative; width: 36px; height: 22px; margin: 0; padding: 0; border: 0;
     border-radius: 999px; background: var(--active); cursor: pointer; transition: background .15s; }
   .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
@@ -774,7 +856,7 @@
   <div class="pv-grip" id="pvGrip"></div>
   <section class="pv" id="pv" data-mode="file">
     <header class="pv-head">
-      <span class="seg" id="pvSeg"><button data-v="file">File</button><button data-v="app">App</button><button data-v="read">Read</button></span>
+      <span class="seg" id="pvSeg"><button data-v="file">File</button><button data-v="app">App</button><button data-v="changes">Changes</button><button data-v="design">Design</button><button data-v="read">Read</button></span>
       <div class="pv-bar file">
         <span class="pv-name" id="pvName"></span>
         <button class="pv-act" id="pvLine" hidden></button>
@@ -789,6 +871,11 @@
         <input id="pvUrl" placeholder="localhost:3000" spellcheck="false" autocomplete="off">
         <button class="pv-act" id="pvBrowser" title="Open in your browser" aria-label="Open in your browser"><i data-icon="external-link"></i></button>
       </div>
+      <div class="pv-bar changes"><span class="pv-name" id="chName"></span></div>
+      <div class="pv-bar design">
+        <span class="pv-name" id="dsName"></span>
+        <button class="pv-act" id="dsRefresh" title="Read the project again" aria-label="Read the project again"><i data-icon="rotate-cw"></i></button>
+      </div>
       <div class="pv-bar read">
         <span class="pv-name" id="rdName"></span>
         <span class="seg" id="rdMode"><button data-v="pages" title="One page at a time">Pages</button><button data-v="scroll" title="One long scroll">Scroll</button></span>
@@ -800,6 +887,8 @@
       <div class="pv-view" id="pvFile"><div class="pv-msg"><b>Nothing to preview yet</b>Click a file in the sidebar to see it here.</div></div>
       <webview id="pvApp" class="blank" partition="persist:preview" allowpopups></webview>
       <div class="pv-appmsg show" id="pvAppMsg"></div>
+      <div class="pv-view ch" id="pvChanges"></div>
+      <div class="pv-view ds" id="pvDesign"></div>
       <div class="pv-view rd pages" id="pvRead" tabindex="-1">
         <div class="rd-empty">
           <i data-icon="book-open"></i>
@@ -846,6 +935,8 @@
       <div class="set-list">
         <label class="set-row"><span>Open links and files inside Fork<small>Off: websites and your app open in your browser, files open in their own app</small></span>
           <input type="checkbox" class="switch" id="setInFork"></label>
+        <label class="set-row"><span>Before and after pictures of your app<small>When an agent changes your app, Fork keeps a picture from before and after. They stay on this Mac</small></span>
+          <input type="checkbox" class="switch" id="setShots"></label>
       </div>
       <h4>Startup</h4>
       <div class="set-list">
@@ -967,6 +1058,8 @@
 <script src="onboarding.js"></script>
 <script src="games.js"></script>
 <script src="reader.js"></script>
+<script src="changes.js"></script>
+<script src="design.js"></script>
 <script src="sounds.js"></script>
 <script src="renderer.js"></script>
 </body>

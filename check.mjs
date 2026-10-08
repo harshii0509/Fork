@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { suggest } from './suggest.mjs';
+import { tokensFrom, tailwindTokens, tokenFiles, classify } from './design.mjs';
+import { changedFiles, isFrontend, shotStore } from './shots.mjs';
 
 const labels = (dir) => suggest(dir).map((s) => s.label);
 const fresh = () => mkdtempSync(join(tmpdir(), 'dt-'));
@@ -619,6 +621,102 @@ assert.ok(!('color' in named.tabs[2]) && !('name' in named.tabs[2].root)); // no
   assert.ok(sent.size > 20, 'found the events Fork sends');
   for (const e of sent) assert.ok(charted.has(e) || e in NOT_CHARTED,
     `Fork sends "${e}" but no dashboard chart shows it. Add it to scripts/dashboard-charts.mjs (or NOT_CHARTED with a reason).`);
+}
+
+// --- Design view (design.mjs): a project's tokens, read from its files without running them ---
+{
+  const css = `:root { --blue: #3b82f6; --primary: var(--blue); --bg: 0 0% 100%; --radius-lg: 12px; --space-4: 16px;
+    --font-sans: "Inter", sans-serif; --text-xl: 1.25rem; --text-xl--line-height: 1.75rem; --shadow-md: 0 4px 6px rgb(0 0 0 / .1);
+    --ease-out: cubic-bezier(0, 0, .2, 1); --fast: 150ms; --pic: url("x.png"); }
+  .dark { --blue: #60a5fa; --bg: 222 84% 5%; }
+  @media (prefers-color-scheme: dark) { :root:not(.light) { --radius-lg: 16px; } }
+  .button { --pad: 4px; }                                 /* a component's own: not a token */
+  @media (min-width: 640px) { :root { --space-4: 24px; } } /* a breakpoint's: not the token's value */
+  @theme { --color-brand: oklch(.6 .2 250); }`;
+  const { tokens, themes } = tokensFrom([{ path: 'app.css', text: css }]);
+  const by = Object.fromEntries(tokens.map((t) => [t.name, t]));
+  assert.deepEqual(themes, ['base', 'dark']);
+  assert.deepEqual(by['--blue'].v, { base: '#3b82f6', dark: '#60a5fa' });
+  assert.deepEqual(by['--primary'].v, { base: '#3b82f6', dark: '#60a5fa' }); // follows what it points at, per theme
+  assert.equal(by['--primary'].alias, '--blue');
+  assert.equal(by['--primary'].use, 'var(--primary)');
+  assert.deepEqual(by['--bg'].v, { base: 'hsl(0 0% 100%)', dark: 'hsl(222 84% 5%)' }); // shadcn's bare channels
+  assert.deepEqual(by['--radius-lg'].v, { base: '12px', dark: '16px' });
+  assert.equal(by['--space-4'].v.base, '16px');
+  assert.equal(by['--text-xl'].lh, '1.75rem'); // Tailwind's line-height pair joins its size
+  assert.ok(!by['--text-xl--line-height'] && !by['--pad']);
+  assert.equal(by['--pic'].kind, 'other'); // listed as text, never drawn (design.js only paints colours, sizes…)
+  assert.deepEqual(['--radius-lg', '--space-4', '--font-sans', '--text-xl', '--shadow-md', '--ease-out', '--fast', '--color-brand'].map((n) => by[n].kind),
+    ['radius', 'spacing', 'font', 'size', 'shadow', 'easing', 'duration', 'color']);
+  assert.equal(by['--blue'].line, 1);
+  // Sass, design-token JSON with references, and a dark-only token.
+  const more = tokensFrom([
+    { path: 'a.scss', text: '$brand: #e5484d; // main\n$brand-hover: $brand;\n.x { $local: 1px; }' },
+    { path: 'tokens.json', text: JSON.stringify({ color: { $type: 'color', ink: { $value: '#111' }, text: { $value: '{color.ink}' } } }) },
+    { path: 'b.css', text: '.dark { --glow: #fff; }' },
+  ]).tokens;
+  const m = Object.fromEntries(more.map((t) => [t.name, t]));
+  assert.equal(m.$brand.v.base, '#e5484d');
+  assert.equal(m['$brand-hover'].v.base, '#e5484d');
+  assert.ok(!m.$local);
+  assert.equal(m['color.text'].v.base, '#111');
+  assert.equal(m['color.text'].kind, 'color');
+  assert.deepEqual(m['--glow'].v, { dark: '#fff' });
+  // A Tailwind v3 config: plain values only; functions, spreads and variables are left out, never run.
+  const tw = tailwindTokens(`const x = require('x'); module.exports = { theme: { extend: {
+    colors: { brand: { DEFAULT: '#123456', 500: '#abcdef', soft: x.soft }, ...more },
+    fontSize: { xl: ['1.25rem', { lineHeight: '1.75rem' }] }, borderRadius: { DEFAULT: '4px', lg: '8px' }, boxShadow: (t) => ({}) } } }`);
+  assert.deepEqual(tw.map((t) => [t.name, t.value]), [['brand-500', '#abcdef'], ['brand', '#123456'], ['text-xl', '1.25rem'], ['rounded', '4px'], ['rounded-lg', '8px']]);
+  assert.equal(tw.find((t) => t.name === 'text-xl').lh, '1.75rem');
+  assert.deepEqual(tailwindTokens('module.exports = { theme: { extend: { colors: ) } } }'), []); // broken: nothing, and no hang
+  assert.deepEqual(tokenFiles(['src/app.css', 'node_modules/x/a.css', 'dist/a.css', 'tailwind.config.js', 'tokens.json', 'theme.d.ts', 'src/App.tsx', 'index.html']),
+    ['src/app.css', 'tailwind.config.js', 'tokens.json', 'index.html']);
+  assert.equal(classify('--text-muted', '#666'), 'color'); // a colour named text is still a colour
+  assert.equal(classify('--z-modal', '50'), 'other');
+}
+
+// --- Before and after (shots.mjs): which files a turn touched, and keeping the pictures ---
+{
+  assert.deepEqual(changedFiles({ 'a.css': 'M:1:1', 'b.ts': 'M:1:1' }, { 'a.css': 'M:2:1', 'b.ts': 'M:1:1', 'c.tsx': '??:3:3' }), ['a.css', 'c.tsx']);
+  assert.deepEqual(changedFiles({ 'a.css': 'M:1:1' }, {}), ['a.css']); // put back the way it was
+  assert.equal(changedFiles(null, {}), null); // outside git: can't tell
+  assert.ok(isFrontend('src/app.css') && isFrontend('components/Card.tsx') && isFrontend('public/logo.svg'));
+  assert.ok(!isFrontend('README.md') && !isFrontend('package.json') && !isFrontend('vite.config.ts') && !isFrontend('src/a.test.tsx'));
+  const store = shotStore(fresh()), dir = '/some/project';
+  const turn = (i, pinned = false) => ({ id: `t${i}`, at: i, before: store.write(dir, Buffer.from('b'), 'shot'), after: store.write(dir, Buffer.from('a'), 'shot'), pinned });
+  const first = turn(0, true);
+  store.add(dir, first);
+  for (let i = 1; i <= 21; i++) store.add(dir, turn(i));
+  const kept = store.list(dir);
+  assert.equal(kept.length, 21); // 20 newest, plus the pinned one
+  assert.equal(kept[0].id, 't21');
+  assert.ok(kept.some((t) => t.id === 't0') && !kept.some((t) => t.id === 't1'));
+  assert.ok(existsSync(first.before) && !existsSync(join(dirname(first.before), 'gone.png')));
+  store.remove(dir, 't0');
+  assert.ok(!existsSync(first.before) && !existsSync(first.after)); // its pictures go with it
+}
+
+// --- The docs keep up (docs/TECHNICAL.md, docs/IA.md): every script, library, dt call, panel tab and settings page is in them ---
+{
+  const tech = readFileSync('docs/TECHNICAL.md', 'utf8'), ia = readFileSync('docs/IA.md', 'utf8');
+  const missing = (what, names, doc, form) => {
+    const gone = names.filter((n) => !doc.includes(form(n)));
+    assert.deepEqual(gone, [], `${what} missing from the docs: ${gone.join(', ')}. Add ${gone.length > 1 ? 'them' : 'it'} (see CLAUDE.md).`);
+  };
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  missing('Libraries', [...Object.keys(pkg.dependencies), ...Object.keys(pkg.devDependencies)], tech, (n) => `\`${n}\``);
+  const { readdirSync } = await import('node:fs');
+  missing('Files', readdirSync('.').filter((f) => /\.(m|c)?js$/.test(f)), tech, (n) => `\`${n}\``);
+  const dtCalls = [...readFileSync('preload.cjs', 'utf8').matchAll(/^ {2}(\w+): \(/gm)].map((m) => m[1]);
+  assert.ok(dtCalls.length > 40, 'found the dt calls');
+  missing('dt calls', dtCalls, tech, (n) => `\`${n}\``);
+  const html = readFileSync('index.html', 'utf8');
+  const tabs = [...html.match(/<span class="seg" id="pvSeg">(.*?)<\/span>/)[1].matchAll(/>([^<]+)<\/button>/g)].map((m) => m[1]);
+  assert.ok(tabs.includes('File') && tabs.includes('Changes'), 'found the panel tabs');
+  missing('Panel tabs', tabs, ia, (n) => `**${n}**`);
+  const pages = [...html.matchAll(/class="nav-item[^"]*" data-sec="\w+">(?:<i [^>]*><\/i>)?([^<]+)</g)].map((m) => m[1]);
+  assert.ok(pages.length >= 4, 'found the settings pages');
+  missing('Settings pages', pages, ia, (n) => `**${n}**`);
 }
 
 console.log('check ok');

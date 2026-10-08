@@ -178,6 +178,7 @@ async function newPane(cwd, { screen, when } = {}) {
       if (tabOf(pane.id) !== tab()) pane.unseen = true; // finished while you were elsewhere
       pane.lastUsed = Date.now();
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
+      if (pane.thinking) turnEnded(pane); // the agent quit mid-turn: what it changed still counts
       pane.thinking = false; pane.sawSignal = false; pane.seen = null;
       pane.url = null; // whatever served the app it printed has stopped
       gitSoon(tabOf(pane.id)); // the command may have changed files or the branch
@@ -320,6 +321,7 @@ function closePane(id, { exited = false, force = false } = {}) {
   const t = tabOf(id), cur = tab();
   if (isGame(p)) Games.close();
   else { if (!exited) dt.kill(id); p.term.dispose(); }
+  if (p.turn?.before) dt.turnDrop(p.turn.dir, p.turn.before.path); // closed mid-turn: no after to go with it
   p.el.remove();
   panes.delete(id);
   t.root = Panes.remove(t.root, id);
@@ -589,10 +591,11 @@ function setThinking(pane, on) {
   const was = pane.thinking, saw = pane.sawSignal;
   pane.thinking = on; pane.sawSignal = true;
   if (was === on && saw) return;
-  if (on) pane.thinkingSince = Date.now(); // for the notch's "working · 2m"
+  if (on) { pane.thinkingSince = Date.now(); turnStarted(pane); } // for the notch's "working · 2m"
   if (!on) {
     if (tabOf(pane.id) !== tab()) pane.unseen = true; // it finished while you were elsewhere
     pane.lastUsed = Date.now();
+    turnEnded(pane);
     workDone(pane);
     if (was) { nudge(pane, doneText(pane), `In ${folderOf(pane)}`); chime(pane); }
   }
@@ -833,6 +836,7 @@ async function refresh() {
   chips = suggestions;
   $('chips').innerHTML = suggestions.map((s, i) => `<button class="chip" data-i="${i}" title="${esc(s.cmd)}">${esc(s.label)}</button>`).join('');
   renderTabs();
+  if (moved) syncPvFolder();
 }
 
 // A Home workspace's Files: a few recent projects to move this workspace into (or Choose any folder).
@@ -1037,8 +1041,19 @@ function showPv(mode) {
   for (const b of $('pvSeg').children) b.classList.toggle('on', b.dataset.v === pv.mode);
   $('app').classList.add('has-pv');
   markShown();
+  syncPvFolder();
 }
-function hidePv() { $('app').classList.remove('has-pv'); markShown(); focusActive(); }
+function hidePv() { $('app').classList.remove('has-pv'); markShown(); syncPvFolder(); focusActive(); }
+// Changes and Design are the open workspace's: follow it while they're on screen. Design reads only then.
+function syncPvFolder() {
+  const on = pvOpen() && !$('app').classList.contains('in-settings'), dir = tab() && dirOfTab(tab()) !== home ? dirOfTab(tab()) : null;
+  if (on && pv.mode === 'changes') {
+    Changes.show(dir);
+    $('pvSeg').querySelector('[data-v="changes"]').classList.remove('new');
+    $('pvToggle').classList.remove('new');
+  }
+  if (on && pv.mode === 'design') Design.start(dir); else Design.stop();
+}
 function togglePv() { pvOpen() ? hidePv() : showPv(); dt.track('preview_toggled'); }
 function markShown() { // the previewed file is the tree's selected row
   const f = shownFile(), id = f?.startsWith(treeRoot + '/') ? relOf(f) : null;
@@ -1304,6 +1319,52 @@ $('pv').addEventListener('drop', (e) => { const path = droppedBook(e); if (path)
 // Reading when Claude finishes? Say so above the book. Back in the terminal, the note goes.
 const readingBook = () => pvOpen() && pv.mode === 'read' && !!Reader.current() && $('pv').contains(document.activeElement);
 document.addEventListener('focusin', (e) => { if (!$('pv').contains(e.target)) Reader.clearDone(); });
+
+// --- Before and after: each agent turn as pictures of your app (main.js turn:start/finish, changes.js) -----
+// When an agent starts working, Fork pictures the app this workspace is serving (or the page the App view shows,
+// if it's that app, or the only app there is); when it stops, it waits a moment for the change to land and
+// pictures it again. main.js keeps the pair only if a frontend file changed and the page looks different.
+// No app running, or Settings → General turned it off: no pictures.
+function appUrlOf(t) {
+  const own = panesOf(t).find((x) => x.url)?.url, shown = pv.url && Preview.findLocalUrl(pv.url) ? pv.url : null;
+  const origin = (u) => { try { return new URL(u).origin; } catch { return null; } };
+  return shown && (!own || origin(shown) === origin(own)) ? shown : own || null;
+}
+async function turnStarted(pane) {
+  const t = tabOf(pane.id), dir = dirOfTab(t), url = t && appUrlOf(t);
+  if (settings.shots === 'off' || !url || !dir || dir === home || pane.turn) return;
+  const turn = pane.turn = { dir, url, at: Date.now(), agent: agentOf(pane)?.name || '' };
+  const r = await dt.turnStart(dir, url);
+  if (!r) { if (pane.turn === turn) pane.turn = null; return; } // the app didn't load
+  Object.assign(turn, r);
+  if (turn.ended) turnEnded(pane, turn); // it finished while the before was being taken
+}
+function turnEnded(pane, turn = pane.turn) {
+  if (!turn) return;
+  if (pane.turn === turn) pane.turn = null;
+  if (!turn.before) { turn.ended = true; return; }
+  setTimeout(async () => { // hot reload and any build step get a moment to catch up
+    const r = await dt.turnFinish(turn.dir, { before: turn.before, snap: turn.snap, url: turn.url, at: turn.at, agent: turn.agent });
+    if (!r) return;
+    dt.track('changes_captured', { files: r.turn.files.length });
+    const shown = Changes.added(turn.dir, r) && pvOpen() && pv.mode === 'changes';
+    if (!shown && turn.dir === dirOfTab(tab())) {
+      $('pvSeg').querySelector('[data-v="changes"]').classList.add('new');
+      $('pvToggle').classList.add('new');
+    }
+  }, 1500);
+}
+Changes.setup({
+  openIcon: icon('external-link'),
+  fileIcon: (name) => fileIconHtml(name.split('/').pop()),
+  openFile: (rel) => showFile(join(Changes.folder(), rel)),
+  openApp: (url) => (inFork() ? loadApp(url) : dt.openExternal(url)),
+});
+Design.setup({
+  copy: (text) => dt.clipWrite(text),
+  type: (text) => { const p = activeTerm(); if (p) { dt.write(p.id, text + ' '); p.term.focus(); } },
+  openAt: async (file, line) => { const path = join(Design.folder(), file); await openFile(path); if (line) showLine(path, line); },
+});
 
 // --- When something fails ------------------------------------------------------
 let fix = null;
@@ -1794,7 +1855,7 @@ function installed(font) {
 // Appearance is Light, Dark or System (follows the Mac); each has one look while the UI is redesigned (themes.js).
 // Theme picks saved before the redesign (darkTheme, lightTheme) are left alone, unused.
 const DEFAULTS = { mode: 'system',
-  font: 'IBM Plex Mono', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', alerts: 'on', sounds: 'on', showNotch: 'off', smart: 'on' };
+  font: 'IBM Plex Mono', size: 13, smoothing: 'on', translucent: 'on', inFork: 'on', shots: 'on', alerts: 'on', sounds: 'on', showNotch: 'off', smart: 'on' };
 function load() {
   let s;
   try { s = JSON.parse(localStorage.getItem('dt-settings')) || {}; } catch { s = {}; }
@@ -1852,7 +1913,7 @@ const inSettings = () => $('app').classList.contains('in-settings');
 const opts = (list) => list.map((x) => `<option>${esc(x)}</option>`).join('');
 let built = false;
 const SEGS = [['setMode', 'mode']]; // segmented controls -> setting
-const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setAlerts', 'alerts'], ['setSounds', 'sounds'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
+const SWITCHES = [['setSmooth', 'smoothing'], ['setTranslucent', 'translucent'], ['setInFork', 'inFork'], ['setShots', 'shots'], ['setAlerts', 'alerts'], ['setSounds', 'sounds'], ['setNotch', 'showNotch'], ['setSmart', 'smart']]; // checkboxes -> 'on'/'off'
 function renderSettings() {
   if (!built) {
     built = true;

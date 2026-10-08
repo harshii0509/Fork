@@ -9,6 +9,7 @@ export const NOT_CHARTED = { // event: why it isn't on the dashboard
   game_played: 'new; chart it once we know whether people play',
   notification_shown: 'new; chart it once we know whether people leave alerts on',
   notch_clicked: 'new; chart it once we know whether people use the notch',
+  changes_captured: 'new, on the ui-redesign branch only; chart it once before-and-after ships',
 };
 
 // --- Building blocks (website-dashboard-charts.mjs uses them too) -------------------------------
