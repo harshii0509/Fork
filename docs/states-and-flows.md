@@ -93,7 +93,7 @@ Something blocked on you always wins. Work that's happening ranks below work tha
 - **App:**
   - ✓ empty ("No app yet…"), loading, loaded
   - ◐ failed ("Nothing is showing at X · Try again"); certificate errors and auth pages get the same generic message
-  - ✓ app detected banner "Your app is running at X · Show it"
+  - ✓ app detected: its address shows in Workspace info; click it to see it (the banner was removed 9 Oct)
 - **Read:**
   - ✓ empty shelf, reading (pages or scroll)
   - ✓ missing / too big / damaged-or-DRM file, "Claude's done · Back to terminal"
@@ -183,7 +183,7 @@ Fields: git branch, branch state, what's running, dev server port, build status,
 | Case | Today | Direction | Who | Sev |
 |---|---|---|---|---|
 | Dev server on a LAN IP, `*.localhost`, custom host | Not detected | Wider match | Dev | Low |
-| Restarted dev server | "Your app is running" isn't offered again | Offer again after it stops and starts | Both | Low |
+| Restarted dev server | ~~"Your app is running" isn't offered again~~ Resolved 9 Oct: no offer any more; the address comes back in Workspace info when it restarts | n/a | Both | Low |
 | Certificate errors, login pages | Generic "Nothing is showing" | Say what happened | Both | Low |
 | Minimum window width with the preview open | Terminal squeezed to ~190px | Minimum terminal width; overlay preview | Both | Med |
 | Plain click on a link | Nothing (⌘-click only) | Hint on hover already says where it opens; consider single click for designers | Designer | Low |
@@ -229,7 +229,7 @@ Fields: git branch, branch state, what's running, dev server port, build status,
 4. "Where do you want to work?" → a recent folder · Choose a folder · Get a project from GitHub · Just open the terminal.
 5. The terminal opens in that folder with the tool's command pre-filled → "Press Enter to start Claude".
 6. Agent working (rippling lattice) → maybe **Needs you** ("Allow edit?") → answer → Agent working → **Your turn**.
-7. A dev server starts → "Your app is running at :3000 · Show it" → preview opens beside the terminal.
+7. A dev server starts → its address shows in Workspace info → click it → preview opens beside the terminal.
 8. Something fails → "That didn't work · What went wrong?" → plain explanation → "Type the fix" → Enter.
 9. Spotlight tour (only if the welcome wasn't skipped; never for returning users, even after an update).
 

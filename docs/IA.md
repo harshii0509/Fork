@@ -44,7 +44,7 @@ flowchart TB
   SB --> SB3[Files]
   SB --> SB4["Footer: What's new · Settings · Help"]
   T --> T1[Terminal chips]
-  T --> T2[Notes: What went wrong? · Your app is ready]
+  T --> T2[Notes: What went wrong?]
   T --> T3[Find bar ⌘F]
   T --> T4[Game pane]
   P --> P1[File]
@@ -80,7 +80,7 @@ flowchart TB
 | Section | For | Notes |
 |---|---|---|
 | Search | Finding files by name, and lines inside them | ⌘K. Results replace the sidebar until Esc. A hit opens in File, at its line. |
-| Workspace info | Branch, what's changed (+/−, files), the app it's serving | Each line only when there is one. |
+| Workspace info | Branch, what's changed (+/−, files), the app it's serving | Each line only when there is one. Click the app's address to see it (in the side panel, or the browser if Links & files is off). |
 | Files | The folder's tree, with git badges | Clicking a file opens it in File; clicking a folder opens it in place (never `cd`s). Right-click: preview, open in your editor, Finder, copy path, put path in terminal, open in terminal. + makes a new file. Drag a file onto a terminal to type its path. In the Home workspace it shows a way into a project instead. |
 | Footer | What's new · Settings · Help (the tour) | |
 
@@ -88,7 +88,7 @@ flowchart TB
 | Element | For | Notes |
 |---|---|---|
 | Terminal chip | Its name and whether an agent is open | Icon switches to a sparkle when an agent (Claude, Codex, OpenCode, Gemini) is open. Double-click to rename; × closes. |
-| Notes under the terminals | "That didn't work · What went wrong?" and "Your app is running at … · Show it" | Only when there's something to say. What went wrong explains in plain words and can type a fix (never runs it), or Ask AI. |
+| Notes under the terminals | "That didn't work · What went wrong?" | Only when there's something to say. What went wrong explains in plain words and can type a fix (never runs it), or Ask AI. |
 | Find bar | Finding text in the terminal | ⌘F, ⌘G / ⌘⇧G. |
 | Game pane | Snake, Stack, Space Run while you wait | From the command palette. Opens as a split beside the terminal (or its own tab if there's no room). |
 | Parked for now | ← → folder history, suggestion chips, the running bar (Stop, Play a game), breadcrumbs | They still work in code but aren't shown in the redesign yet. |
@@ -169,5 +169,6 @@ While Fork isn't in front: the **notch** (on a Mac with one) grows to show what'
 ---
 
 ## Log
+- **9 Oct 2026**: The "Your app is running at … · Show it" bar under the terminals is gone, and so is the notch's "Ready". The app's address in Workspace info is the one place it shows; click it to see the app.
 - **9 Oct 2026**: The top strip is 36px (was 44), so a workspace tab sits 4px above the card (was 8) and reads as part of it. `--strip` in index.html; the traffic lights follow (main.js).
 - **7 Oct 2026**: First version, covering all of Fork on `ui-redesign`, including the new Changes and Design tabs in the panel and the Before and after setting.

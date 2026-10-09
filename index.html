@@ -221,6 +221,11 @@
   .ws-line span { overflow: hidden; text-overflow: ellipsis; }
   .ws-line span:last-child { flex: 1; min-width: 0; }
   .ws-line .plus { color: var(--plus); } .ws-line .minus { color: var(--minus); }
+  /* Your app's address: click to see it */
+  .ws-link { width: 100%; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; transition: color 150ms ease; }
+  @media (hover: hover) and (pointer: fine) { .ws-link:hover { color: var(--text-1); } }
+  .ws-link:focus-visible { outline: 2px solid var(--text-1); outline-offset: 2px; border-radius: 4px; }
+  @media (prefers-reduced-motion: reduce) { .ws-link { transition: none; } }
   /* Search results, in place of the info and files while there's something in the box. */
   .find-list { flex: 1; min-height: 0; overflow-y: auto; margin: 8px -4px 0; padding-bottom: 56px; scrollbar-width: none; }
   .find-list[hidden] { display: none; }
@@ -361,7 +366,7 @@
   .dock { grid-area: 2 / 2; border-top: .5px solid var(--card-line); padding: 10px 14px 12px; gap: 8px; }
   /* Only takes space when it has something to say, so the terminal gets the full height otherwise. */
   .dock { display: none; }
-  .dock:has(.show) { display: grid; } /* only for its notes: what went wrong, your app is running */
+  .dock:has(.show) { display: grid; } /* only for its notes: what went wrong */
   .hint { display: none; align-items: center; gap: 8px; color: var(--dim); }
   .hint.show { display: flex; }
   .hint.warn { color: var(--warn); }
@@ -387,14 +392,6 @@
   .oops button.quiet { background: none; border-color: transparent; color: var(--dim); } /* "Not it? Ask AI" */
   .oops button.quiet:hover { color: var(--text); }
   #oopsClose { display: grid; place-items: center; padding: 4px 6px; }
-  /* A dev server printed its address: offer to show the app. */
-  .ready { display: none; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: var(--radius);
-    background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
-  .ready.show { display: flex; }
-  .ready p { margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ready .go { padding: 4px 12px; border-radius: 6px; }
-  .ready .x { color: var(--dim); padding: 4px 6px; display: grid; place-items: center; }
-  .ready .x:hover { color: var(--text); }
 
   /* Preview panel: a file (read-only) or the running app, next to the terminal. */
   .pv, .pv-grip { display: none; }
@@ -981,8 +978,6 @@
       <button id="askAiBtn" style="display:none">Ask AI</button>
       <button id="oopsClose" aria-label="Dismiss"><i data-icon="x"></i></button>
     </div>
-    <div class="ready" id="ready"><span class="dot"></span><p>Your app is running at <b id="readyUrl"></b></p>
-      <button class="go" id="readyShow">Show it</button><button class="x" id="readyClose" aria-label="Dismiss"><i data-icon="x"></i></button></div>
     <div class="hint" id="hint"></div>
     <div class="running"><span id="runText">Something is running.</span> <button class="stop" id="stop" data-key="⌃C">Stop it (Ctrl+C)</button><button class="play" id="playGame"><i data-icon="gamepad-2"></i>Play a game while you wait</button></div>
     <div class="keys-legend"><span><b>⌘⌥ + arrows</b> move between panes</span><span><b>⌘⇧[ ]</b> previous / next workspace</span><span><b>⌘F</b> find</span><span><b>⌘W</b> close</span><span><b>⌘B</b> sidebar</span><span><b>⌘[ ]</b> back / forward</span><span><b>⌘,</b> settings</span><span><b>⌘N</b> new workspace</span><span><b>⌘T</b> new terminal</span><span><b>⌘⇧N</b> new window</span><span><b>⌘`</b> switch windows</span></div>

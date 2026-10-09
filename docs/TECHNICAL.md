@@ -197,7 +197,7 @@ In the window's localStorage:
 - **Is it working**: Claude's title starts with a spinner while working and ✳ while waiting (`claudeTitle`); the others show "esc to interrupt" only while working (`interruptHint`, read from the bottom lines by `checkHint`). Both feed `setThinking(pane, on)`, the single "turn started / turn ended" moment. It drives the tab square, the notch, the chime, `workDone`, and before/after.
 
 ### Your app
-- `dt.onData` keeps the last 400 characters of each terminal's output; `Preview.findLocalUrl` spots `http://localhost:PORT` and `appFound` offers it ("Your app is ready"), sets `pane.url` and shows it in Workspace info.
+- `dt.onData` keeps the last 400 characters of each terminal's output; `Preview.findLocalUrl` spots `http://localhost:PORT` and `appFound` sets `pane.url`, and Workspace info shows it as a link (`.ws-link`, opens via `openApp`) until the command stops. No bar and no notification; if the App panel is already open it follows the new address once.
 - The App tab is a `<webview>`; main strips its preload and forces sandboxing (`will-attach-webview`), and pop-ups go to your browser.
 
 ### Before and after (Changes tab)
@@ -235,6 +235,7 @@ In the window's localStorage:
 ---
 
 ## Log
+- **9 Oct 2026**: Removed the "Your app is running" bar (`#ready`) and the `app` notch moment. `appFound` only sets `pane.url`; Workspace info's address is a button that calls `openApp` (shared with Changes). main.js `goTo` and notch-logic.js still accept kind `app`, but nothing sends it.
 - **9 Oct 2026**: `scripts/release.mjs` stops if `icons/central/ready.js` or `vendor/diffs` is missing; neither is committed, and a build without them ships fallback icons and no Changes tab.
 - **8 Oct 2026**: Three fixes before 1.1.0.
   - `session.mjs` keeps each workspace's folder (`dir`), so a relaunch no longer reopens workspaces in their terminal's folder.

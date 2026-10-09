@@ -416,9 +416,11 @@ function renderInfo() {
       : where && `<div class="ws-line">${ph('folder')}<span>${esc(where)}</span></div>`,
     g?.files && `<div class="ws-line">${ph('plus-minus')}<span><span class="plus">+${g.add}</span> <span class="minus">-${g.del}</span></span>`
       + `<span>·</span><span>${g.files} ${g.files === 1 ? 'file' : 'files'} changed</span></div>`,
-    url && `<div class="ws-line">${ph('globe')}<span>${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span></div>`,
+    url && `<button class="ws-line ws-link" data-url="${esc(url)}" title="${inFork() ? 'Show your app' : 'Open in your browser'}">`
+      + `${ph('globe')}<span>${esc(url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</span></button>`,
   ].filter(Boolean).join(''));
 }
+$('wsInfo').onclick = (e) => { const b = e.target.closest('[data-url]'); if (b) openApp(b.dataset.url); };
 
 // Each terminal's chip icon: console-sparkle while an AI agent (Claude, Codex…) is open in it, a terminal
 // otherwise. A change pops the new one in (index.html .pane-ico).
@@ -617,7 +619,7 @@ function toolNotified(pane, { title, body }) {
   nudge(pane, title || agentOf(pane)?.name || 'Fork', body || `In ${folderOf(pane)}`);
 }
 // Only while you're in another app: in the notch on a Mac that has one, otherwise a Mac notification,
-// plus a dock badge (Settings → Notifications). kind: done, failed or app (your app is ready, at url).
+// plus a dock badge (Settings → Notifications). kind: done or failed.
 // The tool's own notification and Fork's noticing it's done arrive close together: show one.
 // Something you were waiting on finished (an agent's turn, a command of 10s or more): a soft chime
 // (sounds.js), in Fork or not. Settings → Notifications turns it off. One per pane at a time.
@@ -641,7 +643,6 @@ dt.onGoPane((id, action) => { // clicked a notification or the notch
   focusPane(id);
   panes.get(id)?.term?.focus();
   if (action === 'failed') showOops(); // "What went wrong?"
-  if (action === 'app' && readyUrl) $('readyShow').click();
 });
 
 function syncBusy() {
@@ -1155,11 +1156,10 @@ $('pvGrip').onpointerdown = (e) => drag(e, (x) => $('app').style.setProperty('--
 
 // The running app. A <webview> is plain DOM, so ⌘K and the start screen still sit above it.
 function appMsg(html) { $('pvAppMsg').innerHTML = html; $('pvAppMsg').classList.toggle('show', !!html); }
-appMsg('<div><b style="color:var(--text)">No app yet</b><br>Start your app in the terminal (like <code>npm run dev</code>)<br>and it will offer to show up here. Or type an address above.</div>');
+appMsg('<div><b style="color:var(--text)">No app yet</b><br>Start your app in the terminal (like <code>npm run dev</code>).<br>Its address shows in Workspace info: click it to see it here.<br>Or type an address above.</div>');
 
 function loadApp(url) {
   pv.url = url;
-  $('ready').classList.remove('show');
   showPv('app');
   appMsg('');
   web.classList.remove('blank');
@@ -1192,25 +1192,20 @@ $('pvUrl').onkeydown = (e) => {
   loadApp(u);
 };
 
-// A dev server printed its address: offer it once. Already looking at the app? Just follow it.
+// A dev server printed its address: its workspace shows it in Workspace info (click to see it), until the
+// command stops. Already looking at the app? Just follow it, once per address.
 const offered = new Set();
-let readyUrl = null;
 function appFound(url, pane) {
-  if (pane && pane.url !== url) { pane.url = url; renderTabs(); } // its workspace shows it, until the command stops
+  if (pane && pane.url !== url) { pane.url = url; renderTabs(); }
   if (offered.has(url) || url === pv.url) return;
   offered.add(url);
-  if (inFork() && pvOpen() && pv.mode === 'app') return loadApp(url);
-  readyUrl = url;
-  $('readyUrl').textContent = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  $('readyShow').textContent = inFork() ? 'Show it' : 'Open in browser';
-  $('ready').classList.add('show');
-  if (pane) nudge(pane, 'Your app is ready', $('readyUrl').textContent, 'app', url); // in the notch, if you're elsewhere
+  if (inFork() && pvOpen() && pv.mode === 'app') loadApp(url);
 }
-$('readyShow').onclick = () => {
-  inFork() ? loadApp(readyUrl) : dt.openExternal(readyUrl);
-  $('ready').classList.remove('show');
+// Your app: in the side panel, or in the browser when Settings → Links & files says so.
+function openApp(url) {
+  inFork() ? loadApp(url) : dt.openExternal(url);
   dt.track('app_preview_shown', { where: inFork() ? 'fork' : 'browser' });
-};
+}
 // Settings → Links & files. On: your app, localhost links and files open in Fork's side panel.
 // Off: they open in the browser and in the Mac's own apps. Outside websites always go to the browser.
 function inFork() { return settings.inFork !== 'off'; }
@@ -1231,7 +1226,6 @@ function openUri(uri) {
 }
 const linkTip = (uri) => (/^file:/i.test(uri) ? (inFork() ? '⌘-click to show it next to the terminal' : '⌘-click to open it')
   : Preview.findLocalUrl(uri) && inFork() ? '⌘-click to show it next to the terminal' : '⌘-click to open in your browser');
-$('readyClose').onclick = () => $('ready').classList.remove('show');
 
 // --- Read: a book next to the terminal, for while Claude works (reader.js) -----------------
 // Your place in every book, and Pages or Scroll. Saved in localStorage like the settings.
@@ -1358,7 +1352,7 @@ Changes.setup({
   openIcon: icon('external-link'),
   fileIcon: (name) => fileIconHtml(name.split('/').pop()),
   openFile: (rel) => showFile(join(Changes.folder(), rel)),
-  openApp: (url) => (inFork() ? loadApp(url) : dt.openExternal(url)),
+  openApp,
 });
 Design.setup({
   copy: (text) => dt.clipWrite(text),
