@@ -226,7 +226,7 @@ Fields: git branch, branch state, what's running, dev server port, build status,
    - **Installed, not logged in** (Point 02) → "Let's log in" → Fork types the tool's login command → the browser opens → back to Fork → 4.
    - **Not installed** (Point 03) → "Install <tool>" → Fork types the install command → Enter → progress (Running) → done → log in → 4.
    - **Nothing yet / Not sure** → "Fork works without AI too" → show ⌘K ("say what you want, get the command") and error help → 4 without an agent.
-4. "Where do you want to work?" → a recent folder · Choose a folder · Get a project from GitHub · Just open the terminal.
+4. "Where do you want to work?" (New workspace's three cards; no way out) → New folder · Choose a folder… · From GitHub, or a recent folder (Home on a fresh Mac).
 5. The terminal opens in that folder with the tool's command pre-filled → "Press Enter to start Claude".
 6. Agent working (rippling lattice) → maybe **Needs you** ("Allow edit?") → answer → Agent working → **Your turn**.
 7. A dev server starts → its address shows in Workspace info → click it → preview opens beside the terminal.

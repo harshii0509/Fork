@@ -20,7 +20,7 @@ Around them, for the open workspace:
     Panel (right, ⌘P): File · App · Changes · Design · Read
 ```
 
-- **A workspace is a folder.** Its name, info, files, search, Changes and Design all belong to that folder, wherever its terminals `cd` to. A window always has at least one workspace; closing the last one brings back the picker.
+- **A workspace is a folder.** Its name, info, files, search, Changes and Design all belong to that folder, wherever its terminals `cd` to. A window always has at least one workspace; closing the last one brings back New workspace's three cards, which can't be closed.
 - **A terminal is a place to type**, and where agents work. Each has a name chip ("Terminal 1", double-click to rename).
 - **The panel shows things next to your terminals** without leaving them: a file, your running app, what an agent changed, the project's design system, a book.
 
@@ -52,7 +52,7 @@ flowchart TB
   P --> P3[Changes]
   P --> P4[Design]
   P --> P5[Read]
-  OV --> OV1[Workspace picker]
+  OV --> OV1[New workspace: quick search box, or three cards]
   OV --> OV2[Command palette ⌘⇧K]
   OV --> OV3[Welcome + tour]
   OV --> OV4[What's new / update]
@@ -71,7 +71,7 @@ flowchart TB
 | Element | For | Get there | Notes |
 |---|---|---|---|
 | Workspace tabs | Switching projects | Click, ⌘1–9, ⌘⇧[ / ⌘⇧]; double-click or ⌘R to rename | Named after its folder until you rename it (an empty name goes back to the folder's). The square is the status: solid = ready, rippling lattice = working, yellow pulse = needs you or finished while you were away, red = failed. × closes the workspace. |
-| + | Opening another workspace | ⌘N | Opens the workspace picker. |
+| + | Opening another workspace | ⌘N | Opens New workspace's quick search box. |
 | Update pill | A new Fork is ready | Appears by itself | Click to restart into it. |
 | Split right / down | Another terminal beside or below this one | ⌘D / ⌘⇧D | ⌘T adds one more terminal as a new column on the right. |
 | Panel button | Opening the right panel | ⌘P | A yellow dot means there's a new before/after in Changes. |
@@ -107,7 +107,7 @@ One panel on the right with tabs. Its width is dragged from its left edge.
 ### Overlays
 | Overlay | For | Get there |
 |---|---|---|
-| Workspace picker | Choosing a folder to work in | ⌘N, +, a new window, closing the last workspace. Home, Recent, New folder, Choose a folder, Get a project from GitHub. |
+| New workspace | Choosing a folder to work in | **Quick search box** (⌘N, +): one box. Type a name → Create it (in the usual place) or Put it somewhere else…; a recent folder with that name comes first as Open. Paste a project link → Get it from GitHub. Empty: Recent (and Home), then New folder, Choose a folder…, Get a project from GitHub. ↑↓ move, ↵ open, Esc close. **Three cards** (first run, a new window, closing the last workspace; can't be closed): New folder, Choose a folder…, From GitHub, each with a line picture that answers your pointer; New folder and From GitHub open a box under the cards ("in ~/Code", click to change). Recent underneath, and the anonymous-usage line with Turn off. |
 | Command palette | Plain-English commands, Ask AI, games | ⌘⇧K. Types the real command for you to run. |
 | Welcome cards + tour | First run | Once; again from Help or Settings → General. |
 | What's new / update | Release notes; restarting into an update | After an update; the footer's gift; Fork menu → Check for Updates…. |
@@ -126,7 +126,7 @@ While Fork isn't in front: the **notch** (on a Mac with one) grows to show what'
 ## 4. Shortcuts
 | Keys | Does |
 |---|---|
-| ⌘N | New workspace (the picker) |
+| ⌘N | New workspace (the quick search box) |
 | ⌘T | New terminal in this workspace |
 | ⌘R | Rename this workspace |
 | ⌥⌘R | Rename this terminal |
@@ -171,6 +171,7 @@ While Fork isn't in front: the **notch** (on a Mac with one) grows to show what'
 ---
 
 ## Log
+- **9 Oct 2026**: The workspace picker is now New workspace, with two faces: a quick search box for ⌘N and +, and three picture cards when no workspace is open (first run, closing the last one).
 - **9 Oct 2026**: Workspaces can be renamed (double-click the tab, ⌘R). Terminal chips show the task the agent is working on, or the agent's name, unless you named the terminal (double-click, ⌥⌘R).
 - **9 Oct 2026**: The "Your app is running at … · Show it" bar under the terminals is gone, and so is the notch's "Ready". The app's address in Workspace info is the one place it shows; click it to see the app.
 - **9 Oct 2026**: The top strip is 36px (was 44), so a workspace tab sits 4px above the card (was 8) and reads as part of it. `--strip` in index.html; the traffic lights follow (main.js).

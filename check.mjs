@@ -99,6 +99,28 @@ assert.equal(findLocalUrl('http://localhost:3000 then http://127.0.0.1:4000'), '
 assert.equal(dropText(['/Users/me/My Designs/hero (final).png']), '/Users/me/My\\ Designs/hero\\ \\(final\\).png ');
 assert.equal(dropText(['/a/it\'s & more', '/b/café.svg']), "/a/it\\'s\\ \\&\\ more /b/café.svg ");
 
+// --- New workspace (picker.js, browser script): links, folder names, the quick search box's rows ---
+{
+  const ctx = { window: {} };
+  runInNewContext(readFileSync(new URL('./picker.js', import.meta.url), 'utf8'), ctx);
+  const K = ctx.window.Picker, j = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepEqual(j(K.repoFrom('https://github.com/team/project')), { url: 'https://github.com/team/project', name: 'project', label: 'team/project' });
+  assert.equal(K.repoFrom(' https://github.com/team/project.git/ ').name, 'project');   // .git, a trailing slash, spaces
+  assert.equal(K.repoFrom('git@github.com:team/project.git').label, 'team/project');
+  assert.equal(K.repoFrom('https://gitlab.com/a/b').label, 'a/b');
+  for (const junk of ['my-site', 'https://github.com/team', 'github.com/team/project', '']) assert.equal(K.repoFrom(junk), null, junk);
+  assert.equal(K.nameError('my-site'), null);
+  for (const bad of ['', '  ', '.', '..', 'a/b']) assert.equal(K.nameError(bad), 'name', bad);
+  const H = '/Users/me', recents = ['/Users/me/Code/portfolio', '/Users/me/Downloads/fork-ui'];
+  const kinds = (q) => j(K.paletteRows(q, recents, H, '~/Code')).map((r) => r.kind + (r.bold ? ':' + r.bold : r.path ? ':' + r.path.split('/').pop() : ''));
+  assert.deepEqual(kinds(''), ['open:portfolio', 'open:fork-ui', 'open:me', 'new', 'pick', 'clone']);   // Recent + Home, then Start
+  assert.deepEqual(kinds('my-site'), ['new:my-site', 'where']);                                          // nothing called that yet
+  assert.deepEqual(kinds('port'), ['new:port', 'where', 'open:portfolio']);                              // matches come after
+  assert.deepEqual(kinds('Portfolio'), ['open:portfolio', 'new:Portfolio', 'where']);                    // that name exists: open it first
+  assert.deepEqual(kinds('https://github.com/team/project'), ['clone:team/project', 'where']);
+  assert.equal(K.paletteRows('x', recents, H, '~/Code')[0].detail, 'in ~/Code');
+}
+
 // --- What terminal apps ask of us (protocols.js, browser script) ---
 const pctx = { window: {}, atob, TextDecoder };
 runInNewContext(readFileSync(new URL('./protocols.js', import.meta.url), 'utf8'), pctx);

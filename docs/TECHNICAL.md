@@ -71,6 +71,10 @@ Names move less than line numbers, so the docs point at files and function names
 | `icons.js` | Lucide icons (`icon()`), file-type icons (`fileIcon`, `phFile`). |
 | `preview.js` | Text helpers: `stripAnsi`, `findLocalUrl` (spots a dev server's address), `dropText`. Pure. |
 | `protocols.js` | What terminal apps ask of Fork (OSC 9/99/777/52) and which AI agent is open and working (`AGENTS`, `claudeTitle`, `interruptHint`), and what it's working on (`taskFromTitle`). Pure. |
+| `picker.js` | New workspace's rules: `repoFrom` (is it a project link?), `nameError` (a folder name), `paletteRows` (the quick search box's rows). Pure. |
+| `vendor/hairline.js` | @lucasmarkes/hairline's loupe and branches figures, bundled as `window.Hairline` (New workspace cards). |
+| `vendor/hairline-kernel.js` | Hairline's core (`window.HL`), the engine Fork's own figures run on. Copied from the hairline-create kit; replace, don't edit. |
+| `figures/folders.js` | Fork's own hairline figure, folders on a shelf (`window.FIGURES.folders`), drawn with the hairline-create kit. |
 | `themes.js` | The terminal's dark and light looks (`window.THEMES`). |
 | `onboarding.js` | Welcome cards and the spotlight tour. |
 | `games.js` | Snake, Stack and Space Run in a pane. |
@@ -88,7 +92,7 @@ Names move less than line numbers, so the docs point at files and function names
 |---|---|
 | `check.mjs` | `npm run check`: the test suite (plain `node:assert`), including the doc checks. |
 | `shell/` | `.zshrc`, `.zprofile`, `.zshenv`: load your own config, then add folder reporting (OSC 7) and command start/end (OSC 133). |
-| `scripts/vendor.mjs` | Bundles @pierre/trees and @pierre/diffs into `vendor/` (runs on `npm install`). |
+| `scripts/vendor.mjs` | Bundles @pierre/trees, @pierre/diffs and @lucasmarkes/hairline into `vendor/` (runs on `npm install`). |
 | `scripts/icons.mjs` | Draws Central Icons into `icons/central/` from your licence key. |
 | `scripts/release.mjs`, `install-app.sh` | Releasing (see RELEASING.md) and installing a local build. |
 | `scripts/posthog-dashboard.mjs`, `dashboard-charts.mjs`, `website-dashboard-charts.mjs` | The PostHog dashboards, kept in sync with the events Fork sends. |
@@ -132,6 +136,7 @@ Every package in `package.json`, plus what Fork uses that isn't an npm package. 
 | `esbuild` | 0.28.2 | Bundles Pierre's libraries into `vendor/` | MIT |
 | `@pierre/trees` | 1.0.0-beta.6 (pinned) | The Files tree; bundled to `vendor/trees.js` | Apache-2.0 |
 | `@pierre/diffs` | 1.5.2 (pinned) | The code preview, coloured in a worker; bundled to `vendor/diffs/` | Apache-2.0 |
+| `@lucasmarkes/hairline` | 0.5.0 (pinned) | Line pictures that answer the pointer, on the New workspace cards; bundled to `vendor/hairline.js` (only the figures used), its core copied to `vendor/hairline-kernel.js` for Fork's own figures | MIT |
 | `shiki` | 4.4.3 | The grammars and themes @pierre/diffs colours code with | MIT |
 | `motion` | 13.4.0 | **Not used anywhere.** Added in 0.1.0; a candidate to remove | MIT |
 
@@ -195,6 +200,7 @@ In the window's localStorage:
 - `shell/.zshrc` makes zsh report its folder (OSC 7) and each command's start and end (OSC 133 C/D, with the exit code). `renderer.js newPane` listens: start sets `pane.busy`, end sets `failed`, clears `pane.url` and calls `workDone`.
 - **Which agent is open**: the command's first word (`pane.tool`) or the title it sets (`Protocols.agentFromTitle`), looked up in `Protocols.AGENTS` (Claude, OpenCode, Codex, Gemini).
 - **Is it working**: Claude's title starts with a spinner while working and ✳ while waiting (`claudeTitle`); the others show "esc to interrupt" only while working (`interruptHint`, read from the bottom lines by `checkHint`). Both feed `setThinking(pane, on)`, the single "turn started / turn ended" moment. It drives the tab square, the notch, the chime, `workDone`, and before/after.
+- **New workspace** (`#startOv`, renderer.js `openPicker`): two faces. With no workspace open (`required`: first run, or the last one closed) it's three cards (`.start-cards`) that can't be closed; otherwise (⌘N, +) the quick search box (`.start-pal`), whose rows come from `Picker.paletteRows`. Both make folders with `makeIn` (`dt.makeFolder`) and get projects with `cloneInto`, which opens the workspace and types `git clone … && cd …` into its terminal. New folders and projects go to `newParent`: `dt-new-parent`, else the parent of the latest recent, else Home; "Put it somewhere else…" / the underlined place picks another. The cards' pictures are hairline figures (`mountFigure`); pointer moves over a card are mapped onto its picture, and reduced motion leaves them still.
 - **Names**: a workspace is named after its folder (`tabName`) unless you gave it one (`t.name`, `renameWorkspace`). A terminal's chip shows `labelOf(p)`: your name if you typed one (`p.named`); else, while a tool that doesn't share its task is open, the tool's name; else the last task from a title (`p.task`, `Protocols.taskFromTitle`, set in `onTitleChange` with `p.taskBy`); else "Terminal N". Both rename in place through `inlineRename`. All of these are saved in the session (`session.mjs` keeps tab `name`, pane `named`/`task`).
 
 ### Your app
@@ -225,7 +231,7 @@ In the window's localStorage:
 | `npm start` | Runs with the normal data folder. |
 | `npm run app` | Builds Fork.app and installs it to /Applications (main branch, for daily use). |
 | `npm run check` | All tests, including the doc checks. |
-| `npm run vendor` | Rebuilds `vendor/` after updating @pierre/*. Runs on `npm install`. |
+| `npm run vendor` | Rebuilds `vendor/` after updating @pierre/* or @lucasmarkes/hairline. Runs on `npm install`. |
 | `npm run icons` | Draws Central Icons (needs `~/.config/fork/central.env`). |
 | `npm run release`, `npm run dist` | See RELEASING.md. |
 
@@ -236,6 +242,7 @@ In the window's localStorage:
 ---
 
 ## Log
+- **9 Oct 2026**: New workspace rebuilt from the Figma "New workspace" page: a quick search box for ⌘N / + and three picture cards when no workspace is open (`picker.js`, `makeIn`, `cloneInto`, `mountFigure`). Projects from a link now go next to your latest workspace without asking ("Put it somewhere else…" asks). New library @lucasmarkes/hairline (MIT) for the card pictures, plus `vendor/hairline-kernel.js` and `figures/folders.js`. New icons house and github-logo (Central: IconHome, IconGithub).
 - **9 Oct 2026**: Renaming. Workspace tabs get `t.name` (double-click, ⌘R → `rename-workspace`); terminals get `labelOf`, `p.named`, `p.task`/`p.taskBy` from `Protocols.taskFromTitle` (⌥⌘R → `rename-terminal`). `inlineRename` is shared. `syncChip` now also sets the chip's text and runs when a command ends. session.mjs keeps tab `name` and pane `named`/`task`. The capture-phase Esc handler now leaves rename fields alone, so Esc cancels a rename (it used to save it).
 - **9 Oct 2026**: Removed the "Your app is running" bar (`#ready`) and the `app` notch moment. `appFound` only sets `pane.url`; Workspace info's address is a button that calls `openApp` (shared with Changes). main.js `goTo` and notch-logic.js still accept kind `app`, but nothing sends it.
 - **9 Oct 2026**: `scripts/release.mjs` stops if `icons/central/ready.js` or `vendor/diffs` is missing; neither is committed, and a build without them ships fallback icons and no Changes tab.

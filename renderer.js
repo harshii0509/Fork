@@ -1572,30 +1572,24 @@ async function restore(saved) {
   dt.track('session_restored', { tabs: tabs.length, panes: panes.size });
 }
 
-// --- The workspace picker: every workspace is a folder ------------------------------------
-// A recent one, your home folder, a new folder (made right here), any folder on your Mac, or a project from
-// GitHub. With no workspace open it can't be closed: a window always has a folder to work in.
-let pickRequired = false, newParent = '';
+// --- New workspace: every workspace is a folder ------------------------------------------
+// Two faces (Figma: "New workspace" page). ⌘N and + open the quick search box: type a name to make a folder,
+// paste a link to get a project, or pick a recent one (picker.js decides the rows). With no workspace open (first
+// run, or you closed the last one) it's three picture cards instead, and it can't be closed: a window always has
+// a folder to work in. New folders and projects go next to your latest workspace, or where you last made one.
+let pickRequired = false, newParent = '', pickRecents = [];
 const tilde = (p) => (home && (p === home || p.startsWith(home + '/')) ? '~' + p.slice(home.length) : p);
 const parentOf = (p) => p.slice(0, p.lastIndexOf('/')) || '/';
-const whereLabel = (p) => `in ${p === home ? 'your home folder' : tilde(p)}`;
 async function openPicker({ required = !tabs.length } = {}) {
   pickRequired = required;
   home ||= await dt.home();
-  const list = (await dt.recents()).slice(0, 5);
-  const row = (path, label, choice) => `<button class="opt" data-path="${esc(path)}" data-choice="${choice}"><span class="ico">${icon('folder')}</span>`
-    + `<span>${esc(label)}<small>${esc(tilde(path))}</small></span></button>`;
-  $('recents').innerHTML = (list.length ? '<div class="label" style="margin-top:0">Recent</div>' : '')
-    + list.map((p) => row(p, p === home ? 'Home' : p.split('/').pop() || '/', 'recent')).join('')
-    + (list.includes(home) ? '' : row(home, 'Home', 'home'));
+  pickRecents = (await dt.recents()).slice(0, 5);
   try { newParent = localStorage.getItem('dt-new-parent') || ''; } catch {}
-  newParent ||= list[0] && list[0] !== home ? parentOf(list[0]) : home;
-  $('startTitle').textContent = tabs.length ? 'New workspace' : 'Where do you want to work?';
-  $('skip').hidden = required;
-  for (const id of ['newFolder', 'clone']) $(id).classList.remove('show');
-  $('newFolderName').value = ''; $('cloneUrl').value = ''; $('newFolderErr').hidden = true;
-  $('usageNote').hidden = !(await dt.analytics());
+  newParent ||= pickRecents[0] && pickRecents[0] !== home ? parentOf(pickRecents[0]) : home;
+  $('startOv').dataset.mode = required ? 'cards' : 'pal';
+  if (required) await showCards(); else showPalette();
   $('startOv').classList.add('show');
+  if (!required) $('spIn').focus();
 }
 const openStart = () => openPicker(); // after the welcome cards
 function closeStart() {
@@ -1627,43 +1621,161 @@ async function openWorkspace(dir, { choice, start, run } = {}) {
   closeStart();
 }
 
-$('recents').onclick = (e) => { const b = e.target.closest('.opt'); if (b) openWorkspace(b.dataset.path, { choice: b.dataset.choice }); };
-$('pick').onclick = async () => { const p = await dt.pickFolder(); if (p) openWorkspace(p, { choice: 'pick' }); };
-// New folder: a name, and where it goes (the last place you made one, or next to your latest workspace).
-$('newFolderOpt').onclick = () => {
-  $('clone').classList.remove('show');
-  $('newFolder').classList.add('show');
-  $('newFolderWhere').textContent = whereLabel(newParent);
-  $('newFolderName').focus();
-};
-$('newFolderWhere').onclick = async () => {
-  const p = await dt.pickFolder();
-  if (p) { newParent = p; $('newFolderWhere').textContent = whereLabel(p); }
-  $('newFolderName').focus();
-};
+
+// Making a folder or getting a project, from either face. A project's workspace is the folder it downloads
+// into; its terminal fetches it there (the command is typed, not run, so you see what happens).
 const FOLDER_ERRORS = { name: 'Give it a name, without a / in it.', 'exists-file': 'There’s already a file with that name there.',
   failed: 'Couldn’t make a folder there. Try another place.' };
-$('newFolderGo').onclick = async () => {
-  const r = await dt.makeFolder(newParent, $('newFolderName').value);
-  if (r.error) { $('newFolderErr').textContent = FOLDER_ERRORS[r.error]; $('newFolderErr').hidden = false; return; }
-  try { localStorage.setItem('dt-new-parent', newParent); } catch {}
+async function makeIn(parent, name, err) {
+  const r = Picker.nameError(name) ? { error: 'name' } : await dt.makeFolder(parent, name);
+  if (r.error) { err.textContent = FOLDER_ERRORS[r.error]; err.hidden = false; return; }
+  newParent = parent;
+  try { localStorage.setItem('dt-new-parent', parent); } catch {}
   openWorkspace(r.path, { choice: 'new_folder' });
+}
+function cloneInto(dest, repo) {
+  openWorkspace(`${dest === '/' ? '' : dest}/${repo.name}`, { choice: 'clone', start: dest, run: () =>
+    send(`git clone ${q(repo.url)} && cd ${q(repo.name)}`, `Downloads ${repo.name} into ${dest.split('/').pop() || '/'}, then moves into it.`, false) });
+}
+const pickAndOpen = async () => { const p = await dt.pickFolder(); if (p) openWorkspace(p, { choice: 'pick' }); };
+const openChoice = (p) => openWorkspace(p, { choice: p === home && !pickRecents.includes(home) ? 'home' : 'recent' });
+const ROW_ICON = { new: 'folder-plus', pick: 'folder-open', clone: 'github-logo', where: 'folder-open' };
+const rowIcon = (r) => ROW_ICON[r.kind] || (r.path === home ? 'house' : 'folder');
+
+// The quick search box. ↑↓ move (wrapping, like ⌘⇧K), ↵ does the selected row, the pointer picks too.
+let spRows = [], spSel = 0;
+function showPalette() {
+  $('spIn').value = '';
+  $('spErr').hidden = true;
+  drawPalette();
+}
+function drawPalette() {
+  spRows = Picker.paletteRows($('spIn').value, pickRecents, home, tilde(newParent));
+  spSel = Math.min(spSel, spRows.length - 1);
+  let section;
+  $('spList').innerHTML = spRows.map((r, i) => {
+    const head = r.section && r.section !== section ? `<div class="start-label">${r.section}</div>` : '';
+    section = r.section;
+    return head + `<div class="sp-row${i === spSel ? ' sel' : ''}" data-i="${i}" role="option" aria-selected="${i === spSel}">`
+      + `<span class="sp-name">${ph(rowIcon(r))}<span>${esc(r.label)}${r.bold ? `<b>${esc(r.bold)}</b>` : ''}${esc(r.after || '')}</span></span>`
+      + `<span class="sp-detail"><span>${esc(r.detail)}</span>${i === spSel ? '<kbd>↵</kbd>' : ''}</span></div>`;
+  }).join('');
+  $('spList').querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+}
+async function choosePalette(r) {
+  if (!r) return;
+  if (r.kind === 'open') return openChoice(r.path);
+  if (r.kind === 'pick') return pickAndOpen();
+  if (r.kind === 'new' && r.name) return makeIn(newParent, r.name, $('spErr'));
+  if (r.kind === 'clone' && r.repo) return cloneInto(newParent, r.repo);
+  if (r.kind === 'where') { // somewhere other than next to your latest workspace
+    const p = await dt.pickFolder();
+    if (p) return r.repo ? cloneInto(p, r.repo) : makeIn(p, r.name, $('spErr'));
+  }
+  $('spIn').focus(); // "New folder" and "Get a project" with nothing typed yet: the box is where you start
+}
+$('spIn').oninput = () => { spSel = 0; $('spErr').hidden = true; drawPalette(); };
+$('spIn').onkeydown = (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    spSel = (spSel + (e.key === 'ArrowDown' ? 1 : -1) + spRows.length) % spRows.length;
+    drawPalette();
+  }
+  if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); choosePalette(spRows[spSel]); }
 };
-$('newFolderName').onkeydown = (e) => { if (e.key === 'Enter') $('newFolderGo').click(); };
-$('newFolderName').oninput = () => { $('newFolderErr').hidden = true; };
-$('cloneOpt').onclick = () => { $('newFolder').classList.remove('show'); $('clone').classList.add('show'); $('cloneUrl').focus(); };
-// A project from GitHub: the workspace is the folder it downloads into; its terminal fetches it there.
-$('cloneGo').onclick = async () => {
-  const url = $('cloneUrl').value.trim();
-  if (!url) return;
-  const dest = await dt.pickFolder(); // where should the project live?
-  if (!dest) return;
-  const name = url.replace(/\/+$/, '').split('/').pop().replace(/\.git$/, '');
-  openWorkspace(`${dest === '/' ? '' : dest}/${name}`, { choice: 'clone', start: dest, run: () =>
-    send(`git clone ${q(url)} && cd ${q(name)}`, `Downloads ${name} into ${dest.split('/').pop()}, then moves into it.`, false) });
+$('spList').onpointermove = (e) => {
+  const i = +e.target.closest('.sp-row')?.dataset.i;
+  if (Number.isInteger(i) && i !== spSel) { spSel = i; drawPalette(); }
 };
-$('cloneUrl').onkeydown = (e) => { if (e.key === 'Enter') $('cloneGo').click(); };
+$('spList').onmousedown = (e) => e.preventDefault(); // the box keeps the keyboard
+$('spList').onclick = (e) => { const row = e.target.closest('.sp-row'); if (row) choosePalette(spRows[+row.dataset.i]); };
+
+// The three cards: New folder and From GitHub open their box under the cards; Choose a folder asks right away.
+let way = '';
+async function showCards() {
+  $('startTitle').textContent = tabs.length ? 'New workspace' : 'Where do you want to work?';
+  $('scFoot').hidden = pickRequired;
+  setWay('');
+  const list = pickRecents.includes(home) ? pickRecents : [...pickRecents, home];
+  $('scRecent').innerHTML = '<div class="start-label">Recent</div>' + list.map((p) => `<button class="sc-row" data-path="${esc(p)}">`
+    + `<span class="sp-name">${ph(rowIcon({ path: p }))}<span>${esc(p === home ? 'Home' : p.split('/').pop() || '/')}</span></span>`
+    + `<span class="sp-detail"><span>${esc(tilde(p))}</span></span></button>`).join('');
+  $('usageNote').hidden = !pickRequired || !(await dt.analytics());
+  mountPictures();
+}
+function setWay(w) {
+  way = w;
+  for (const b of document.querySelectorAll('.sc-way')) b.classList.toggle('on', b.dataset.way === w);
+  $('scForm').hidden = !w;
+  $('scErr').hidden = true;
+  if (!w) return;
+  const clone = w === 'clone';
+  $('scIn').value = '';
+  $('scIn').placeholder = clone ? 'https://github.com/team/project' : 'Name it, e.g. my-site';
+  $('scIn').setAttribute('aria-label', clone ? 'Project link' : 'Folder name');
+  $('scGo').textContent = clone ? 'Next' : 'Create';
+  drawWhere();
+  $('scIn').focus();
+}
+const drawWhere = () => { $('scWhere').innerHTML = `${way === 'clone' ? 'into' : 'in'} <u>${esc(tilde(newParent))}</u>`; };
+document.querySelector('.sc-ways').onclick = (e) => {
+  const b = e.target.closest('.sc-way');
+  if (!b) return;
+  if (b.dataset.way === 'pick') return pickAndOpen();
+  setWay(way === b.dataset.way ? '' : b.dataset.way); // the open card closes again
+};
+$('scWhere').onclick = async () => {
+  const p = await dt.pickFolder(); // saved as the usual place only once something is made there
+  if (p) { newParent = p; drawWhere(); }
+  $('scIn').focus();
+};
+$('scGo').onclick = () => {
+  if (way === 'new') return makeIn(newParent, $('scIn').value, $('scErr'));
+  const repo = Picker.repoFrom($('scIn').value);
+  if (repo) return cloneInto(newParent, repo);
+  $('scErr').textContent = 'Paste a project’s link, like https://github.com/team/project';
+  $('scErr').hidden = false;
+};
+$('scIn').onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) $('scGo').click(); };
+$('scIn').oninput = () => { $('scErr').hidden = true; };
+$('scRecent').onclick = (e) => { const b = e.target.closest('.sc-row'); if (b) openChoice(b.dataset.path); };
 $('skip').onclick = () => closeStart();
+
+// The cards' pictures: hairline figures (vendor/hairline.js; Fork's own in figures/), mounted the first time the
+// cards show. They never move on their own. Pointing anywhere on a card points at its picture (the card maps onto
+// it), so it answers; leaving lets it settle. With reduced motion they stay still.
+let picturesUp = false;
+function mountPictures() {
+  if (picturesUp) return;
+  picturesUp = true;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const pic of document.querySelectorAll('.start-cards .pic')) {
+    const el = document.createElement('div');
+    el.className = 'fig';
+    pic.append(el);
+    mountFigure(pic.dataset.fig, el);
+    if (still) continue;
+    const card = pic.closest('.sc-way'), point = (type, x, y) => el.querySelector('svg')?.dispatchEvent(
+      new PointerEvent(type, { bubbles: type !== 'pointerleave', pointerType: 'mouse', pointerId: 1, clientX: x, clientY: y }));
+    card.addEventListener('pointermove', (e) => {
+      const c = card.getBoundingClientRect(), r = pic.getBoundingClientRect();
+      point('pointermove', r.left + ((e.clientX - c.left) / c.width) * r.width, r.top + ((e.clientY - c.top) / c.height) * r.height);
+    });
+    card.addEventListener('pointerleave', () => { point('pointerleave', 0, 0); el.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse', pointerId: 1 })); });
+  }
+}
+// A stock figure mounts itself; Fork's own (window.FIGURES) mount on hairline's kernel the way its kit does.
+function mountFigure(name, el, intensity = 0.7) {
+  const f = window.FIGURES?.[name];
+  if (!f) return window.Hairline?.[name]?.(el, { theme: 'dark', intensity });
+  const [lo, mid, hi] = f.range;
+  HL.inject(document);
+  el.setAttribute('data-hairline', name);
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', f.means);
+  const svg = HL.mk('svg', { viewBox: '0 0 400 320', 'aria-hidden': 'true' }, el);
+  return f.mount({ stage: el, svg, read: { textContent: '' } }, intensity <= 0.5 ? lo + (intensity / 0.5) * (mid - lo) : mid + ((intensity - 0.5) / 0.5) * (hi - mid));
+}
 
 // --- First run: welcome cards, then once they've picked where to work, the spotlight tour ---------
 // (onboarding.js). Skipping the cards skips the tour too. Settings → Help and the Help menu replay it.

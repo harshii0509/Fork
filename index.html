@@ -583,34 +583,81 @@
     border-radius: 14px; box-shadow: var(--shadow-card); transform: scale(.98); transition: transform .16s var(--ease); }
   .overlay.show .card { transform: none; }
 
-  .start { padding: 28px; }
-  .start h1 { margin: 0 0 4px; font-size: 22px; }
-  .start > p { margin: 0 0 20px; color: var(--dim); }
-  .opt { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 12px; border-radius: var(--radius); text-align: left; color: var(--tree); }
-  .opt:hover { background: var(--line); }
-  .opt small { display: block; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .opt > span:last-child { min-width: 0; } /* a long path ends in … instead of wrapping */
-  .opt .ico { width: 32px; height: 32px; border-radius: 8px; background: var(--hover); color: var(--tree);
-    display: grid; place-items: center; flex: none; }
-  .label { margin: 16px 12px 6px; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
-  .clone { display: none; gap: 8px; margin: 4px 12px 8px; }
-  .clone.show { display: flex; }
   input { flex: 1; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
     border-radius: 8px; padding: 8px 10px; outline: none; }
   input:focus { border-color: var(--accent); }
   .go { padding: 8px 14px; border-radius: 8px; background: var(--accent); color: var(--on-accent); }
-  /* New folder, under its row: a name, where it goes (click to change), Create. Opens without motion: you're typing. */
-  .newf { display: none; flex-direction: column; gap: 8px; margin: 4px 12px 8px 56px; }
-  .newf.show { display: flex; }
-  .newf-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .newf-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 0; color: var(--dim); font-size: 12px; }
-  .newf-where:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
-  .newf-err { color: var(--bad); font-size: 12px; }
   .skip { margin-top: 16px; color: var(--dim); padding: 6px 12px; }
   .skip:hover { color: var(--text); }
-  .usage-note { margin: 14px 12px 0; font-size: 11px; color: var(--faint); }
-  .usage-note button { color: var(--dim); text-decoration: underline; text-underline-offset: 2px; padding: 0; font-size: inherit; }
-  .usage-note button:hover { color: var(--text); }
+  /* New workspace (Figma "New workspace" page): the quick search box for ⌘N and +, the three cards when no
+     workspace is open. One overlay; data-mode says which card shows. */
+  #startOv[data-mode="pal"] .start-cards, #startOv[data-mode="cards"] .start-pal { display: none; }
+  .start-pal, .start-cards { background: var(--field); border-color: var(--field-line); border-radius: 16px; overflow: hidden; font-family: var(--ui); }
+  .start-cards { width: min(640px, calc(100vw - 32px)); }
+  .start-pal kbd, .sp-foot kbd { display: inline-block; padding: 1px 5px; border-radius: 4px; background: var(--kbd);
+    font: 500 11px/16px var(--ui); color: var(--text-2); }
+  .start-err { color: var(--failed); font-size: 12px; }
+  .sp-field { display: flex; align-items: center; gap: 10px; padding: 15px 18px; color: var(--text-3); border-bottom: 1px solid var(--field-line); }
+  .sp-field input { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; font: 400 15px/20px var(--ui); color: var(--text-1); }
+  .sp-field input::placeholder { color: var(--text-3); }
+  .sp-err { padding: 8px 18px 0; }
+  .sp-list { max-height: min(50vh, 420px); overflow-y: auto; padding: 6px 8px 8px; }
+  .start-label { padding: 8px 0 4px 10px; font: 500 12px/16px var(--ui); color: var(--text-3); }
+  .sp-row, .sc-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 8px 10px;
+    border-radius: 8px; text-align: left; cursor: default; }
+  .sp-row.sel, .sc-row:hover { background: color-mix(in srgb, var(--text-1) 6%, transparent); }
+  .sp-name { display: flex; align-items: center; gap: 10px; min-width: 0; font: 400 14px/20px var(--ui); color: var(--text-1); }
+  .sp-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-name b { font-weight: 600; }
+  .sp-name .ph { flex: none; color: var(--text-2); }
+  .sp-row.sel .sp-name .ph { color: var(--text-1); }
+  .sp-detail { display: flex; align-items: center; gap: 8px; flex: none; max-width: 50%; font: 400 13px/20px var(--ui); color: var(--text-3); }
+  .sp-detail > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-foot { display: flex; gap: 14px; padding: 10px 18px 12px; border-top: 1px solid var(--field-line); font: 400 12px/16px var(--ui); color: var(--text-3); }
+  .sp-foot span { display: flex; align-items: center; gap: 6px; }
+
+  .sc-body { display: flex; flex-direction: column; gap: 16px; padding: 24px 24px 16px; }
+  .sc-head h1 { margin: 0 0 4px; font: 600 20px/26px var(--ui); color: var(--text-1); }
+  .sc-head p { margin: 0; font: 400 14px/20px var(--ui); color: var(--text-2); }
+  .sc-ways { display: flex; gap: 12px; }
+  .sc-way { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 6px 6px 12px; border-radius: 12px; text-align: left;
+    background: var(--card); border: 1px solid var(--field-line); transition: background-color 150ms ease, border-color 150ms ease; }
+  @media (hover: hover) and (pointer: fine) { .sc-way:hover { border-color: var(--text-4); } }
+  .sc-way.on { background: color-mix(in srgb, var(--text-1) 5%, var(--field)); border-color: var(--text-4); }
+  .sc-way:focus-visible { outline: 2px solid color-mix(in srgb, var(--text-1) 35%, transparent); outline-offset: 2px; }
+  .sc-way-t { display: flex; flex-direction: column; gap: 2px; padding: 0 6px; }
+  .sc-way-t b { font: 500 14px/20px var(--ui); color: var(--text-1); }
+  .sc-way-t small { font: 400 12px/16px var(--ui); color: var(--text-3); }
+  /* The picture: a hairline figure (renderer.js mountFigure) in Fork's greys, framed as in the Figma. Your pointer
+     reaches it through the card (renderer.js), never directly, so the whole card is the place to point. */
+  .pic { position: relative; height: 104px; border-radius: 8px; background: var(--chrome); overflow: hidden; }
+  .pic .fig { position: absolute; pointer-events: none;
+    --hairline-plate: var(--chrome); --hairline-hi: var(--text-1); --hairline-edge: var(--text-2);
+    --hairline-mid: var(--text-4); --hairline-lo: var(--card-line); --hairline-stroke: 1; }
+  .pic[data-fig="folders"] .fig { left: 10px; top: -16px; width: 155px; }
+  .pic[data-fig="loupe"] .fig { left: 5px; top: -25px; width: 188px; }
+  .pic[data-fig="branches"] .fig { left: 5px; top: -38px; width: 188px; }
+  .sc-form { display: flex; align-items: center; gap: 10px; }
+  .sc-form[hidden] { display: none; }
+  .sc-form input { flex: 1 1 0; min-width: 160px; padding: 8px 10px; border: 1px solid var(--text-4); border-radius: 8px; background: var(--card);
+    font: 400 14px/20px var(--ui); color: var(--text-1); }
+  .sc-form input:focus { border-color: var(--text-2); }
+  .sc-form input::placeholder { color: var(--text-4); }
+  .sc-where { flex: 0 1 auto; min-width: 0; max-width: 45%; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 400 13px/18px var(--ui); color: var(--text-2); } /* a long place shortens with …; the box keeps its room */
+  .sc-where u { text-underline-offset: 2px; }
+  .sc-where:hover { color: var(--text-1); }
+  .sc-go { flex: none; padding: 6px 12px; border-radius: 8px; background: var(--text-1); font: 500 13px/18px var(--ui); color: var(--chrome); }
+  .sc-recent { padding: 0 14px 10px; }
+  .sc-recent:empty { display: none; }
+  .sc-foot { display: flex; justify-content: flex-end; padding: 12px 16px 12px 24px; border-top: 1px solid var(--field-line); }
+  .sc-foot[hidden] { display: none; }
+  .sc-cancel { padding: 6px 12px; border: 1px solid var(--field-line); border-radius: 8px; font: 500 13px/18px var(--ui); color: var(--text-2); }
+  .sc-cancel:hover { color: var(--text-1); }
+  .usage-note { margin: 0; padding: 4px 24px 16px; font: 400 11px/16px var(--ui); color: var(--text-3); }
+  .usage-note button { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; padding: 0; font-size: inherit; }
+  .usage-note button:hover { color: var(--text-1); }
+  @media (prefers-reduced-motion: reduce) { .sc-way { transition: none; } }
 
   /* First run (onboarding.js): welcome cards, then a spotlight that walks through the app. */
   #welcomeOv { z-index: 12; } /* above the start screen and What's new */
@@ -995,23 +1042,34 @@
     <div class="welcome-actions"><button class="skip" id="welcomeSkip">Skip</button><button class="go" id="welcomeNext">Next</button></div>
   </div>
 </div>
-<div class="overlay" id="startOv">
-  <div class="card start">
-    <h1 id="startTitle">Where do you want to work?</h1>
-    <p>A workspace is a folder: its files, its branch, its terminals.</p>
-    <div id="recents"></div>
-    <div class="label">Or</div>
-    <button class="opt" id="newFolderOpt"><span class="ico"><i data-icon="folder-plus"></i></span><span>New folder<small>Start something fresh</small></span></button>
-    <div class="newf" id="newFolder">
-      <input id="newFolderName" placeholder="Name it, e.g. my-site" spellcheck="false" autocomplete="off" aria-label="Folder name">
-      <div class="newf-row"><button class="newf-where" id="newFolderWhere" title="Change where it goes"></button><button class="go" id="newFolderGo">Create</button></div>
-      <div class="newf-err" id="newFolderErr" role="alert" hidden></div>
+<div class="overlay" id="startOv" data-mode="pal">
+  <!-- ⌘N and +: the quick search box. Type a name to make a folder, paste a link to get a project, or pick a recent one. -->
+  <div class="card start-pal" role="dialog" aria-label="New workspace">
+    <label class="sp-field"><i class="ph" data-ph="magnifying-glass"></i><input id="spIn" placeholder="Name a new folder, or paste a GitHub link"
+      spellcheck="false" autocomplete="off" aria-label="Name a new folder, or paste a GitHub link" aria-controls="spList"></label>
+    <div class="start-err sp-err" id="spErr" role="alert" hidden></div>
+    <div class="sp-list" id="spList" role="listbox" aria-label="Ways to open a workspace"></div>
+    <div class="sp-foot"><span><kbd>↑↓</kbd>move</span><span><kbd>↵</kbd>open</span><span><kbd>esc</kbd>close</span></div>
+  </div>
+  <!-- No workspace open (first run, or you closed the last one): three ways to start, with pictures, and Recent. -->
+  <div class="card start-cards" role="dialog" aria-labelledby="startTitle">
+    <div class="sc-body">
+      <div class="sc-head"><h1 id="startTitle">Where do you want to work?</h1><p>A workspace is a folder: its files, its branch, its terminals.</p></div>
+      <div class="sc-ways">
+        <button class="sc-way" data-way="new"><span class="pic" data-fig="folders"></span><span class="sc-way-t"><b>New folder</b><small>Start something fresh</small></span></button>
+        <button class="sc-way" data-way="pick"><span class="pic" data-fig="loupe"></span><span class="sc-way-t"><b>Choose a folder…</b><small>Any folder on your Mac</small></span></button>
+        <button class="sc-way" data-way="clone"><span class="pic" data-fig="branches"></span><span class="sc-way-t"><b>From GitHub</b><small>Paste the link</small></span></button>
+      </div>
+      <div class="sc-form" id="scForm" hidden>
+        <input id="scIn" spellcheck="false" autocomplete="off">
+        <button class="sc-where" id="scWhere" title="Change where it goes"></button>
+        <button class="sc-go" id="scGo">Create</button>
+      </div>
+      <div class="start-err" id="scErr" role="alert" hidden></div>
     </div>
-    <button class="opt" id="pick"><span class="ico"><i data-icon="folder-search"></i></span><span>Choose a folder…<small>Any folder on your Mac</small></span></button>
-    <button class="opt" id="cloneOpt"><span class="ico"><i data-icon="download"></i></span><span>Get a project from GitHub<small>Paste the link, pick where it goes</small></span></button>
-    <div class="clone" id="clone"><input id="cloneUrl" placeholder="https://github.com/team/project"><button class="go" id="cloneGo">Next</button></div>
-    <button class="skip" id="skip">Cancel</button>
-    <p class="usage-note" id="usageNote" hidden>Fork shares anonymous usage (never your files, commands or names) so it can get better. <button id="usageOff">Turn off</button></p>
+    <div class="sc-recent" id="scRecent"></div>
+    <p class="usage-note" id="usageNote" hidden>Fork shares anonymous usage, never your files, commands or names. <button id="usageOff">Turn off</button></p>
+    <div class="sc-foot" id="scFoot"><button class="sc-cancel" id="skip">Cancel</button></div>
   </div>
 </div>
 
@@ -1052,6 +1110,10 @@
 <script src="icons.js"></script>
 <script src="preview.js"></script>
 <script src="protocols.js"></script>
+<script src="picker.js"></script>
+<script src="vendor/hairline.js"></script>
+<script src="vendor/hairline-kernel.js"></script>
+<script src="figures/folders.js"></script>
 <script src="themes.js"></script>
 <script src="onboarding.js"></script>
 <script src="games.js"></script>
