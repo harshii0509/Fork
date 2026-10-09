@@ -37,6 +37,8 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+### 1.2.0 — 2026-10-09
+
 **New**
 - **A new way to start a workspace.** ⌘N opens a quick search box: type a name to make a folder, paste a GitHub link to get a project, or pick one you've used. With no workspace open, three picture cards show the ways to start.
 - **Name your workspaces and terminals.** Double-click a workspace tab, or press ⌘R, to rename it. Terminals now take the name of the task your AI tool is working on, like "Fix login bug". Double-click one, or press ⌥⌘R, to give it your own name.
