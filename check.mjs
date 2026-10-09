@@ -135,6 +135,15 @@ assert.equal(P.agentFromTitle('vim notes.md'), null);
 assert.equal(P.claudeTitle('◐ Fixing the hero'), true);
 assert.equal(P.claudeTitle('✳ Fixing the hero'), false);
 assert.equal(P.claudeTitle('Claude Code'), null);
+// The terminal's name: what the tool says it's working on, never the tool's own name.
+assert.equal(P.taskFromTitle('✳ Fix login bug'), 'Fix login bug');
+assert.equal(P.taskFromTitle('⠂ Fix login bug'), 'Fix login bug');
+assert.equal(P.taskFromTitle('OC | Refactor the header'), 'Refactor the header');
+assert.equal(P.taskFromTitle('✳ Claude Code'), null);
+assert.equal(P.taskFromTitle('OpenCode'), null);
+assert.equal(P.taskFromTitle('vim'), null);
+assert.equal(P.taskFromTitle('✳ ' + 'word '.repeat(20)).length, 40);   // capped, ending in …
+assert.ok(P.taskFromTitle('✳ ' + 'word '.repeat(20)).endsWith('…'));
 assert.ok(P.interruptHint('■■■⬝⬝⬝  esc interrupt        tab agents  ctrl+p commands')); // OpenCode
 assert.ok(P.interruptHint('• Working (12s • esc to interrupt)')); // Codex
 assert.ok(P.interruptHint('⠏ Thinking… (esc to cancel, 4s)')); // Gemini
@@ -496,6 +505,14 @@ assert.equal(named.tabs[0].root.a.name, 'Dev server');              // trimmed
 assert.equal(named.tabs[0].root.b.name.length, 60);                 // capped
 assert.ok(!('color' in named.tabs[1]) && !('name' in named.tabs[1].root)); // out of range, not text
 assert.ok(!('color' in named.tabs[2]) && !('name' in named.tabs[2].root)); // not a number, blank
+// A workspace's own name, whether you named a terminal yourself, and its tool's last task come back too.
+const kept = clean({ v: 1, windows: [{ tabs: [
+  { name: '  Checkout  ', root: { cwd: here, name: 'Server', named: true, task: '  Fix login bug ' } },
+  { name: 5, root: { cwd: here, named: 'yes', task: 7 } }] }] }, ctx).windows[0];
+assert.equal(kept.tabs[0].name, 'Checkout');
+assert.equal(kept.tabs[0].root.named, true);
+assert.equal(kept.tabs[0].root.task, 'Fix login bug');
+assert.ok(!('name' in kept.tabs[1]) && !('named' in kept.tabs[1].root) && !('task' in kept.tabs[1].root)); // wrong types
 
 // --- Workspace details (git.mjs): branch, files changed, lines added and removed ---
 {

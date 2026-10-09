@@ -136,6 +136,8 @@ async function newPane(cwd, { screen, when } = {}) {
   term.onTitleChange((title) => {
     if (!pane.busy) return;
     pane.seen ||= Protocols.agentFromTitle(title); // however it was started (`cd x && claude`)
+    const task = agentOf(pane) && Protocols.taskFromTitle(title);
+    if (task) { pane.task = task; pane.taskBy = agentOf(pane).key; } // the terminal takes the task's name
     syncChip(pane);
     const now = agentOf(pane)?.titled ? Protocols.claudeTitle(title) : null;
     if (now !== null) setThinking(pane, now);
@@ -180,6 +182,7 @@ async function newPane(cwd, { screen, when } = {}) {
       if (code && code !== 130 && pane === active()) showOops(); // 130 = stopped with Ctrl+C
       if (pane.thinking) turnEnded(pane); // the agent quit mid-turn: what it changed still counts
       pane.thinking = false; pane.sawSignal = false; pane.seen = null;
+      syncChip(pane); // a tool's name leaves with the tool; its last task stays
       pane.url = null; // whatever served the app it printed has stopped
       gitSoon(tabOf(pane.id)); // the command may have changed files or the branch
       workDone(pane);
@@ -382,7 +385,8 @@ function renderTabs() {
     if (i < 9) row.dataset.key = `⌘${i + 1}`; else delete row.dataset.key;
     put(row, 'title', LOOKS[key].label + (dirOfTab(t) ? ` · ${dirOfTab(t)}` : ''));
     row.style.setProperty('--tab-c', `var(--ws-${(t.color ?? 0) + 1})`);
-    put(row.querySelector('.tname'), 'textContent', tabName(t));
+    const tn = row.querySelector('.tname'); // gone while you're renaming it
+    if (tn) put(tn, 'textContent', tabName(t));
     row.querySelector('.tclose').dataset.close = i;
     const box2 = row.querySelector('.ws-sq'), sq = row.querySelector('.ws-cubes'), run = key === 'running';
     if ((box2.dataset.s || '') !== (SQUARE[key] ? key : '')) { if (SQUARE[key]) box2.dataset.s = key; else delete box2.dataset.s; }
@@ -422,9 +426,11 @@ function renderInfo() {
 }
 $('wsInfo').onclick = (e) => { const b = e.target.closest('[data-url]'); if (b) openApp(b.dataset.url); };
 
-// Each terminal's chip icon: console-sparkle while an AI agent (Claude, Codex…) is open in it, a terminal
-// otherwise. A change pops the new one in (index.html .pane-ico).
+// Each terminal's chip: its name (labelOf) and its icon, console-sparkle while an AI agent (Claude, Codex…)
+// is open in it, a terminal otherwise. A change of icon pops the new one in (index.html .pane-ico).
 function syncChip(p) {
+  const label = p.el.querySelector('.pane-chip > span'), text = labelOf(p);
+  if (label) { put(label, 'textContent', text); put(label, 'title', text); }
   const a = agentOf(p), ai = !!a;
   if (p.chipAi === ai) return;
   const first = p.chipAi === undefined;
@@ -459,8 +465,15 @@ function gitSoon(t) {
 }
 
 // Terminal names, on each pane's chip: "Terminal 1", "Terminal 2"… in a workspace, the lowest number not
-// taken. Double-click one to name it yourself. Saved with the session.
-function nameTerminal(p, t, name) {
+// taken. While an AI tool works in it, the terminal shows what it's working on instead (p.task, from the
+// tool's title), and keeps the last task after the tool quits. Tools that don't say (Codex, Gemini) show
+// their own name while they're open. A name you type yourself (p.named) always wins. Saved with the session.
+function labelOf(p) {
+  if (p.named) return p.name;
+  const a = agentOf(p);
+  return a && a.key !== p.taskBy ? a.name : p.task || p.name;
+}
+function nameTerminal(p, t, name, named = !!name) {
   if (!name) {
     const taken = new Set(t ? panesOf(t).map((x) => x.name) : []);
     let n = 1;
@@ -468,30 +481,53 @@ function nameTerminal(p, t, name) {
     name = `Terminal ${n}`;
   }
   p.name = name;
-  const label = p.el.querySelector('.pane-chip > span');
-  if (label) label.textContent = name;
+  p.named = named;
+  syncChip(p);
 }
 function renameTerminal(p) {
   const label = p.el.querySelector('.pane-chip > span');
   if (!label) return;
+  // An empty name hands it back to the auto names.
+  inlineRename(label, labelOf(p), 'Terminal name', (v) => {
+    if (v !== null && v !== labelOf(p)) v ? nameTerminal(p, null, v) : nameTerminal(p, tabOf(p.id));
+    else syncChip(p);
+    saveSoon();
+    p.term.focus();
+  });
+}
+
+// Renaming in place: the label becomes a text field. Enter or clicking away keeps what you typed (trimmed;
+// '' when empty), Esc keeps the old name (null).
+function inlineRename(label, value, ariaLabel, done) {
   const input = document.createElement('input');
-  input.value = p.name;
+  input.value = value;
   input.spellcheck = false;
-  input.setAttribute('aria-label', 'Terminal name');
+  input.setAttribute('aria-label', ariaLabel);
   label.replaceWith(input);
   input.focus();
   input.select();
   let over = false;
-  const done = (keep) => {
+  const end = (keep) => {
     if (over) return;
     over = true;
     input.replaceWith(label);
-    nameTerminal(p, null, keep ? input.value.trim().slice(0, 60) || p.name : p.name);
-    saveSoon();
-    p.term.focus();
+    done(keep ? input.value.trim().slice(0, 60) : null);
   };
-  input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); };
-  input.onblur = () => done(true);
+  input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') end(true); if (e.key === 'Escape') end(false); };
+  input.onblur = () => end(true);
+}
+
+// A workspace is named after its folder until you name it (t.name): double-click its tab or ⌘R.
+// An empty name goes back to the folder's.
+function renameWorkspace(t) {
+  const label = t && rowOf.get(t)?.querySelector('.tname');
+  if (!label) return;
+  closeSettings();
+  inlineRename(label, tabName(t), 'Workspace name', (v) => {
+    if (v !== null && v !== tabName(t)) t.name = v;
+    renderTabs();
+    if (t === tab()) active()?.term.focus();
+  });
 }
 
 // Each tab's state, in words (the row's tooltip, the notch). With split panes, the most pressing pane wins.
@@ -515,6 +551,7 @@ function tabKey(t) {
 const tabState = (t) => LOOKS[tabKey(t)];
 const dirOfTab = (t) => t?.dir || (panes.get(t?.activeId) || (t && panesOf(t)[0]))?.cwd || ''; // dir; cwd only for a game tab
 function tabName(t) {
+  if (t.name) return t.name;
   const ps = panesOf(t), p = panes.get(t.activeId) || ps[0], d = dirOfTab(t);
   return isGame(p) && ps.length === 1 ? 'Games' : !d ? 'New tab' : d === home ? 'Home' : d.split('/').pop() || '/';
 }
@@ -544,6 +581,10 @@ $('tabs').onclick = (e) => {
   const t = e.target.closest('.tab');
   if (t) { closeSettings(); goTab(+t.dataset.i); }
 };
+$('tabs').ondblclick = (e) => {
+  const t = !e.target.closest('.tclose, input') && e.target.closest('.tab');
+  if (t) renameWorkspace(tabs[+t.dataset.i]);
+};
 $('newTab').onclick = () => openPicker();
 const toggleSide = () => { $('app').classList.toggle('no-side'); dt.track('sidebar_toggled'); saveSoon(); }; // panes refit via their ResizeObserver
 $('sideToggle').onclick = $('sideShow').onclick = toggleSide;
@@ -561,6 +602,8 @@ $('splitD').onclick = () => split('col');
 dt.onCmd((cmd) => ({
   'new-workspace': () => openPicker(),
   'new-terminal': () => addTerminal(),
+  'rename-workspace': () => renameWorkspace(tab()),
+  'rename-terminal': () => active() && renameTerminal(active()),
   close: () => (active() ? closePane(active().id) : !tabs.length && forgetAndClose()), // no workspace left: ⌘W closes the window
   'split-right': () => split('row'),
   'split-down': () => split('col'),
@@ -586,7 +629,7 @@ const isClaude = (p) => agentOf(p)?.key === 'claude';
 const working = (p) => !!p?.busy && (!agentOf(p) || p.thinking || !p.sawSignal);
 const busyMsg = (p) => (agentOf(p) ? `${agentOf(p).name} is open here. ${agentOf(p).leave}` : 'Something is running. Stop it first (Ctrl+C), then try again.');
 const doneText = (p) => (agentOf(p) ? `${agentOf(p).name}’s done` : 'Your command finished');
-const folderOf = (p) => (p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/'); // the tab's name
+const folderOf = (p) => tabOf(p.id)?.name || (p.cwd === home ? 'Home' : p.cwd.split('/').pop() || '/'); // the tab's name
 
 // The tool went from working to waiting for you (or back). Waiting after working = it's done, or needs you.
 function setThinking(pane, on) {
@@ -1465,6 +1508,8 @@ function snapshot(full) {
     if (n.dir) return { dir: n.dir, ratio: n.ratio ?? 0.5, a: node(n.a), b: node(n.b) };
     const p = panes.get(n.id), s = { cwd: p?.cwd || '' };
     if (p?.name) s.name = p.name;
+    if (p?.named) s.named = true;
+    if (p?.task) s.task = p.task;
     if (isClaude(p)) s.claude = true;
     if (full && p) try { s.screen = p.serial.serialize({ scrollback: 1000 }); } catch {}
     return s;
@@ -1476,7 +1521,7 @@ function snapshot(full) {
   return {
     tabIx: Math.max(0, kept.findIndex(({ t }) => t === tab())),
     side: { hidden: $('app').classList.contains('no-side'), ...(width ? { width } : {}) },
-    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)), color: t.color, dir: t.dir })),
+    tabs: kept.map(({ t, root }) => ({ root: node(root), active: Math.max(0, Panes.leaves(root).indexOf(t.activeId)), color: t.color, dir: t.dir, ...(t.name ? { name: t.name } : {}) })),
   };
 }
 function saveSoon() {
@@ -1505,13 +1550,16 @@ async function restore(saved) {
       if (n.dir) return { dir: n.dir, ratio: n.ratio, a: await build(n.a), b: await build(n.b) };
       const p = await newPane(n.cwd, { screen: n.screen, when: saved.savedAt });
       if (n.claude) { dt.write(p.id, 'claude --continue\r'); p.suggested = true; } // zsh holds it until the prompt is up
-      if (n.name) nameTerminal(p, null, n.name);
+      if (n.task) p.task = n.task;
+      // saved before terminals had auto names: a name that isn't "Terminal N" is one you typed
+      if (n.name) nameTerminal(p, null, n.name, n.named ?? !/^Terminal \d+$/.test(n.name));
       ids.push(p.id);
       return { id: p.id };
     };
     const root = await build(t.root);
     const tb = { root, activeId: ids[t.active] ?? ids[0], color: t.color ?? nextColor(),
       dir: t.dir || panes.get(ids[t.active] ?? ids[0])?.cwd }; // saved before workspaces had a folder: where its terminal was
+    if (t.name) tb.name = t.name;
     tabs.push(tb);
     for (const id of ids) if (!panes.get(id).name) nameTerminal(panes.get(id), tb); // saved before terminals had names
   }
@@ -2007,6 +2055,7 @@ document.addEventListener('keydown', (e) => {
     const n = Panes.neighbor(rects, active().id, e.key);
     if (n) focusPane(+n);
   }
+  if (e.key === 'Escape' && e.target.matches?.('.tab input, .pane-chip input')) return; // renaming: Esc cancels it (inlineRename)
   if (e.key === 'Escape') { if ($('updOv').classList.contains('show')) return closeUpdate(); closePal(); closeSettings(); if ($('startOv').classList.contains('show')) closeStart(); }
 }, true);
 document.addEventListener('keyup', (e) => { if (e.key === 'Meta') hideKeys(); });

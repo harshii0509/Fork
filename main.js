@@ -161,8 +161,12 @@ function buildMenu() {
     { label: 'Panes', submenu: [
       { label: 'Split Right', accelerator: 'Cmd+D', click: toRenderer('split-right') },
       { label: 'Split Down', accelerator: 'Cmd+Shift+D', click: toRenderer('split-down') },
+      { type: 'separator' },
+      { label: 'Rename Terminal…', accelerator: 'Alt+Cmd+R', click: toRenderer('rename-terminal') },
     ] },
     { label: 'Tabs', submenu: [
+      { label: 'Rename Workspace…', accelerator: 'Cmd+R', click: toRenderer('rename-workspace') },
+      { type: 'separator' },
       { label: 'Next Tab', accelerator: 'Cmd+Shift+]', click: toRenderer('next-tab') },
       { label: 'Previous Tab', accelerator: 'Cmd+Shift+[', click: toRenderer('prev-tab') },
     ] },

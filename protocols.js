@@ -63,8 +63,16 @@ window.Protocols = (() => {
   const agentFromTitle = (title) => (title.startsWith('✳ ') ? 'claude' : /^(OpenCode$|OC \| )/.test(title) ? 'opencode' : null);
   // Claude's title: is it working (true), waiting for you (false), or not a Claude title at all (null)?
   const claudeTitle = (title) => (/^\S /.test(title) ? !title.startsWith('✳') : null);
+  // What the tool is working on, from its title, for the terminal's name: "✳ Fix login bug" or
+  // "OC | Fix login bug" → "Fix login bug". The tool's own name ("✳ Claude Code", "OpenCode") isn't a task.
+  const taskFromTitle = (title) => {
+    const m = /^OC \| (.+)/.exec(title) || /^\S (.+)/.exec(title);
+    const task = m?.[1].trim();
+    if (!task || /^(Claude Code|OpenCode)$/i.test(task)) return null;
+    return task.length > 40 ? `${task.slice(0, 39).trimEnd()}…` : task;
+  };
   // The bottom lines of the screen: "esc interrupt" (OpenCode), "esc to interrupt" (Codex, Claude), "esc to cancel" (Gemini).
   const interruptHint = (text) => /\besc(ape)?\s+(again\s+)?(to\s+)?(interrupt|cancel)\b/i.test(text);
 
-  return { notifyFrom, kitty99, kitty99Reply, clipFrom, AGENTS, agentFromTitle, claudeTitle, interruptHint };
+  return { notifyFrom, kitty99, kitty99Reply, clipFrom, AGENTS, agentFromTitle, claudeTitle, taskFromTitle, interruptHint };
 })();

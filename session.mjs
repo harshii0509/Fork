@@ -3,9 +3,11 @@
 // damaged or old file can never stop Fork from starting: at worst it starts fresh.
 //
 // { v: 1, enabled, savedAt, windows: [{ bounds, tabIx, side: { hidden, width }, tabs: [{ active, root }] }] }
-// { …, tabs: [{ active, root, color?, dir? }] }: color is the workspace's square (0–2), dir its folder
-// (gone from the Mac, or saved before workspaces had one: the renderer uses its terminal's folder).
-// root is a split { dir: 'row'|'col', ratio, a, b } or a pane { cwd, name?, claude?, screen? }; name is the terminal's.
+// { …, tabs: [{ active, root, color?, dir?, name? }] }: color is the workspace's square (0–2), dir its folder
+// (gone from the Mac, or saved before workspaces had one: the renderer uses its terminal's folder), name the
+// one you gave it (without one it's named after its folder).
+// root is a split { dir: 'row'|'col', ratio, a, b } or a pane { cwd, name?, named?, task?, claude?, screen? }:
+// name is the terminal's, named says you typed it, task is what its AI tool last worked on.
 
 export const VERSION = 1;
 export const MAX_SCREEN = 200_000; // characters of saved output per pane
@@ -32,6 +34,8 @@ function node(n, ctx, depth = 0) {
   // A folder that's gone (deleted, unplugged drive) would stop the shell starting: use home instead.
   const pane = { cwd: n.cwd && ctx.exists(n.cwd) ? n.cwd : ctx.home };
   if (typeof n.name === 'string' && n.name.trim()) pane.name = n.name.trim().slice(0, 60);
+  if (n.named === true || n.named === false) pane.named = n.named;
+  if (typeof n.task === 'string' && n.task.trim()) pane.task = n.task.trim().slice(0, 60);
   if (n.claude === true) pane.claude = true;
   const screen = trimScreen(n.screen);
   if (screen) pane.screen = screen;
@@ -49,6 +53,7 @@ function win(w, ctx) {
     const tab = { root, active: Number.isInteger(t.active) ? clamp(t.active, 0, n - 1) : 0 };
     if (Number.isInteger(t.color) && t.color >= 0 && t.color < 3) tab.color = t.color;
     if (typeof t.dir === 'string' && t.dir && ctx.exists(t.dir)) tab.dir = t.dir;
+    if (typeof t.name === 'string' && t.name.trim()) tab.name = t.name.trim().slice(0, 60);
     return tab;
   }).filter(Boolean);
   if (!tabs.length) return null;

@@ -37,6 +37,9 @@ When you swipe up with three fingers, Granola's window turns into a frosted card
 
 ### Unreleased
 
+**New**
+- **Name your workspaces and terminals.** Double-click a workspace tab, or press ⌘R, to rename it. Terminals now take the name of the task your AI tool is working on, like "Fix login bug". Double-click one, or press ⌥⌘R, to give it your own name.
+
 **Better**
 - **Your app's address lives in Workspace info.** The bar under the terminal is gone; click the address in Workspace info to see your app.
 

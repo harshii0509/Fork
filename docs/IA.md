@@ -70,7 +70,7 @@ flowchart TB
 
 | Element | For | Get there | Notes |
 |---|---|---|---|
-| Workspace tabs | Switching projects | Click, ⌘1–9, ⌘⇧[ / ⌘⇧] | The square is the status: solid = ready, rippling lattice = working, yellow pulse = needs you or finished while you were away, red = failed. × closes the workspace. |
+| Workspace tabs | Switching projects | Click, ⌘1–9, ⌘⇧[ / ⌘⇧]; double-click or ⌘R to rename | Named after its folder until you rename it (an empty name goes back to the folder's). The square is the status: solid = ready, rippling lattice = working, yellow pulse = needs you or finished while you were away, red = failed. × closes the workspace. |
 | + | Opening another workspace | ⌘N | Opens the workspace picker. |
 | Update pill | A new Fork is ready | Appears by itself | Click to restart into it. |
 | Split right / down | Another terminal beside or below this one | ⌘D / ⌘⇧D | ⌘T adds one more terminal as a new column on the right. |
@@ -87,7 +87,7 @@ flowchart TB
 ### Terminals
 | Element | For | Notes |
 |---|---|---|
-| Terminal chip | Its name and whether an agent is open | Icon switches to a sparkle when an agent (Claude, Codex, OpenCode, Gemini) is open. Double-click to rename; × closes. |
+| Terminal chip | Its name and whether an agent is open | "Terminal N" until an agent works in it: then the task it's on (Claude, OpenCode), kept after it quits, or the agent's name while it's open (Codex, Gemini). Icon switches to a sparkle when an agent is open. Double-click or ⌥⌘R to rename; a name you type always wins, and an empty one turns the task names back on. × closes. |
 | Notes under the terminals | "That didn't work · What went wrong?" | Only when there's something to say. What went wrong explains in plain words and can type a fix (never runs it), or Ask AI. |
 | Find bar | Finding text in the terminal | ⌘F, ⌘G / ⌘⇧G. |
 | Game pane | Snake, Stack, Space Run while you wait | From the command palette. Opens as a split beside the terminal (or its own tab if there's no room). |
@@ -128,6 +128,8 @@ While Fork isn't in front: the **notch** (on a Mac with one) grows to show what'
 |---|---|
 | ⌘N | New workspace (the picker) |
 | ⌘T | New terminal in this workspace |
+| ⌘R | Rename this workspace |
+| ⌥⌘R | Rename this terminal |
 | ⌘⇧N | New window |
 | ⌘W | Close the terminal (the window, if no workspace is left) |
 | ⌘D / ⌘⇧D | Split right / down |
@@ -169,6 +171,7 @@ While Fork isn't in front: the **notch** (on a Mac with one) grows to show what'
 ---
 
 ## Log
+- **9 Oct 2026**: Workspaces can be renamed (double-click the tab, ⌘R). Terminal chips show the task the agent is working on, or the agent's name, unless you named the terminal (double-click, ⌥⌘R).
 - **9 Oct 2026**: The "Your app is running at … · Show it" bar under the terminals is gone, and so is the notch's "Ready". The app's address in Workspace info is the one place it shows; click it to see the app.
 - **9 Oct 2026**: The top strip is 36px (was 44), so a workspace tab sits 4px above the card (was 8) and reads as part of it. `--strip` in index.html; the traffic lights follow (main.js).
 - **7 Oct 2026**: First version, covering all of Fork on `ui-redesign`, including the new Changes and Design tabs in the panel and the Before and after setting.

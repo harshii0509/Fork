@@ -70,7 +70,7 @@ Names move less than line numbers, so the docs point at files and function names
 | `icons/central/ready.js` | Central Icons, when drawn on this Mac (`npm run icons`); git-ignored. |
 | `icons.js` | Lucide icons (`icon()`), file-type icons (`fileIcon`, `phFile`). |
 | `preview.js` | Text helpers: `stripAnsi`, `findLocalUrl` (spots a dev server's address), `dropText`. Pure. |
-| `protocols.js` | What terminal apps ask of Fork (OSC 9/99/777/52) and which AI agent is open and working (`AGENTS`, `claudeTitle`, `interruptHint`). Pure. |
+| `protocols.js` | What terminal apps ask of Fork (OSC 9/99/777/52) and which AI agent is open and working (`AGENTS`, `claudeTitle`, `interruptHint`), and what it's working on (`taskFromTitle`). Pure. |
 | `themes.js` | The terminal's dark and light looks (`window.THEMES`). |
 | `onboarding.js` | Welcome cards and the spotlight tour. |
 | `games.js` | Snake, Stack and Space Run in a pane. |
@@ -173,7 +173,7 @@ In the app's data folder (`~/Library/Application Support/designer-terminal`, or 
 
 | File | Holds | Notes |
 |---|---|---|
-| `session.json` | Each window's tabs, splits, folders and screens | Owner-only (0600): it can hold terminal output. |
+| `session.json` | Each window's tabs (with any name you gave them), splits, folders, terminal names and last tasks, and screens | Owner-only (0600): it can hold terminal output. |
 | `recents.json` | The last 6 folders you opened | |
 | `analytics.json` | The random install ID and the on/off switch | |
 | `shots/<folder hash>/` | Before/after PNGs and `index.json` per workspace | 20 turns per folder plus pinned ones; strays older than 12 h are swept. |
@@ -195,6 +195,7 @@ In the window's localStorage:
 - `shell/.zshrc` makes zsh report its folder (OSC 7) and each command's start and end (OSC 133 C/D, with the exit code). `renderer.js newPane` listens: start sets `pane.busy`, end sets `failed`, clears `pane.url` and calls `workDone`.
 - **Which agent is open**: the command's first word (`pane.tool`) or the title it sets (`Protocols.agentFromTitle`), looked up in `Protocols.AGENTS` (Claude, OpenCode, Codex, Gemini).
 - **Is it working**: Claude's title starts with a spinner while working and ✳ while waiting (`claudeTitle`); the others show "esc to interrupt" only while working (`interruptHint`, read from the bottom lines by `checkHint`). Both feed `setThinking(pane, on)`, the single "turn started / turn ended" moment. It drives the tab square, the notch, the chime, `workDone`, and before/after.
+- **Names**: a workspace is named after its folder (`tabName`) unless you gave it one (`t.name`, `renameWorkspace`). A terminal's chip shows `labelOf(p)`: your name if you typed one (`p.named`); else, while a tool that doesn't share its task is open, the tool's name; else the last task from a title (`p.task`, `Protocols.taskFromTitle`, set in `onTitleChange` with `p.taskBy`); else "Terminal N". Both rename in place through `inlineRename`. All of these are saved in the session (`session.mjs` keeps tab `name`, pane `named`/`task`).
 
 ### Your app
 - `dt.onData` keeps the last 400 characters of each terminal's output; `Preview.findLocalUrl` spots `http://localhost:PORT` and `appFound` sets `pane.url`, and Workspace info shows it as a link (`.ws-link`, opens via `openApp`) until the command stops. No bar and no notification; if the App panel is already open it follows the new address once.
@@ -235,6 +236,7 @@ In the window's localStorage:
 ---
 
 ## Log
+- **9 Oct 2026**: Renaming. Workspace tabs get `t.name` (double-click, ⌘R → `rename-workspace`); terminals get `labelOf`, `p.named`, `p.task`/`p.taskBy` from `Protocols.taskFromTitle` (⌥⌘R → `rename-terminal`). `inlineRename` is shared. `syncChip` now also sets the chip's text and runs when a command ends. session.mjs keeps tab `name` and pane `named`/`task`. The capture-phase Esc handler now leaves rename fields alone, so Esc cancels a rename (it used to save it).
 - **9 Oct 2026**: Removed the "Your app is running" bar (`#ready`) and the `app` notch moment. `appFound` only sets `pane.url`; Workspace info's address is a button that calls `openApp` (shared with Changes). main.js `goTo` and notch-logic.js still accept kind `app`, but nothing sends it.
 - **9 Oct 2026**: `scripts/release.mjs` stops if `icons/central/ready.js` or `vendor/diffs` is missing; neither is committed, and a build without them ships fallback icons and no Changes tab.
 - **8 Oct 2026**: Three fixes before 1.1.0.
