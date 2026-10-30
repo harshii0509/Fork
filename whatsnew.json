@@ -1,4 +1,19 @@
 {
+  "1.4.1": [
+    {
+      "fig": "hub",
+      "box": [22, 126, 538, 368],
+      "path": [[80, 170], [320, 180], [200, 175]],
+      "title": "Terminals that talk",
+      "text": "Right-click a terminal’s name and pick Hand off to: its Claude sums up the work for the Claude in another terminal. When a message arrives, that terminal says who it’s from."
+    },
+    {
+      "fig": "tabs",
+      "box": [66, 144, 494, 365],
+      "title": "Clicks land the first time",
+      "text": "A tab opens as you press it, and clicking anywhere on a terminal makes it the one you type in, even when you’re coming back from another app."
+    }
+  ],
   "1.4.0": [
     {
       "fig": "phosphor",
