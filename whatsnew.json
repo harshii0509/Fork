@@ -1,0 +1,85 @@
+{
+  "1.4.0": [
+    {
+      "fig": "phosphor",
+      "box": [105, 103, 455, 358],
+      "path": [[147, 180], [322, 243], [245, 210]],
+      "title": "Themes",
+      "text": "Pick a dark and a light theme in Settings → Appearance: Fork’s own, Catppuccin, Tokyo Night, Rosé Pine, Nord, Gruvbox, GitHub or Vesper. Hover one to try it first."
+    },
+    {
+      "fig": "drawer",
+      "box": [131, 62, 395, 397],
+      "path": [[163, 162], [295, 246], [237, 203]],
+      "title": "Undo when you close something",
+      "text": "Closing a terminal or workspace doesn’t ask any more. Undo puts it back, still running; after that, ⌘⇧T opens it again in the same folder."
+    },
+    {
+      "fig": "settle",
+      "box": [21, 104, 539, 353],
+      "path": [[83, 179], [342, 241], [228, 209]],
+      "title": "Fork moves like a Mac app",
+      "text": "The sidebar and panel slide, splits grow out of the terminal they came from, and you can drag your workspaces into any order."
+    },
+    {
+      "fig": "dish",
+      "box": [145, 83, 415, 378],
+      "path": [[177, 172], [312, 245], [253, 207]],
+      "title": "Needs you sounds different",
+      "text": "Two soft knocks when something is waiting for you, so you can tell it from the done chime without looking."
+    }
+  ],
+  "1.3.1": [
+    {
+      "fig": "lockers",
+      "box": [147, 76, 442, 388],
+      "path": [[140, 150], [280, 200], [210, 165]],
+      "title": "Safer with downloaded projects",
+      "text": "Fork never types a name with hidden characters into your terminal, and git never runs programs a project brings along. Pages in Fork see only their own folder."
+    },
+    {
+      "fig": "keyboard",
+      "box": [74, 117, 486, 349],
+      "path": [[110, 175], [290, 195], [200, 165]],
+      "title": "Terminal text stays sharp",
+      "text": "If your Mac’s graphics restart while Fork is open, terminals redraw cleanly instead of losing letters."
+    }
+  ],
+  "1.3.0": [
+    {
+      "fig": "hub",
+      "box": [22, 126, 538, 368],
+      "path": [[80, 170], [320, 180], [200, 175]],
+      "title": "Fork in the menu bar",
+      "text": "Click the fork at the top of your screen, from any app, to see every workspace and what needs you. Its square fills in while something’s waiting on you."
+    },
+    {
+      "fig": "padlock",
+      "box": [176, 77, 384, 420],
+      "path": [[160, 200], [240, 150], [200, 170]],
+      "title": "Fork knows when Claude needs you",
+      "text": "When Claude stops to ask your OK or a question, its workspace turns yellow and says what it’s asking, even on the tab you’re in."
+    },
+    {
+      "fig": "lockers",
+      "box": [147, 76, 442, 388],
+      "path": [[140, 150], [280, 200], [210, 165]],
+      "title": "Each chat comes back",
+      "text": "Reopen Fork and every Claude terminal picks up its own chat, not the same one in all of them."
+    },
+    {
+      "fig": "riffle",
+      "box": [123, 102, 440, 391],
+      "path": [[120, 140], [290, 230], [200, 180]],
+      "title": "Smooth scrolling in Claude",
+      "text": "In Claude’s fullscreen view, the chat follows your trackpad or mouse row by row instead of jumping."
+    },
+    {
+      "fig": "keyboard",
+      "box": [74, 117, 486, 349],
+      "path": [[110, 175], [290, 195], [200, 165]],
+      "title": "⌘K is back",
+      "text": "⌘K opens the command palette again: say what you want in plain words. Search your files with ⌘⇧F."
+    }
+  ]
+}
